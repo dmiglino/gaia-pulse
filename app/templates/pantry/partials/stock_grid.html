@@ -1,0 +1,93 @@
+{% if stock_items %}
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+  {% for item in stock_items %}
+  <div class="bg-white rounded-2xl border {{ 'border-rose-200 bg-rose-50/30' if item.is_low else 'border-slate-200' }} overflow-hidden group hover:shadow-md hover:shadow-slate-100 transition-all"
+       x-data="{ adjustOpen: false, adjustQty: {{ item.current_quantity | float }} }">
+
+    <!-- Card header -->
+    <div class="px-4 pt-4 pb-3">
+      <!-- Category badge -->
+      <div class="flex items-start justify-between gap-1 mb-2">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600 truncate max-w-[60%]">
+          {{ _(item.food_item.category | title) if item.food_item.category else _('Other') }}
+        </span>
+        {% if item.is_low %}
+        <span class="flex-shrink-0 inline-flex items-center gap-0.5 bg-rose-100 text-rose-600 text-xs font-bold px-1.5 py-0.5 rounded-md">
+          <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+          {{ _('Low') }}
+        </span>
+        {% endif %}
+      </div>
+
+      <!-- Item name -->
+      <h3 class="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">
+        {{ item.food_item.name }}
+      </h3>
+
+      <!-- Quantity -->
+      <div class="mt-2 flex items-baseline gap-1">
+        <span class="text-xl font-bold {{ 'text-rose-600' if item.is_low else 'text-slate-800' }}">
+          {{ item.current_quantity | round(1) if item.current_quantity != item.current_quantity | int else item.current_quantity | int }}
+        </span>
+        <span class="text-sm text-slate-400">{{ item.unit }}</span>
+      </div>
+
+      {% if item.low_stock_threshold %}
+      <p class="text-xs text-slate-400 mt-0.5">{{ _('Threshold:') }} {{ item.low_stock_threshold }} {{ item.unit }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Adjust stock action -->
+    <div class="px-4 pb-3">
+      <button
+        type="button"
+        @click="adjustOpen = !adjustOpen"
+        class="w-full text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 py-1.5 rounded-lg transition-colors">
+        {{ _('Adjust Stock') }}
+      </button>
+
+      <!-- Inline adjust form -->
+      <div x-show="adjustOpen" x-cloak class="mt-2" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0">
+        <form
+          hx-post="/api/pantry/{{ item.id }}/adjust"
+          hx-swap="outerHTML"
+          hx-target="closest .bg-white"
+          class="flex items-center gap-2"
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+          <input
+            type="number"
+            name="quantity"
+            x-model="adjustQty"
+            step="0.1"
+            min="0"
+            class="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400"
+            placeholder="{{ _('New qty') }}"
+          />
+          <select name="movement_type" class="text-xs border border-slate-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500/40 bg-white">
+            <option value="adjustment">{{ _('Set') }}</option>
+            <option value="purchase">{{ _('Add') }}</option>
+            <option value="consumption">{{ _('Use') }}</option>
+          </select>
+          <button type="submit" class="flex-shrink-0 bg-brand-500 hover:bg-brand-600 text-white p-1.5 rounded-lg transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="bg-white rounded-2xl border border-slate-200">
+  {% set icon = 'pantry' %}
+  {% set title = _('Your pantry is empty') %}
+  {% set description = _('Start by adding a purchase. Use the Capture screen to quickly log what you bought.') %}
+  {% set action_label = _('Add first item') %}
+  {% set action_url = '/capture?prefill=pantry' %}
+  {% include 'components/empty_state.html' %}
+</div>
+{% endif %}

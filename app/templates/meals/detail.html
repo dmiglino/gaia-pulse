@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Meals') }}{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-5">
+  <div class="flex items-center gap-4">
+    <a href="/meals" class="text-slate-400 hover:text-slate-600">←</a>
+    <h1 class="text-xl font-bold text-slate-900">{{ _(meal.meal_type|title) }} · {{ meal.timestamp.strftime('%b %d, %Y') }}</h1>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
+    <div class="flex gap-3 flex-wrap text-sm text-slate-500">
+      <span>🕐 {{ meal.timestamp.strftime('%H:%M') }}</span>
+      <span>📍 {{ meal.context|title }}</span>
+    </div>
+    {% if meal.notes %}<p class="text-sm text-slate-600 italic">{{ meal.notes }}</p>{% endif %}
+
+    {% for participant in meal.participants %}
+    <div class="border-t border-slate-50 pt-4">
+      {% for u in users %}{% if u.id == participant.user_id %}
+      <div class="flex items-center gap-2 mb-2">
+        <span class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:{{ u.avatar_color }}">{{ u.name[0] }}</span>
+        <span class="font-medium text-slate-800 text-sm">{{ u.name }}</span>
+        {% if participant.portion_label %}<span class="text-xs text-slate-400">({{ participant.portion_label }})</span>{% endif %}
+      </div>
+      {% endif %}{% endfor %}
+
+      <ul class="space-y-1">
+        {% for item in participant.items_consumed %}
+        <li class="text-sm text-slate-700 flex items-baseline gap-2">
+          <span class="text-slate-400">·</span>
+          <span>{{ item.normalized_free_text_name|title }}</span>
+          {% if item.quantity %}<span class="text-xs text-slate-400">{{ item.quantity }}{% if item.unit %} {{ item.unit }}{% endif %}</span>{% endif %}
+          {% if item.estimated_grams %}<span class="text-xs text-slate-400">(~{{ item.estimated_grams }}g)</span>{% endif %}
+          {% if item.preparation %}<span class="text-xs text-slate-400">· {{ item.preparation }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

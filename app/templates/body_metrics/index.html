@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Body Metrics') }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 md:px-8 max-w-3xl mx-auto" x-data="{ activeTab: '{{ users[0].id if users else 0 }}' }">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">{{ _('Body Metrics') }}</h1>
+      <p class="text-sm text-slate-500 mt-0.5">{{ _('Track your health journey') }}</p>
+    </div>
+    <a href="/capture?prefill=weight"
+       class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm shadow-brand-200">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
+      </svg>
+      {{ _('Log Metric') }}
+    </a>
+  </div>
+
+  <!-- User tabs -->
+  {% if users %}
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-6 w-fit">
+    {% for user in users %}
+    <button
+      type="button"
+      @click="activeTab = '{{ user.id }}'"
+      :class="activeTab === '{{ user.id }}' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+      class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+    >
+      <div class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold"
+           style="background-color: {{ user.avatar_color }}">
+        {{ user.display_name[0] | upper }}
+      </div>
+      {{ user.display_name }}
+    </button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Per-user panels -->
+  {% for user in users %}
+  <div x-show="activeTab === '{{ user.id }}'" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100">
+
+    <!-- Latest metrics summary cards -->
+    {% set latest = latest_per_user.get(user.id, {}) if latest_per_user else {} %}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+
+      <!-- Weight -->
+      <div class="bg-white rounded-2xl border border-slate-200 px-4 py-4 text-center">
+        <div class="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center mx-auto mb-2">
+          <svg class="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/>
+          </svg>
+        </div>
+        <p class="text-xs text-slate-400 font-medium mb-0.5">{{ _('Weight') }}</p>
+        {% if latest.weight_kg %}
+        <p class="text-xl font-bold text-slate-800">{{ latest.weight_kg | round(1) }}</p>
+        <p class="text-xs text-slate-400">{{ _('kg') }}</p>
+        {% else %}
+        <p class="text-sm text-slate-400">—</p>
+        {% endif %}
+      </div>
+
+      <!-- Body Fat % -->
+      <div class="bg-white rounded-2xl border border-slate-200 px-4 py-4 text-center">
+        <div class="w-8 h-8 rounded-lg bg-pink-50 flex items-center justify-center mx-auto mb-2">
+          <svg class="w-4 h-4 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z"/>
+          </svg>
+        </div>
+        <p class="text-xs text-slate-400 font-medium mb-0.5">{{ _('Body Fat') }}</p>
+        {% if latest.body_fat_pct %}
+        <p class="text-xl font-bold text-slate-800">{{ latest.body_fat_pct | round(1) }}</p>
+        <p class="text-xs text-slate-400">%</p>
+        {% else %}
+        <p class="text-sm text-slate-400">—</p>
+        {% endif %}
+      </div>
+
+      <!-- Waist -->
+      <div class="bg-white rounded-2xl border border-slate-200 px-4 py-4 text-center">
+        <div class="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center mx-auto mb-2">
+          <svg class="w-4 h-4 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5m0 9V18A2.25 2.25 0 0118 20.25h-1.5m-9 0H6A2.25 2.25 0 013.75 18v-1.5M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <p class="text-xs text-slate-400 font-medium mb-0.5">{{ _('Waist') }}</p>
+        {% if latest.waist_cm %}
+        <p class="text-xl font-bold text-slate-800">{{ latest.waist_cm | round(1) }}</p>
+        <p class="text-xs text-slate-400">{{ _('cm') }}</p>
+        {% else %}
+        <p class="text-sm text-slate-400">—</p>
+        {% endif %}
+      </div>
+
+      <!-- Sleep -->
+      <div class="bg-white rounded-2xl border border-slate-200 px-4 py-4 text-center">
+        <div class="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center mx-auto mb-2">
+          <svg class="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/>
+          </svg>
+        </div>
+        <p class="text-xs text-slate-400 font-medium mb-0.5">{{ _('Sleep') }}</p>
+        {% if latest.sleep_hours %}
+        <p class="text-xl font-bold text-slate-800">{{ latest.sleep_hours | round(1) }}</p>
+        <p class="text-xs text-slate-400">{{ _('hrs') }}</p>
+        {% else %}
+        <p class="text-sm text-slate-400">—</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Weight trend note -->
+    <div class="bg-brand-50 border border-brand-100 rounded-2xl px-5 py-4 mb-6 flex items-center gap-3">
+      <svg class="w-5 h-5 text-brand-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/>
+      </svg>
+      <p class="text-sm text-brand-700">
+        {{ _('Want to see weight trends over time?') }}
+        <a href="/dashboard" class="font-semibold hover:text-brand-800 underline">{{ _('View the Dashboard →') }}</a>
+      </p>
+    </div>
+
+    <!-- Metrics log -->
+    {% set user_metrics = metrics | selectattr('user_id', 'equalto', user.id) | list if metrics else [] %}
+    {% if user_metrics %}
+    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-slate-100">
+        <h3 class="text-sm font-semibold text-slate-700">{{ _('Log History') }}</h3>
+      </div>
+      <div class="divide-y divide-slate-50">
+        {% for metric in user_metrics %}
+        <div class="px-5 py-3.5 flex items-center gap-4">
+          <div class="flex-shrink-0">
+            <p class="text-xs text-slate-400">{{ metric.timestamp.strftime('%b %-d') if metric.timestamp else '' }}</p>
+            <p class="text-xs text-slate-300">{{ metric.timestamp.strftime('%Y') if metric.timestamp else '' }}</p>
+          </div>
+          <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {% if metric.weight_kg %}
+            <div>
+              <p class="text-xs text-slate-400">{{ _('Weight') }}</p>
+              <p class="text-sm font-semibold text-slate-700">{{ metric.weight_kg | round(1) }} {{ _('kg') }}</p>
+            </div>
+            {% endif %}
+            {% if metric.body_fat_pct %}
+            <div>
+              <p class="text-xs text-slate-400">{{ _('Body Fat') }}</p>
+              <p class="text-sm font-semibold text-slate-700">{{ metric.body_fat_pct | round(1) }}%</p>
+            </div>
+            {% endif %}
+            {% if metric.waist_cm %}
+            <div>
+              <p class="text-xs text-slate-400">{{ _('Waist') }}</p>
+              <p class="text-sm font-semibold text-slate-700">{{ metric.waist_cm | round(1) }} {{ _('cm') }}</p>
+            </div>
+            {% endif %}
+            {% if metric.sleep_hours %}
+            <div>
+              <p class="text-xs text-slate-400">{{ _('Sleep') }}</p>
+              <p class="text-sm font-semibold text-slate-700">{{ metric.sleep_hours | round(1) }} {{ _('hrs') }}</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-2xl border border-slate-200">
+      {% set icon = 'metrics' %}
+      {% set title = _('No metrics logged yet for %(name)s', name=user.display_name) %}
+      {% set description = _('Start tracking weight, body fat, waist measurements, and sleep.') %}
+      {% set action_label = _('Log first metric') %}
+      {% set action_url = '/capture?prefill=weight' %}
+      {% include 'components/empty_state.html' %}
+    </div>
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

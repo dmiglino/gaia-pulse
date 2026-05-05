@@ -1,0 +1,84 @@
+{# Reusable meal event card. Expects `event` (MealEvent) in context. #}
+{% set meal_type_colors = {
+  'breakfast': 'bg-amber-100 text-amber-700',
+  'lunch': 'bg-blue-100 text-blue-700',
+  'dinner': 'bg-indigo-100 text-indigo-700',
+  'snack': 'bg-green-100 text-green-700',
+  'other': 'bg-slate-100 text-slate-600'
+} %}
+{% set meal_type_color = meal_type_colors.get(event.meal_type, 'bg-slate-100 text-slate-600') %}
+
+<div class="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md hover:shadow-slate-100 transition-all">
+  <!-- Card header -->
+  <div class="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-50">
+    <div class="flex items-center gap-2.5">
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-semibold {{ meal_type_color }}">
+        {{ _(event.meal_type | title) }}
+      </span>
+      {% if event.context and event.context != 'home' %}
+      <span class="inline-flex items-center gap-1 text-xs text-slate-400 font-medium">
+        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/>
+        </svg>
+        {{ event.context | title }}
+      </span>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-slate-400">
+        {{ event.timestamp.strftime('%-I:%M %p') if event.timestamp else '' }}
+      </span>
+      <span class="text-xs text-slate-300">·</span>
+      <span class="text-xs text-slate-400">
+        {{ event.timestamp.strftime('%b %-d') if event.timestamp else '' }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Participants -->
+  <div class="px-5 py-4 divide-y divide-slate-50">
+    {% if event.participants %}
+    {% for participant in event.participants %}
+    <div class="{% if not loop.first %}pt-3 {% endif %}{% if not loop.last %}pb-3{% endif %}">
+      <div class="flex items-start gap-2.5">
+        <!-- Avatar -->
+        <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold mt-0.5"
+             style="background-color: {{ participant.user.avatar_color }}">
+          {{ participant.user.display_name[0] | upper }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-semibold text-slate-600 mb-1.5">{{ participant.user.display_name }}</p>
+          <!-- Food items -->
+          {% if participant.items_consumed %}
+          <div class="flex flex-wrap gap-1.5">
+            {% for item in participant.items_consumed %}
+            <span class="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-slate-600 text-xs px-2 py-0.5 rounded-lg">
+              {{ item.normalized_free_text_name }}
+              {% if item.quantity and item.unit %}
+              <span class="text-slate-400">{{ item.quantity | round(1) if item.quantity != item.quantity | int else item.quantity | int }} {{ item.unit }}</span>
+              {% endif %}
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-xs text-slate-400 italic">{{ _('No items recorded') }}</p>
+          {% endif %}
+          <!-- Optional notes -->
+          {% if participant.notes %}
+          <p class="text-xs text-slate-400 mt-1.5 italic">{{ participant.notes }}</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-sm text-slate-400 py-2">{{ _('No participants recorded.') }}</p>
+    {% endif %}
+  </div>
+
+  {% if event.notes %}
+  <div class="px-5 pb-3">
+    <p class="text-xs text-slate-400 italic">{{ _('Note:') }} {{ event.notes }}</p>
+  </div>
+  {% endif %}
+</div>

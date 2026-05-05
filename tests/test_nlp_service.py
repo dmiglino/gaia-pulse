@@ -1,0 +1,287 @@
+"""Tests for NLPService: confirm/discard flow, edge cases, intent execution."""
+import pytest
+from sqlalchemy.orm import Session
+
+from app.models.household import Household
+from app.models.nlp import NLPIngestionEvent
+from app.models.user import User
+from app.services.nlp_service import NLPService
+
+
+class TestConfirmEvent:
+    def test_confirm_unknown_event_returns_error(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        svc = NLPService(db)
+        result = svc.confirm_event(event_id=999999, user_id=diego.id, household_id=household.id)
+        assert "error" in result
+        assert result["results"] == []
+
+    def test_confirm_wrong_user_returns_error(
+        self, db: Session, diego: User, rocio: User, household: Household
+    ) -> None:
+        # Create an event owned by diego
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="test",
+            parsed_intent_json=[],
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        # Rocío tries to confirm Diego's event
+        result = svc.confirm_event(
+            event_id=event.id, user_id=rocio.id, household_id=household.id
+        )
+        assert "error" in result
+
+    def test_confirm_empty_intents_discards_event(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="asdfghjkl random noise",
+            parsed_intent_json=[],
+            parse_confidence=0.0,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        # Should not be treated as success — notice key explains it
+        assert result.get("notice") is not None
+        assert result["results"] == []
+        # Event should be marked discarded, not confirmed
+        db.refresh(event)
+        assert event.status == "discarded"
+
+    def test_confirm_add_stock_intent_creates_pantry_entry(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="We bought 6 bananas",
+            parsed_intent_json=[
+                {
+                    "intent_type": "add_stock",
+                    "items": [{"food_name": "banana", "quantity": 6, "unit": "unit"}],
+                    "participants": ["both"],
+                    "confidence": 0.85,
+                }
+            ],
+            parse_confidence=0.85,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        assert result.get("success") is True
+        assert len(result["results"]) == 1
+        assert result["results"][0]["status"] == "ok"
+        assert result["results"][0]["result"]["added"] == 1
+
+        db.refresh(event)
+        assert event.status == "confirmed"
+
+    def test_confirm_marks_event_confirmed(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="Today I weigh 82 kg",
+            parsed_intent_json=[
+                {
+                    "intent_type": "log_body_metric",
+                    "user_key": "diego",
+                    "weight_kg": 82.0,
+                    "participants": ["diego"],
+                    "confidence": 0.9,
+                }
+            ],
+            parse_confidence=0.9,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        assert result.get("success") is True
+        db.refresh(event)
+        assert event.status == "confirmed"
+        assert event.responded_at is not None
+
+    def test_confirm_with_partial_errors_reports_them(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """An intent that raises should appear as status=error but not crash everything."""
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="mixed input",
+            parsed_intent_json=[
+                {
+                    "intent_type": "log_body_metric",
+                    "user_key": "diego",
+                    "weight_kg": 82.0,
+                    "participants": ["diego"],
+                    "confidence": 0.9,
+                },
+                {
+                    # Intentionally broken: unknown intent type
+                    "intent_type": "unknown_intent",
+                    "confidence": 0.5,
+                },
+            ],
+            parse_confidence=0.7,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        # Both intents processed; first succeeds, second is "skipped" (not error)
+        assert len(result["results"]) == 2
+        statuses = {r["status"] for r in result["results"]}
+        assert "ok" in statuses
+
+
+class TestDiscardEvent:
+    def test_discard_marks_event_discarded(
+        self, db: Session, diego: User
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="something",
+            parsed_intent_json=[],
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        ok = svc.discard_event(event.id, diego.id)
+        assert ok is True
+
+        db.refresh(event)
+        assert event.status == "discarded"
+        assert event.responded_at is not None
+
+    def test_discard_wrong_user_returns_false(
+        self, db: Session, diego: User, rocio: User
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="something",
+            parsed_intent_json=[],
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        ok = svc.discard_event(event.id, rocio.id)
+        assert ok is False
+
+        db.refresh(event)
+        assert event.status == "pending_confirmation"  # unchanged
+
+    def test_discard_nonexistent_event_returns_false(
+        self, db: Session, diego: User
+    ) -> None:
+        svc = NLPService(db)
+        ok = svc.discard_event(event_id=999999, user_id=diego.id)
+        assert ok is False
+
+
+class TestLogMealIntent:
+    def test_meal_with_items_per_user(
+        self, db: Session, diego: User, rocio: User, household: Household
+    ) -> None:
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="Diego ate pasta, Rocío ate salad",
+            parsed_intent_json=[
+                {
+                    "intent_type": "log_meal",
+                    "meal_type": "dinner",
+                    "items_per_user": {
+                        "diego": [{"food_name": "pasta", "qty": None, "unit": None}],
+                        "rocio": [{"food_name": "salad", "qty": None, "unit": None}],
+                    },
+                    "participants": ["both"],
+                    "confidence": 0.85,
+                }
+            ],
+            parse_confidence=0.85,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        assert result.get("success") is True
+        intent_result = result["results"][0]["result"]
+        assert intent_result["participants"] == 2
+
+    def test_meal_empty_items_per_user_skips_gracefully(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """Empty items_per_user should not crash and should return 0 participants."""
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="we had dinner",
+            parsed_intent_json=[
+                {
+                    "intent_type": "log_meal",
+                    "meal_type": "dinner",
+                    "items_per_user": {},
+                    "participants": ["both"],
+                    "confidence": 0.4,
+                }
+            ],
+            parse_confidence=0.4,
+            status="pending_confirmation",
+        )
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id, user_id=diego.id, household_id=household.id
+        )
+
+        # Event processed but 0 participants logged — no crash
+        assert result["results"][0]["status"] == "ok"
+        assert result["results"][0]["result"]["participants"] == 0

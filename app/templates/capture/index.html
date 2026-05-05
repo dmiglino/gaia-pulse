@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Capture') }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 md:px-8 max-w-2xl mx-auto"
+     x-data="captureApp()"
+     x-init="init()">
+
+  <!-- Header -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-slate-800">{{ _('Capture') }}</h1>
+    <p class="text-sm text-slate-500 mt-0.5">{{ _('Tell me what happened — I\'ll figure out the rest') }}</p>
+  </div>
+
+  <!-- Quick shortcut chips -->
+  <div class="mb-4">
+    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">{{ _('Quick shortcuts') }}</p>
+    <div class="flex flex-wrap gap-2">
+      <button type="button"
+        @click="prefillText('We had pasta for dinner')"
+        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.87c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.87v-1.5m-6 4.5v-1.5m12 1.5v-1.5m-12 1.5v7.5m0 0h12"/></svg>
+        {{ _('Log Meal') }}
+      </button>
+      <button type="button"
+        @click="prefillText('I did 30 minutes of running this morning')"
+        class="inline-flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+        {{ _('Log Workout') }}
+      </button>
+      <button type="button"
+        @click="prefillText('I bought 2 kg of chicken, a bag of rice and some tomatoes')"
+        class="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+        {{ _('Add Purchase') }}
+      </button>
+      <button type="button"
+        @click="prefillText('My weight this morning is 74.5 kg')"
+        class="inline-flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg>
+        {{ _('Update Weight') }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Main capture card -->
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+    <!-- Text input section -->
+    <div class="px-5 pt-5">
+      <label for="capture-text" class="block text-sm font-semibold text-slate-700 mb-2">
+        {{ _('What happened today?') }}
+      </label>
+      <textarea
+        id="capture-text"
+        name="text"
+        x-model="captureText"
+        rows="4"
+        class="w-full resize-none border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors bg-slate-50 focus:bg-white leading-relaxed"
+        placeholder="e.g. 'We had pasta for dinner' or 'Diego rode a bike for 30 min' or 'Bought 1kg of oats'"
+      ></textarea>
+      <p class="text-xs text-slate-400 mt-1.5">{{ _('You can mention both Diego and Rocío by name. The AI will figure out who did what.') }}</p>
+    </div>
+
+    <!-- Divider with OR label -->
+    <div class="px-5 py-4 flex items-center gap-3">
+      <div class="flex-1 h-px bg-slate-100"></div>
+      <span class="text-xs font-medium text-slate-400">{{ _('or use voice') }}</span>
+      <div class="flex-1 h-px bg-slate-100"></div>
+    </div>
+
+    <!-- Voice input section -->
+    <div class="px-5 pb-5">
+      <div class="bg-slate-50 rounded-xl border border-slate-200 p-4">
+        <div class="flex items-center gap-4">
+
+          <!-- Record button -->
+          <button
+            type="button"
+            @click="toggleRecording()"
+            :class="isRecording ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-200 animate-pulse' : 'bg-brand-500 hover:bg-brand-600 shadow-brand-200'"
+            class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500">
+            <svg x-show="!isRecording" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
+            </svg>
+            <svg x-show="isRecording" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+          </button>
+
+          <div class="flex-1">
+            <p class="text-sm font-medium text-slate-700" x-text="recordingStatus"></p>
+            <p class="text-xs text-slate-400 mt-0.5" x-show="!isRecording && !hasAudio">{{ _('Tap the mic to start recording') }}</p>
+            <p class="text-xs text-slate-400 mt-0.5" x-show="isRecording">{{ _('Recording… tap to stop') }}</p>
+
+            <!-- Audio playback -->
+            <template x-if="hasAudio && audioURL">
+              <div class="mt-2 flex items-center gap-2">
+                <audio :src="audioURL" controls class="h-8 w-full" style="max-width:200px"></audio>
+                <button type="button" @click="clearAudio()" class="text-xs text-rose-500 hover:text-rose-600 font-medium">{{ _('Remove') }}</button>
+              </div>
+            </template>
+          </div>
+
+          <!-- Waveform indicator while recording -->
+          <div x-show="isRecording" class="flex items-end gap-0.5 h-6">
+            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:40%;animation-delay:0ms"></div>
+            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:80%;animation-delay:80ms"></div>
+            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:60%;animation-delay:160ms"></div>
+            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:100%;animation-delay:240ms"></div>
+            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:70%;animation-delay:320ms"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parse button -->
+    <div class="px-5 pb-5">
+      <button
+        type="button"
+        @click="parseAndPreview()"
+        :disabled="!captureText.trim() && !hasAudio"
+        :class="(!captureText.trim() && !hasAudio) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-brand-600 hover:shadow-lg hover:shadow-brand-300/40'"
+        class="w-full flex items-center justify-center gap-2 bg-brand-500 text-white font-semibold py-3.5 px-6 rounded-xl transition-all shadow-md shadow-brand-200/50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+      >
+        <svg id="parse-spinner" class="animate-spin htmx-indicator w-4 h-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
+        </svg>
+        {{ _('Parse & Preview') }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Preview area (HTMX target) -->
+  <div id="preview-area" class="mt-5"></div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function captureApp() {
+  return {
+    captureText: '',
+    isRecording: false,
+    hasAudio: false,
+    audioURL: null,
+    audioBlob: null,
+    recordingStatus: '',
+    mediaRecorder: null,
+    audioChunks: [],
+
+    init() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const prefill = urlParams.get('prefill');
+      const prefillMap = {
+        meal:    "We had [meal] for [meal_type]",
+        workout: "I did [duration] minutes of [activity]",
+        pantry:  "I bought [quantity] of [item]",
+        weight:  "My weight today is [X] kg",
+      };
+      if (prefill && prefillMap[prefill]) {
+        // Only pre-fill if nothing typed yet
+        if (!this.captureText) this.captureText = '';
+      }
+    },
+
+    prefillText(text) {
+      this.captureText = text;
+      document.getElementById('capture-text')?.focus();
+    },
+
+    async toggleRecording() {
+      if (this.isRecording) {
+        this.stopRecording();
+      } else {
+        await this.startRecording();
+      }
+    },
+
+    async startRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        this.audioChunks = [];
+        this.mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) this.audioChunks.push(e.data);
+        };
+        this.mediaRecorder.onstop = () => {
+          this.audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+          this.audioURL = URL.createObjectURL(this.audioBlob);
+          this.hasAudio = true;
+          this.recordingStatus = 'Recording ready';
+          stream.getTracks().forEach(t => t.stop());
+        };
+        this.mediaRecorder.start(200);
+        this.isRecording = true;
+        this.recordingStatus = 'Recording…';
+      } catch (err) {
+        console.error('Microphone error:', err);
+        window.showToast('Could not access microphone. Please allow microphone permission.', 'error');
+      }
+    },
+
+    stopRecording() {
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        this.mediaRecorder.stop();
+      }
+      this.isRecording = false;
+    },
+
+    clearAudio() {
+      this.hasAudio = false;
+      this.audioBlob = null;
+      if (this.audioURL) URL.revokeObjectURL(this.audioURL);
+      this.audioURL = null;
+      this.recordingStatus = '';
+    },
+
+    async parseAndPreview() {
+      if (!this.captureText.trim() && !this.hasAudio) return;
+
+      const previewArea = document.getElementById('preview-area');
+      if (previewArea) {
+        previewArea.innerHTML = '<div class="flex justify-center py-8"><svg class="animate-spin w-6 h-6 text-brand-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
+      }
+
+      try {
+        const formData = new FormData();
+        const hasText = !!this.captureText.trim();
+        let endpoint = '/capture/parse';
+
+        // Prefer audio transcription only when user recorded audio and left text empty.
+        if (this.audioBlob && !hasText) {
+          endpoint = '/capture/transcribe';
+          formData.append('audio', this.audioBlob, 'recording.webm');
+        } else {
+          formData.append('text', this.captureText);
+        }
+
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          body: formData,
+        });
+        const html = await resp.text();
+        if (previewArea) previewArea.innerHTML = html;
+
+        if (!resp.ok) {
+          window.showToast('Could not parse the input. Please try again.', 'error');
+        }
+      } catch (err) {
+        console.error('Parse error:', err);
+        window.showToast('Something went wrong. Please try again.', 'error');
+        if (previewArea) previewArea.innerHTML = '';
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

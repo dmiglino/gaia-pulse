@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="{{ locale | replace('_', '-') }}" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#6366f1" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <title>{% block title %}GaiaPulse{% endblock %} — GaiaPulse</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- HTMX 2.x -->
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+
+  <!-- Alpine.js 3.x -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
+
+  <!-- App CSS -->
+  <link rel="stylesheet" href="/static/css/app.css" />
+
+  <!-- HTMX config -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      htmx.config.globalViewTransitions = true;
+      htmx.config.selfRequestsOnly = false;
+    });
+  </script>
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-slate-50 font-sans antialiased" x-data="appStore()" x-cloak>
+
+  <!-- Toast notifications container -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none" aria-live="polite"></div>
+
+  <!-- HTMX loading indicator -->
+  <div id="htmx-indicator" class="fixed top-0 left-0 right-0 z-50 h-0.5 bg-brand-500 htmx-indicator" style="width:0%"></div>
+
+  <div class="flex h-full">
+
+    <!-- ===== DESKTOP SIDEBAR NAV ===== -->
+    <nav class="hidden md:flex md:flex-col md:w-64 md:fixed md:inset-y-0 bg-white border-r border-slate-200 shadow-sm z-30">
+      <!-- Brand -->
+      <div class="flex items-center gap-3 px-6 py-5 border-b border-slate-100">
+        <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shadow-sm">
+          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+          </svg>
+        </div>
+        <span class="text-xl font-bold text-slate-800 tracking-tight">GaiaPulse</span>
+      </div>
+
+      <!-- Nav links -->
+      <div class="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <a href="/" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path == '/' %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>
+          </svg>
+          {{ _('Home') }}
+        </a>
+
+        <a href="/pantry" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/pantry') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/>
+          </svg>
+          {{ _('Pantry') }}
+        </a>
+
+        <a href="/meals" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/meals') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.87c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.87v-1.5m-6 4.5v-1.5m12 1.5v-1.5m-12 1.5v7.5m0 0h12m-12 0a.75.75 0 01-.75-.75V18a.75.75 0 01.75-.75h12a.75.75 0 01.75.75v.75a.75.75 0 01-.75.75"/>
+          </svg>
+          {{ _('Meals') }}
+        </a>
+
+        <a href="/workouts" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/workouts') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+          </svg>
+          {{ _('Workouts') }}
+        </a>
+
+        <a href="/body-metrics" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/body-metrics') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/>
+          </svg>
+          {{ _('Body Metrics') }}
+        </a>
+
+        <a href="/health" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/health') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.75.75 0 011.04 0l2.094 2.004 2.865-.289a.75.75 0 01.813.813l-.289 2.865 2.004 2.094a.75.75 0 010 1.04l-2.004 2.094.289 2.865a.75.75 0 01-.813.813l-2.865-.289-2.094 2.004a.75.75 0 01-1.04 0l-2.094-2.004-2.865.289a.75.75 0 01-.813-.813l.289-2.865-2.004-2.094a.75.75 0 010-1.04l2.004-2.094-.289-2.865a.75.75 0 01.813-.813l2.865.289L11.48 3.5z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 12h4.5"/>
+          </svg>
+          {{ _('Blood Analysis') }}
+        </a>
+
+        <!-- Capture — highlighted -->
+        <a href="/capture" class="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/capture') %}bg-brand-500 text-white shadow-md shadow-brand-200{% else %}bg-brand-500 text-white hover:bg-brand-600 shadow-sm{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
+          </svg>
+          {{ _('Capture') }}
+        </a>
+
+        <a href="/suggestions" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/suggestions') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+          </svg>
+          {{ _('Suggestions') }}
+        </a>
+
+        <a href="/dashboard" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/dashboard') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0020.25 18V6A2.25 2.25 0 0018 3.75H6A2.25 2.25 0 003.75 6v12A2.25 2.25 0 006 20.25z"/>
+          </svg>
+          {{ _('Dashboard') }}
+        </a>
+
+        <a href="/history" class="nav-link group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/history') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          {{ _('History') }}
+        </a>
+      </div>
+
+      <!-- Bottom: Notifications + Profile -->
+      <div class="border-t border-slate-100 px-3 py-3 space-y-1">
+        <!-- Notifications -->
+        <a href="/notifications" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/notifications') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          <div class="relative">
+            <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>
+            </svg>
+            {% if unread_notifications_count is defined and unread_notifications_count > 0 %}
+            <span id="notif-badge"
+                  hx-get="/api/notifications/unread-count"
+                  hx-trigger="every 60s"
+                  hx-swap="outerHTML"
+                  class="absolute -top-1.5 -right-1.5 h-4 w-4 bg-rose-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none">
+              {{ unread_notifications_count if unread_notifications_count < 10 else '9+' }}
+            </span>
+            {% else %}
+            <span id="notif-badge"
+                  hx-get="/api/notifications/unread-count"
+                  hx-trigger="every 60s"
+                  hx-swap="outerHTML">
+            </span>
+            {% endif %}
+          </div>
+          {{ _('Notifications') }}
+        </a>
+
+        <!-- User profile / switcher -->
+        <a href="/profile" class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all {% if request.url.path.startswith('/profile') %}bg-brand-50 text-brand-700{% else %}text-slate-600 hover:bg-slate-50 hover:text-slate-900{% endif %}">
+          {% if current_user is defined and current_user %}
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+               style="background-color: {{ current_user.avatar_color }}">
+            {{ current_user.display_name[0] | upper }}
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="truncate font-semibold text-slate-800">{{ current_user.display_name }}</p>
+          </div>
+          {% else %}
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+          </svg>
+          {{ _('Profile') }}
+          {% endif %}
+        </a>
+      </div>
+    </nav>
+    <!-- ===== END DESKTOP SIDEBAR ===== -->
+
+    <!-- ===== MAIN CONTENT AREA ===== -->
+    <div class="flex-1 flex flex-col min-h-full md:ml-64">
+
+      <!-- Flash messages -->
+      {% with messages = get_flashed_messages(with_categories=true) if get_flashed_messages is defined else [] %}
+      {% if messages %}
+      <div id="flash-messages" class="px-4 pt-4 space-y-2">
+        {% for category, message in messages %}
+        {% include 'components/flash_messages.html' %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endwith %}
+
+      <!-- HTMX flash target -->
+      <div id="flash-htmx" class="px-4 pt-4"></div>
+
+      <!-- Page content -->
+      <main class="flex-1 pb-20 md:pb-6">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+    <!-- ===== END MAIN CONTENT ===== -->
+
+  </div><!-- end flex h-full -->
+
+  <!-- ===== MOBILE BOTTOM NAV ===== -->
+  <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-30 safe-area-inset-bottom">
+    <div class="grid grid-cols-6 h-16">
+      <a href="/" class="flex flex-col items-center justify-center gap-0.5 text-xs font-medium {% if request.url.path == '/' %}text-brand-600{% else %}text-slate-500{% endif %}">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"/>
+        </svg>
+        <span class="leading-none">{{ _('Home') }}</span>
+      </a>
+      <a href="/meals" class="flex flex-col items-center justify-center gap-0.5 text-xs font-medium {% if request.url.path.startswith('/meals') %}text-brand-600{% else %}text-slate-500{% endif %}">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.87c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.87v-1.5m-6 4.5v-1.5m12 1.5v-1.5m-12 1.5v7.5m0 0h12m-12 0a.75.75 0 01-.75-.75V18a.75.75 0 01.75-.75h12a.75.75 0 01.75.75v.75a.75.75 0 01-.75.75"/>
+        </svg>
+        <span class="leading-none">{{ _('Meals') }}</span>
+      </a>
+      <!-- Capture — center highlight -->
+      <a href="/capture" class="flex flex-col items-center justify-center">
+        <div class="w-12 h-12 -mt-5 rounded-full bg-brand-500 flex items-center justify-center shadow-lg shadow-brand-300">
+          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
+          </svg>
+        </div>
+      </a>
+      <a href="/workouts" class="flex flex-col items-center justify-center gap-0.5 text-xs font-medium {% if request.url.path.startswith('/workouts') %}text-brand-600{% else %}text-slate-500{% endif %}">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+        </svg>
+        <span class="leading-none">{{ _('Workouts') }}</span>
+      </a>
+      <a href="/notifications" class="relative flex flex-col items-center justify-center gap-0.5 text-xs font-medium {% if request.url.path.startswith('/notifications') %}text-brand-600{% else %}text-slate-500{% endif %}">
+        <div class="relative">
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"/>
+          </svg>
+          {% if unread_notifications_count is defined and unread_notifications_count > 0 %}
+          <span class="absolute -top-1 -right-1.5 h-3.5 w-3.5 bg-rose-500 text-white text-xs rounded-full flex items-center justify-center leading-none font-bold" style="font-size:0.6rem">
+            {{ unread_notifications_count if unread_notifications_count < 10 else '9+' }}
+          </span>
+          {% endif %}
+        </div>
+        <span class="leading-none">{{ _('Alerts') }}</span>
+      </a>
+      <a href="/profile" class="flex flex-col items-center justify-center gap-0.5 text-xs font-medium {% if request.url.path.startswith('/profile') %}text-brand-600{% else %}text-slate-500{% endif %}">
+        {% if current_user is defined and current_user %}
+        <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+             style="background-color: {{ current_user.avatar_color }}">
+          {{ current_user.display_name[0] | upper }}
+        </div>
+        {% else %}
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+        </svg>
+        {% endif %}
+        <span class="leading-none">{{ _('Me') }}</span>
+      </a>
+    </div>
+  </nav>
+  <!-- ===== END MOBILE BOTTOM NAV ===== -->
+
+  <!-- App JS -->
+  <script src="/static/js/app.js" defer></script>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

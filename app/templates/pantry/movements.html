@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ _('Pantry Movement History') }}{% endblock %}
+
+{% block content %}
+<div class="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-5">
+  <div class="flex items-center gap-4">
+    <a href="/pantry" class="text-slate-400 hover:text-slate-600">←</a>
+    <h1 class="text-xl font-bold text-slate-900">{{ _('Pantry Movement History') }}</h1>
+  </div>
+
+  {% if movements %}
+  <div class="space-y-2">
+    {% for m in movements %}
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
+      <span class="text-lg">
+        {% if m.movement_type == 'purchase' %}🛒{% elif m.movement_type == 'consumption' %}🍽️{% elif m.movement_type == 'discard' %}🗑️{% else %}📝{% endif %}
+      </span>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-medium text-slate-800">
+          {{ m.movement_type|title }}: <strong>{{ m.quantity }} {{ m.unit }}</strong> · {{ m.food_item.canonical_name }}
+        </p>
+        {% if m.notes %}<p class="text-xs text-slate-400">{{ m.notes }}</p>{% endif %}
+      </div>
+      <p class="text-xs text-slate-400 flex-shrink-0">{{ m.timestamp.strftime('%b %d %H:%M') }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-center text-slate-400 py-12">{{ _('No pantry movements yet.') }}</p>
+  {% endif %}
+</div>
+{% endblock %}

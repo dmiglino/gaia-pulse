@@ -1,0 +1,112 @@
+{% if error %}
+<div class="rounded-xl bg-rose-50 border border-rose-200 p-4 text-rose-700 text-sm">
+  <p class="font-semibold">{{ _('Could not parse input') }}</p>
+  <p>{{ error }}</p>
+</div>
+{% elif nlp_event and intents %}
+<div class="space-y-4" id="nlp-preview">
+  <div class="flex items-center gap-2 text-sm text-slate-500">
+    <span class="inline-flex items-center gap-1 rounded-full bg-indigo-100 text-indigo-700 px-2.5 py-0.5 text-xs font-medium">
+      {{ nlp_event.parser_layer|upper if nlp_event.parser_layer else "PARSED" }}
+    </span>
+    {% if nlp_event.parse_confidence %}
+    <span>{{ _('Confidence:') }} <strong>{{ (nlp_event.parse_confidence * 100)|int }}%</strong></span>
+    {% endif %}
+    {% if nlp_event.input_type == "audio" and nlp_event.transcription %}
+    <span class="text-slate-400">· {{ _('Transcribed:') }} "{{ nlp_event.transcription[:80] }}{% if nlp_event.transcription|length > 80 %}…{% endif %}"</span>
+    {% endif %}
+  </div>
+
+  <div class="text-sm font-medium text-slate-700">{{ _("Here's what I understood:") }}</div>
+
+  {% for intent in intents %}
+  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" x-data="{ editing: false }">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex-1">
+        {% set type = intent.intent_type %}
+        <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2
+          {% if type == 'log_meal' %}bg-emerald-100 text-emerald-700
+          {% elif type == 'log_workout' %}bg-blue-100 text-blue-700
+          {% elif type == 'log_body_metric' %}bg-violet-100 text-violet-700
+          {% elif type == 'add_stock' %}bg-amber-100 text-amber-700
+          {% elif type == 'consume_stock' %}bg-orange-100 text-orange-700
+          {% elif type == 'update_preference' %}bg-pink-100 text-pink-700
+          {% else %}bg-slate-100 text-slate-700{% endif %}">
+          {{ type|replace('_', ' ')|title }}
+        </span>
+
+        {# Render a human-readable summary per intent type #}
+        {% if type == 'add_stock' %}
+          <p class="text-slate-800 text-sm">
+            {{ _('Adding to pantry:') }}
+            {% for item in intent.get('items', []) %}
+            <strong>{{ item.get('quantity', '?') }} {{ item.get('unit', 'unit') }} {{ item.get('food_name', item.get('name', '?')) }}</strong>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </p>
+
+        {% elif type == 'log_meal' %}
+          <p class="text-slate-800 text-sm">
+            {{ _('Logging') }} <strong>{{ intent.get('meal_type', 'meal') }}</strong>:
+            {% for user_key, items in intent.get('items_per_user', {}).items() %}
+            <span class="font-medium capitalize">{{ user_key }}</span>
+            {% for item in items %}
+            <strong>{{ item.get('food_name', '?') }}</strong>{% if item.get('qty') %} ({{ item.qty }}{% if item.get('unit') %} {{ item.unit }}{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
+            {% endfor %}{% if not loop.last %}; {% endif %}
+            {% endfor %}
+          </p>
+
+        {% elif type == 'log_workout' %}
+          <p class="text-slate-800 text-sm">
+            {{ _('Logging workout') }}: <strong>{{ intent.get('workout_type', 'workout') }}</strong>
+            {% if intent.get('duration_minutes') %}({{ intent.duration_minutes }} {{ _('min') }}){% endif %}
+            {% if intent.get('location') %}@ <strong>{{ intent.location }}</strong>{% endif %}
+          </p>
+          {% if intent.get('exercises') %}
+          <p class="text-xs text-slate-500 mt-1">{{ intent.exercises|map(attribute='name')|join(', ') if intent.exercises and intent.exercises[0] is mapping else intent.exercises|join(', ') }}</p>
+          {% endif %}
+
+        {% elif type == 'log_body_metric' %}
+          <p class="text-slate-800 text-sm">
+            {{ _('Logging body metric') }} — <span class="font-medium capitalize">{{ intent.get('user_key', 'you') }}</span>:
+            {% if intent.get('weight_kg') %}<strong>{{ intent.weight_kg }} {{ _('kg') }}</strong>{% endif %}
+            {% if intent.get('body_fat_pct') %} · <strong>{{ intent.body_fat_pct }}% {{ _('Body Fat') }}</strong>{% endif %}
+            {% if intent.get('waist_cm') %} · <strong>{{ intent.waist_cm }} {{ _('cm') }} {{ _('Waist') }}</strong>{% endif %}
+          </p>
+
+        {% elif type == 'update_preference' %}
+          <p class="text-slate-800 text-sm">
+            {{ _('Setting preference') }} — <span class="font-medium capitalize">{{ intent.get('user_key', 'you') }}</span>:
+            <strong>{{ intent.get('preference_signal', 'signal') }}</strong> — {{ intent.get('item_name', '?') }}
+          </p>
+
+        {% else %}
+          <p class="text-slate-500 text-sm italic">{{ intent | tojson }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="flex gap-3 pt-2">
+    <button
+      hx-post="/capture/confirm/{{ nlp_event.id }}"
+      hx-target="#nlp-preview"
+      hx-swap="outerHTML"
+      class="flex-1 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+      {{ _('✓ Confirm & Save') }}
+    </button>
+    <button
+      hx-post="/capture/discard/{{ nlp_event.id }}"
+      class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+      {{ _('Discard') }}
+    </button>
+  </div>
+
+  <p class="text-xs text-slate-400">{{ _('You said:') }} "{{ nlp_event.original_input }}"</p>
+</div>
+
+{% else %}
+<div class="text-center py-8 text-slate-400 text-sm">
+  <p>{{ _('No intents detected. Try rephrasing your input.') }}</p>
+</div>
+{% endif %}

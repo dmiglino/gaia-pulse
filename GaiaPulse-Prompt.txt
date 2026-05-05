@@ -1,0 +1,1229 @@
+#################################################
+################ FIRST ITERATION ################
+#################################################
+You are Claude Code operating as a world-class Principal Engineer, Staff Product Engineer, Solution Architect, Tech Lead, and pragmatic UX designer.
+You are not building a toy demo, not a shallow prototype, and not a “looks-good-only” mock. You are building a real, production-minded application intended to become a genuinely useful long-term product.
+This project is quality-first, not speed-first.
+
+==================================================
+OPERATING MODE / QUALITY BAR
+==================================================
+
+Work in excellence mode.
+
+Critical instructions:
+- Do NOT optimize for speed.
+- Optimize for correctness, maintainability, usability, architecture quality, product coherence, and production readiness.
+- You may take as much time and as many internal reasoning / implementation / refactor / cleanup / testing passes as needed.
+- Do not stop at the first version that “works”.
+- Continuously improve architecture, naming, flow design, validation, UX, test coverage, consistency, and clarity.
+- If you see obvious rough edges, weak abstractions, awkward UX, poor naming, or maintainability risks, fix them before considering the work complete.
+- Prefer elegant simplicity over clever complexity.
+- Prefer a durable, understandable product over flashy but brittle features.
+- Be honest and explicit about tradeoffs and non-implemented advanced items.
+
+Do not ask me clarifying questions unless strictly unavoidable.
+Make sensible, well-documented engineering decisions and proceed.
+
+Before considering the project complete:
+- run tests,
+- run linting/formatting/type checks,
+- review architecture and structure,
+- improve weak areas,
+- make at least one deliberate refinement / cleanup pass,
+- ensure the app is actually usable end-to-end.
+
+==================================================
+PRODUCT VISION
+==================================================
+
+Build a shared household app for two people: Diego and Rocío.
+
+The app must help us manage and understand:
+1. daily food intake,
+2. workouts / physical activity,
+3. body metrics over time,
+4. household pantry / food stock,
+5. useful recommendations about meals, nutrition balance, physical activity, stock, and habits,
+6. natural-language and voice-based data entry,
+7. historical analysis, visual dashboards, and practical insights.
+
+The product should feel like a combination of:
+- food diary,
+- workout tracker,
+- body metrics tracker,
+- pantry / inventory manager,
+- recommendation assistant,
+- lightweight agentic wellness companion.
+
+This is NOT a finance app.
+Do NOT include expenses, budgeting, investments, or financial tracking in this product.
+
+Keep the scope focused on:
+- nutrition,
+- meals,
+- exercise,
+- body metrics,
+- pantry stock,
+- recommendations,
+- household/shared usage.
+
+==================================================
+IMPORTANT CONCEPTUAL MODEL
+==================================================
+
+This is a SHARED HOUSEHOLD APP, but it must support INDIVIDUAL TRACKING.
+
+That distinction is critical.
+
+Shared concepts:
+- household
+- pantry stock
+- purchases
+- recipes
+- household-level suggestions where relevant
+- household notifications where relevant
+
+Individual concepts:
+- body metrics
+- food consumption
+- portions
+- workouts
+- preferences
+- constraints
+- goals
+- recommendation feedback
+- statistics
+- activity history
+- body trends
+
+Important modeling requirement:
+- A meal can be shared in time/context, but each person may eat different foods, different amounts, and different portions.
+- A workout may be done by both users or by only one.
+- The system must NEVER assume that if one person ate or exercised, the other one did the same.
+- Every relevant event must support participant assignment and per-user details.
+
+Examples:
+- “Tonight we had dinner together: Rocío ate milanesa and 1 banana, Diego ate ravioli and ice cream.”
+  -> shared time/event, different user consumption.
+- “Diego rode a bike today, Rocío did not.”
+  -> individual activity only.
+- “We went to the gym together.”
+  -> shared session with potentially different exercise details per user.
+
+The system must compute:
+- user-level statistics and suggestions,
+- and household-level insights only when appropriate.
+
+==================================================
+WHAT THE APP MUST DO
+==================================================
+
+The application must allow us to:
+
+1. Register food intake and meals
+Examples:
+- “Today we had milanesa with mashed potatoes for dinner.”
+- “Rocío ate milanesa and a banana, Diego ate ravioli and ice cream.”
+- “We are about to have ravioli with tomato sauce, around 400 grams each.”
+
+2. Register workouts / physical activity
+Examples:
+- “We went to the gym for 1 hour and trained chest, shoulders and triceps.”
+- “Diego rode a bike for 40 minutes.”
+- “Rocío did yoga today.”
+
+3. Register body metrics
+Examples:
+- weight,
+- optional waist,
+- optional body fat,
+- optional muscle mass,
+- optional sleep-related manual metrics.
+
+4. Register purchases and pantry changes
+Examples:
+- “We bought 6 bananas and 4 bell peppers.”
+- “We ran out of eggs.”
+- “We used 4 tomatoes for lunch.”
+
+5. Keep a historical record of everything relevant
+So that trends, dashboards, and recommendations can use real past data.
+
+6. Offer recommendations and suggestions
+Examples:
+- meals based on pantry stock and our preferences,
+- nutritionally balanced meal ideas,
+- physical activities based on our context and preferences,
+- variety suggestions,
+- habit nudges,
+- low-stock / replenishment suggestions.
+
+7. Learn from us over time
+The system must gradually learn:
+- foods we often buy,
+- foods we often eat,
+- dishes/preparations we repeat,
+- foods we reject,
+- exercises we like,
+- exercises we dislike,
+- activities that are impossible/unavailable in our context,
+- activities that are viable in Gaia / home / gym / outdoors,
+- suggestions we accept,
+- suggestions we reject or ignore.
+
+8. Support data entry in two modes
+- traditional UI (forms, selectors, lists, quick actions)
+- natural language / voice input with interpretation preview and confirmation
+
+9. Work across multiple devices
+Desktop and mobile must share one source of truth.
+
+==================================================
+TECHNICAL DIRECTION
+==================================================
+
+Use the following stack unless there is a very strong engineering reason to slightly adjust it:
+
+Backend:
+- Python 3.12+
+- FastAPI
+
+Persistence:
+- PostgreSQL as the main database
+- SQLite allowed only as a local fallback if useful for development
+
+ORM / DB layer:
+- SQLAlchemy 2.x or SQLModel
+- Alembic migrations
+
+Frontend:
+Preferred approach:
+- FastAPI + Jinja2 templates + HTMX + Alpine.js + Tailwind CSS
+The result must be responsive, elegant, intuitive, mobile-friendly, and desktop-friendly.
+
+Charts:
+- Chart.js or ECharts
+
+Background jobs:
+- APScheduler or equivalent lightweight mechanism
+
+Auth:
+- simple but correct authentication suitable for the first version with two users
+
+Validation/config:
+- Pydantic / pydantic-settings
+
+Testing:
+- pytest
+
+Code quality:
+- ruff
+- black
+- mypy
+
+Packaging / local execution:
+- Docker
+- docker-compose
+
+Deployment readiness:
+- production-minded structure and configuration
+- environment-based settings
+- no hardcoded secrets
+- proper startup path
+- clear local run instructions
+
+PWA:
+Prefer a responsive PWA-style web app over separate native mobile apps for v1.
+
+==================================================
+ARCHITECTURAL PRINCIPLES
+==================================================
+
+The system must be modular, clean, and built for evolution.
+
+Separate concerns clearly:
+- domain models
+- repositories / data access
+- service layer / use cases
+- API routes
+- UI routes
+- NLP / input interpretation
+- recommendation engine
+- integrations
+- jobs / reminders
+- reporting/dashboard aggregation
+- notifications
+
+Design for future growth, but do not overengineer.
+This is a real product, but MVP still matters.
+
+Use explicit domain models and avoid giant god-services.
+
+Prefer historical events/auditability over silent mutation.
+Important actions should be traceable.
+
+Do not tightly couple core business logic to any external AI/STT provider.
+Use adapter boundaries for:
+- LLM parsing
+- speech-to-text
+- future device integrations
+
+==================================================
+AGENTIC BEHAVIOR MODEL
+==================================================
+
+This app may behave like a lightweight agentic assistant, but it must remain HUMAN-GOVERNED.
+
+That means:
+- The app may analyze data autonomously.
+- The app may generate recommendations autonomously.
+- The app may prioritize recommendations and reminders.
+- The app may detect patterns and anomalies.
+- The app may learn from explicit and implicit signals.
+- The app may proactively show insights and recommendations.
+
+However:
+- The app must NOT make destructive or meaningful state changes without user confirmation.
+- The app must NOT auto-save interpreted natural-language actions without explicit confirmation.
+- The app must NOT assume personal behaviors across users.
+
+Recommended behavior:
+- semi-agentic
+- proactive in analysis and suggestion
+- conservative in execution
+- explicit in reasoning / explanation
+- safe by design
+
+==================================================
+SHARED DATA / SYNCHRONIZATION ARCHITECTURE
+==================================================
+
+The application must use a centralized shared-data architecture.
+
+Core requirement:
+- There must be a single backend and a single central database as the source of truth.
+- All devices (Diego’s phone, Diego’s computer, Rocío’s phone, Rocío’s computer, etc.) must read from and write to the same backend/API and shared database.
+- Do NOT design the system as multiple local databases syncing peer-to-peer between devices.
+- The architecture must be server-centric and production-minded.
+
+Expected behavior:
+- If one user updates pantry stock, logs a meal, logs a workout, confirms a parsed voice/text action, or updates preferences from one device, all other devices should see that change when they refresh or reload the relevant screens.
+- The system must keep household-shared data consistent across devices.
+- User-specific data must also remain consistent and correctly scoped to the corresponding user.
+
+Synchronization approach for MVP:
+- Use a central PostgreSQL database and backend API as the single source of truth.
+- Standard request/response synchronization is sufficient for core correctness.
+- The frontend should fetch fresh data when loading screens, returning to screens, or after mutations.
+- Lightweight periodic refresh / polling is acceptable in selected views where it improves UX.
+
+Nice-to-have / architecture readiness:
+- If implemented cleanly, support near-real-time updates for selected screens through Server-Sent Events (SSE) or WebSockets.
+- This is optional for MVP, but the architecture should not block it in the future.
+
+Important UX expectations:
+- After a successful mutation, the initiating device must immediately reflect the saved state.
+- Other devices should see the updated state with minimal friction.
+- Shared screens such as pantry stock, household suggestions, notifications, and history should be designed with multi-device consistency in mind.
+
+==================================================
+NOTIFICATIONS / REMINDERS / PROACTIVE INSIGHTS
+==================================================
+
+The app should provide proactive but controlled notifications and reminders.
+
+For MVP, implement:
+- in-app notifications
+- visible low-stock alerts
+- suggestion reminders
+- reminder candidates for missing logs (e.g. body metrics, activity, etc.)
+- recommendation cards surfaced in the home/dashboard experience
+
+The app should be able to generate notifications for cases such as:
+- low pantry stock
+- useful meal suggestions based on current stock
+- new activity suggestions
+- repeated inactivity
+- notable trends in body metrics
+- reminders to log missing relevant information
+- preference-aware recommendations that become available based on current context
+
+Notification principles:
+- notifications must be useful, not spammy
+- they must be explainable
+- they must respect user preferences and learned constraints
+- they should feel like a helpful assistant, not an intrusive system
+
+Persistence model:
+- notifications/reminders should be persisted in the database
+- users should be able to view them in an in-app notifications center or feed
+- notifications should have status such as unread/read/dismissed/snoozed where appropriate
+
+Future-ready architecture:
+- prepare the system so that push notifications can be added later without major redesign
+- for v1, in-app notifications are sufficient
+- if push support is not implemented, document the extension path in the README
+
+==================================================
+BACKGROUND PROCESSING / ASYNC TASK READINESS
+==================================================
+
+The app may need asynchronous/background processing for selected tasks such as:
+- speech transcription
+- suggestion generation
+- recurring reminders
+- notification generation
+- dashboard aggregation jobs
+- periodic checks for low-stock or inactivity rules
+
+For MVP:
+- keep background processing simple and maintainable
+- use lightweight background jobs / scheduled tasks where appropriate
+- do not overcomplicate the architecture
+
+The design should remain modular so that background processing can grow later if needed.
+
+==================================================
+DOMAIN / DATA MODEL REQUIREMENTS
+==================================================
+
+Design a professional relational data model. Include, at minimum:
+
+1. Household
+- id
+- name
+- timezone
+- settings_json
+
+2. User
+- id
+- household_id
+- name
+- optional_birth_date
+- optional_sex_or_gender
+- height_cm
+- optional_target_weight_kg
+- baseline_activity_level
+- goals
+- dietary_preferences
+- dietary_restrictions
+- preferred_activities
+- impossible_activities
+- disliked_activities
+- preferred_cuisines
+- disliked_foods
+- recommendation_context_preferences
+
+3. BodyMetricLog
+- id
+- user_id
+- timestamp
+- weight_kg
+- optional_body_fat_pct
+- optional_muscle_mass_kg
+- optional_waist_cm
+- optional_sleep_hours
+- notes
+
+4. FoodItem
+- id
+- canonical_name
+- category
+- aliases
+- base_unit
+- optional_macro_data
+- optional_micro_data
+- perishable
+- metadata_json
+
+5. PantryStock
+- id
+- household_id
+- food_item_id
+- current_quantity
+- unit
+- optional_low_stock_threshold
+- optional_storage_location
+- updated_at
+
+6. PantryMovement
+- id
+- household_id
+- user_id
+- movement_type (purchase, consumption, adjustment, discard)
+- food_item_id
+- quantity
+- unit
+- timestamp
+- related_entity_type
+- related_entity_id
+- notes
+
+7. MealEvent
+- id
+- household_id
+- timestamp
+- meal_type (breakfast, lunch, snack, dinner, etc.)
+- context (home, outside, travel, etc.)
+- notes
+
+8. MealParticipant
+- id
+- meal_event_id
+- user_id
+- optional_portion_label
+- optional_estimated_total_grams
+- optional_hunger_before
+- optional_satiety_after
+- notes
+
+9. MealItemConsumed
+- id
+- meal_event_id
+- meal_participant_id
+- optional_food_item_id
+- normalized_free_text_name
+- quantity
+- unit
+- estimated_grams
+- preparation
+- affects_stock
+- notes
+
+10. Recipe
+- id
+- optional_household_id_or_global_flag
+- name
+- description
+- ingredients_json or normalized related structure
+- portions
+- steps
+- tags
+- estimated_nutrition_json
+- pantry_compatible
+
+11. ExerciseType
+- id
+- name
+- category
+- muscle_group
+- indoor_outdoor
+- equipment_required
+- intensity
+- tags
+
+12. WorkoutSession
+- id
+- household_id
+- timestamp_start
+- timestamp_end
+- duration_minutes
+- workout_type
+- calories_estimated
+- source (manual, text, voice, device_import)
+- notes
+
+13. WorkoutParticipant
+- id
+- workout_session_id
+- user_id
+- notes
+
+14. WorkoutExercise
+- id
+- workout_session_id
+- workout_participant_id
+- exercise_type_id
+- sets
+- reps
+- load_kg
+- duration_minutes
+- distance_km
+- perceived_effort
+- muscle_group
+- notes
+
+15. Suggestion
+- id
+- scope_type (user, household)
+- scope_user_id nullable
+- category (meal, activity, habit, pantry, shopping, variety, recovery, reminder)
+- text
+- rationale
+- evidence_summary
+- priority
+- confidence
+- source_type (rule, trend, preference, stock, hybrid)
+- created_at
+- status (pending, accepted, rejected, snoozed, dismissed)
+- feedback_notes
+
+16. RecommendationPreference
+- id
+- user_id
+- item_type
+- item_name
+- preference_signal (likes, dislikes, impossible, possible_sometimes, avoid, preferred)
+- strength
+- notes
+- updated_at
+
+17. NLPIngestionEvent
+- id
+- user_id
+- input_type (text, audio)
+- original_input
+- transcription
+- parsed_intent_json
+- parse_confidence
+- status (pending_confirmation, confirmed, edited_and_confirmed, discarded)
+- created_at
+
+18. Notification
+- id
+- household_id nullable
+- user_id nullable
+- category
+- title
+- body
+- related_entity_type nullable
+- related_entity_id nullable
+- priority
+- created_at
+- read_at nullable
+- dismissed_at nullable
+- snoozed_until nullable
+- source_type
+
+19. PreferenceSignal / BehaviorSignal
+This is important.
+Create a persistent model for explicit and implicit learning signals, for example:
+- accepted suggestion
+- rejected suggestion
+- ignored suggestion
+- repeated purchase
+- repeated meal choice
+- repeated recipe choice
+- repeated activity
+- repeated activity rejection
+- frequent ingredient pairings
+- contextual preference signals
+- feasibility signals
+Design this properly so the recommendation engine can consume it cleanly.
+
+==================================================
+MANDATORY USER FLOWS
+==================================================
+
+Implement the following end-to-end.
+
+A. Register pantry purchase
+Example:
+“We bought 6 bananas and 4 bell peppers.”
+Expected:
+- parse,
+- preview interpretation,
+- confirm,
+- create pantry movements,
+- update pantry stock,
+- persist history.
+
+B. Register meal
+Examples:
+- “Tonight we had milanesa with mashed potatoes.”
+- “Rocío ate milanesa and a banana, Diego ate ravioli and ice cream.”
+- “We are about to have ravioli with tomato sauce, around 400 grams each.”
+Expected:
+- create meal event,
+- assign participants,
+- assign per-user details,
+- optionally affect stock when appropriate,
+- confirm before saving.
+
+C. Register workout
+Examples:
+- “We went to the gym for 1 hour and trained chest, shoulders and triceps.”
+- “Diego rode a bike for 40 minutes.”
+Expected:
+- create workout session,
+- participant assignment,
+- per-user details,
+- preview/edit/confirm,
+- save.
+
+D. Register body metric
+Example:
+“Today I weigh 82.3 kg.”
+Expected:
+- save metric to correct user,
+- update stats.
+
+E. View pantry stock
+- clear list,
+- filters,
+- low-stock alerts,
+- search,
+- visible units.
+
+F. View historical logs
+- meals
+- workouts
+- body metrics
+- pantry movements
+- suggestions and feedback
+- notifications
+- filter by user/date/type
+
+G. View dashboards/statistics
+- useful
+- visual
+- per user
+- household where appropriate
+
+H. Receive suggestions
+- meals
+- activities
+- variety
+- pantry replenishment
+- practical wellness nudges
+
+I. Learn from feedback
+Examples:
+- “Do not suggest swimming.”
+- “We like biking.”
+- “Rocío dislikes this dish.”
+- “This activity is not possible for us in Gaia.”
+The app must remember and use this.
+
+==================================================
+NATURAL LANGUAGE + VOICE INGESTION
+==================================================
+
+This is a core differentiator and mandatory.
+
+Implement an intelligent capture flow:
+
+1. User enters text or records audio.
+2. Audio is transcribed via an adapter.
+3. Input is parsed into one or more structured intents.
+4. System shows a clear “Here is what I understood” preview.
+5. User may confirm, edit, or discard.
+6. Only then persist data.
+
+Requirements:
+- Never auto-save parsed natural-language actions without confirmation.
+- Support multiple actions in one utterance.
+- Support shared and individual events.
+- Must work even if LLM parsing is unavailable, using deterministic parsing fallback.
+
+Parsing architecture:
+Layer 1:
+- deterministic rules
+- regex
+- heuristics
+- entity extraction patterns
+- common phrase handling
+
+Layer 2:
+- optional LLM-based parser adapter for harder cases
+
+The parser must produce structured intermediate intents, e.g.:
+- add_stock
+- log_meal
+- log_workout
+- log_body_metric
+- update_preference
+- mixed_event
+
+Support mixed inputs like:
+“We bought 6 bananas and 4 bell peppers, and now Rocío is having milanesa while Diego is having ravioli.”
+
+The interpretation preview UI must be editable before confirmation.
+
+Voice requirements for v1:
+- browser/mobile recording
+- upload to backend
+- transcribe through adapter
+- preview/edit/confirm flow
+- easy to swap STT provider later
+
+==================================================
+RECOMMENDATION / LEARNING ENGINE
+==================================================
+
+This is a major feature.
+
+IMPORTANT:
+Do NOT start with heavy machine learning unless it clearly adds value.
+For MVP, implement a strong, explainable hybrid recommendation engine.
+
+The recommendation system must learn from:
+- repeated purchases
+- repeated meals
+- repeated recipes
+- accepted/rejected suggestions
+- ignored suggestions
+- activity history
+- explicit likes/dislikes
+- impossible or context-incompatible activities
+- pantry stock
+- body metric trends
+- workout frequency trends
+- food variety patterns
+- recent behavior context
+
+Use a HYBRID recommendation strategy:
+
+1. Hard constraint filtering
+- never suggest impossible activities
+- respect dislikes/restrictions
+- respect dietary constraints
+- respect context infeasibility
+
+2. Rule-based wellness logic
+Examples:
+- low activity frequency
+- low variety
+- repeated sedentary periods
+- pantry imbalances
+- repeated lack of protein-rich options
+- opportunities to use existing stock
+Use prudent language and do not overclaim medically.
+
+3. Preference scoring
+Score affinities for:
+- ingredients
+- dishes
+- meal styles
+- cuisines
+- activity types
+- workout contexts
+- time/context preferences
+Use both explicit and implicit signals.
+
+4. Controlled exploration
+Do not merely repeat the same suggestions forever.
+Implement a balanced exploration strategy:
+- suggest adjacent foods/meals that fit known tastes
+- suggest related activities/exercises that fit the user’s context
+- propose feasible novelty, not random novelty
+
+5. Explainability
+Every suggestion must include:
+- the suggestion text
+- rationale
+- what signals/data were considered
+- whether it comes mostly from rules, trend detection, stock context, explicit preference, or implicit preference
+- confidence/priority
+
+Examples:
+- “You have tomatoes, eggs and bell peppers in stock; a simple balanced meal could be X.”
+- “Diego’s weight trend has increased over 3 weeks; consider reviewing dinner portions and adding moderate cardio if feasible.”
+- “Rocío consistently rejected swimming as non-viable; do not suggest it again.”
+- “You often accept biking-related suggestions, so similar low-intensity outdoor options may fit well.”
+
+Future readiness:
+Design the architecture so that later we can add:
+- ranking models
+- contextual bandits
+- embeddings / similarity
+- sequence-aware recommendations
+- trend/anomaly detection
+But DO NOT force that complexity into MVP.
+
+==================================================
+DASHBOARDS / STATISTICS
+==================================================
+
+The app must include useful and comprehensible dashboards.
+
+Minimum required:
+1. Weight trend per user
+2. Workout frequency per week
+3. Distribution of muscle groups trained
+4. Active vs inactive days
+5. Meals by type over time
+6. Simple food variety indicators
+7. Estimated intake by food category
+8. Pantry low-stock alerts
+9. Pending suggestions
+10. Notification summary
+11. Useful household summaries where relevant
+
+Statistics must be:
+- visual
+- clear
+- practical
+- not cluttered
+- easy to understand
+
+==================================================
+UI / UX REQUIREMENTS
+==================================================
+
+The app must be:
+- attractive
+- intuitive
+- responsive
+- mobile-friendly
+- pleasant to use every day
+- efficient for repetitive logging
+- coherent in design
+
+Design guidance:
+- mobile-first
+- also excellent on desktop
+- card-based layout
+- clear primary actions
+- minimal friction
+- short flows
+- elegant and soft visual language
+- good empty states
+- good validation feedback
+- good error states
+
+Required screens:
+- Login
+- Home / Today summary
+- Quick add via form
+- Quick add via text
+- Quick add via voice
+- Interpretation preview / confirmation
+- Meals
+- Workouts
+- Pantry / Stock
+- Body metrics
+- Statistics / dashboards
+- Suggestions
+- History / search
+- Profiles / Preferences / Constraints
+- Notifications / reminders
+
+Home screen should surface:
+- today summary
+- quick capture actions
+- pending confirmations
+- pending suggestions
+- low-stock alerts
+- unread notifications
+- useful recent insights
+
+==================================================
+MULTI-DEVICE / SHARED USAGE
+==================================================
+
+This is mandatory.
+
+The product must support:
+- same shared household data across devices
+- desktop + mobile browser usage
+- multiple users interacting with one central data source
+
+Implement:
+- centralized DB
+- proper refresh/consistency
+- sensible sync behavior
+- optional lightweight polling where useful
+- architecture ready for SSE/WebSockets later without redesign
+
+==================================================
+DEVICE / WATCH INTEGRATION READINESS
+==================================================
+
+Do not block MVP on smartwatch integrations.
+
+Design a clean adapter boundary for future device integration.
+For MVP it is enough to support:
+- manual entry
+- natural-language entry
+- voice entry reading values from the watch
+
+Keep future device adapters under something like:
+- app/integrations/devices/
+
+==================================================
+NUTRITION GUIDANCE PRINCIPLES
+==================================================
+
+Do not pretend to replace a doctor or licensed nutritionist.
+
+The app may provide practical, prudent, wellness-oriented recommendations.
+
+Requirements:
+- careful wording
+- distinguish fact vs estimate
+- avoid fake precision
+- avoid strong clinical claims
+- explicitly show uncertainty when data is insufficient
+- use useful heuristics, not pseudo-medical certainty
+
+==================================================
+SEARCH / FILTERING
+==================================================
+
+Implement solid search/filter capabilities for:
+- meals
+- food items
+- pantry stock
+- recipes
+- workouts
+- metrics
+- suggestions
+- notifications
+- history
+
+==================================================
+SECURITY / PRIVACY / PRODUCTION-MINDEDNESS
+==================================================
+
+Requirements:
+- reasonable authentication
+- server-side validation
+- secrets from env, never hardcoded
+- safe input handling
+- CSRF/session safety or equivalent correct protection for chosen stack
+- proper data separation per user where needed
+- clear authorization boundaries
+- useful logging
+- graceful error handling
+- auditability of important actions
+
+This does not need enterprise SSO complexity, but it must be built correctly and safely for a production-minded personal app.
+
+==================================================
+PROJECT STRUCTURE
+==================================================
+
+Propose and use a clean structure, for example:
+
+/app
+  /api
+  /web
+  /core
+  /db
+  /models
+  /schemas
+  /repositories
+  /services
+  /nlp
+  /recommendations
+  /integrations
+  /jobs
+  /templates
+  /static
+  /tests
+
+You may improve the structure if it increases maintainability and clarity.
+
+==================================================
+NON-FUNCTIONAL REQUIREMENTS
+==================================================
+
+- clean code
+- strong naming
+- modularity
+- type hints
+- maintainable service boundaries
+- robust validation
+- good tests
+- readable README
+- env-based config
+- seed/demo data
+- Dockerized local execution
+- production-minded structure
+
+==================================================
+MANDATORY DELIVERABLES
+==================================================
+
+Implement the project in the current workspace and include:
+
+1. Full source code
+2. Dockerfile(s)
+3. docker-compose.yml
+4. Alembic migrations
+5. README with:
+   - architecture
+   - technical decisions
+   - setup
+   - env configuration
+   - tests
+   - recommendation engine explanation
+   - NLP/voice explanation
+   - synchronization architecture explanation
+   - notifications/reminders explanation
+   - known tradeoffs
+   - roadmap
+6. Seed/demo data:
+   - Diego and Rocío
+   - food items
+   - pantry examples
+   - recipes
+   - exercise types
+   - body metric examples
+   - suggestion examples
+   - notification examples
+   - sample history
+7. Tests for critical flows:
+   - natural language parsing
+   - pantry stock logic
+   - meal logging
+   - workout logging
+   - body metric logging
+   - recommendation generation
+   - notification generation rules
+8. Functional UI screens
+9. API docs
+10. Clearly working local run path
+
+==================================================
+IMPLEMENTATION PROCESS YOU MUST FOLLOW
+==================================================
+
+Do not start coding blindly.
+
+First produce:
+1. Executive summary
+2. Architecture proposal
+3. Concise domain/data model
+4. MVP vs Phase 2 split
+5. Recommendation engine design for MVP
+6. Natural-language/voice ingestion design
+7. Synchronization / shared-data design
+8. Notifications/reminders design
+9. Step-by-step implementation plan
+
+Then implement.
+
+During implementation:
+- think before changing architecture
+- keep naming strong and consistent
+- refactor when needed
+- add tests as you go
+- improve UX if a flow becomes awkward
+- avoid dead code and needless abstractions
+- keep implementation cohesive
+
+Before finalizing:
+- run tests
+- fix test failures
+- run lint/type checks
+- fix rough edges
+- perform at least one cleanup/refactor pass
+- ensure Docker setup is coherent
+- ensure seed/demo data actually works
+- ensure the app is meaningfully usable end-to-end
+
+==================================================
+MVP SCOPE (MUST BE IMPLEMENTED)
+==================================================
+
+MVP must include:
+- login
+- Diego and Rocío profiles
+- household concept
+- pantry purchases and stock updates
+- meal logging
+- workout logging
+- body metric logging
+- shared household stock
+- history screens
+- basic dashboards
+- recommendation engine v1
+- explicit and implicit preference learning
+- natural language input with preview/confirmation
+- voice input with transcription + preview/confirmation
+- multi-device usage through centralized DB
+- user-level and household-level logic where appropriate
+- centralized shared database architecture across all devices
+- in-app notifications and reminders
+- sync-safe shared household views
+
+==================================================
+PHASE 2 (PREPARE FOR IT, NOT NECESSARILY FULLY IMPLEMENT)
+==================================================
+
+Prepare the architecture for:
+- push notifications
+- direct smartwatch integration
+- OCR for receipts / labels
+- advanced recipe planning
+- expiry/batch tracking
+- import/export
+- more advanced ranking/ML recommenders
+- anomaly detection
+- calendar/reminder intelligence
+- near-real-time shared updates with SSE/WebSockets where useful
+
+==================================================
+ACCEPTANCE CRITERIA
+==================================================
+
+The result is successful if:
+- I can run it locally with Docker
+- Diego and Rocío can use it
+- I can register purchases, meals, workouts, and body metrics
+- I can do so via forms and via natural language
+- the system shows what it understood before saving
+- pantry stock updates correctly
+- dashboards are useful and clear
+- suggestions are explainable and helpful
+- the app learns practical food and activity preferences over time
+- shared vs individual events are modeled correctly
+- if a shared-household update is made from one device, other devices can reliably see the updated shared state through the central backend/database flow
+- the codebase feels coherent, maintainable, and production-minded
+
+==================================================
+IMPORTANT BEHAVIORAL CONSTRAINTS FOR YOU
+==================================================
+
+- Do not deliver a shallow scaffold and call it done
+- Do not hide incomplete essential features behind fake placeholders
+- Do not overengineer machine learning for MVP
+- Do not add unrelated finance/investment modules
+- Do not create unnecessary complexity
+- Do not sacrifice usability for architecture theater
+- Be transparent about tradeoffs
+- Prefer durable quality over flashy fragility
+
+Start now with:
+1. executive summary,
+2. architecture proposal,
+3. concise domain/data model,
+4. MVP vs Phase 2,
+5. recommendation engine design,
+6. natural-language/voice ingestion design,
+7. synchronization / shared-data design,
+8. notifications/reminders design,
+9. implementation plan,
+and then implement the project in the current workspace.
+
+#################################################
+############### SECOND ITERATION ################
+#################################################
+Now do a second engineering pass focused only on:
+- architectural cleanup
+- UX polish
+- validation hardening
+- stronger tests
+- recommendation quality
+- code simplification
+- naming consistency
+- edge cases
+- removal of redundant code
+- integrity and functional check
+Do not add flashy new features unless they materially improve the core product.
+
+#################################################
+################ THIRD ITERATION ################
+#################################################
+Now do a production-readiness pass:
+- review env/config handling
+- review auth/session safety
+- review logging/error handling
+- review Docker/dev startup
+- review migrations/seed data
+- review data integrity constraints
+- review idempotency and confirm-before-save flows
+- improve README and operational clarity

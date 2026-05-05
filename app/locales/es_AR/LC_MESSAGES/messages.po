@@ -1,0 +1,1003 @@
+# Traducciones al Español Argentino para GaiaPulse.
+# Copyright (C) 2024 Diego & Rocío
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: GaiaPulse 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-04-15 00:00+0000\n"
+"PO-Revision-Date: 2026-04-15 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: Español Argentino\n"
+"Language: es_AR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# ─── Navegación ──────────────────────────────────────────────────────────────
+
+msgid "Home"
+msgstr "Inicio"
+
+msgid "Pantry"
+msgstr "Despensa"
+
+msgid "Meals"
+msgstr "Comidas"
+
+msgid "Workouts"
+msgstr "Entrenamientos"
+
+msgid "Body Metrics"
+msgstr "Métricas Corporales"
+
+msgid "Blood Analysis"
+msgstr "Análisis de Sangre"
+
+msgid "Capture"
+msgstr "Capturar"
+
+msgid "Suggestions"
+msgstr "Sugerencias"
+
+msgid "Dashboard"
+msgstr "Panel"
+
+msgid "History"
+msgstr "Historial"
+
+msgid "Notifications"
+msgstr "Notificaciones"
+
+msgid "Profile"
+msgstr "Perfil"
+
+msgid "Alerts"
+msgstr "Alertas"
+
+msgid "Me"
+msgstr "Yo"
+
+# ─── Autenticación ───────────────────────────────────────────────────────────
+
+msgid "Sign in"
+msgstr "Iniciar sesión"
+
+msgid "Sign in to your account"
+msgstr "Iniciá sesión en tu cuenta"
+
+msgid "Your household wellness companion"
+msgstr "Tu compañero de bienestar familiar"
+
+msgid "Sign in to track your meals, workouts, and wellness together."
+msgstr "Iniciá sesión para registrar tus comidas, entrenamientos y bienestar juntos."
+
+msgid "Email address"
+msgstr "Correo electrónico"
+
+msgid "you@example.com"
+msgstr "vos@ejemplo.com"
+
+msgid "Password"
+msgstr "Contraseña"
+
+msgid "Forgot password?"
+msgstr "¿Olvidaste tu contraseña?"
+
+msgid "Your password"
+msgstr "Tu contraseña"
+
+msgid "Remember me for 30 days"
+msgstr "Recordarme por 30 días"
+
+msgid "Signing in…"
+msgstr "Iniciando sesión…"
+
+msgid "GaiaPulse — A private wellness companion for Diego & Rocío's household."
+msgstr "GaiaPulse — Un compañero de bienestar privado para el hogar de Diego y Rocío."
+
+msgid "Invalid email or password."
+msgstr "Email o contraseña inválidos."
+
+# ─── Página de inicio ─────────────────────────────────────────────────────────
+
+msgid "Good morning, %(name)s!"
+msgstr "¡Buenos días, %(name)s!"
+
+msgid "Good afternoon, %(name)s!"
+msgstr "¡Buenas tardes, %(name)s!"
+
+msgid "Good evening, %(name)s!"
+msgstr "¡Buenas noches, %(name)s!"
+
+msgid "Quick Actions"
+msgstr "Acciones Rápidas"
+
+msgid "Log Meal"
+msgstr "Registrar Comida"
+
+msgid "Log Workout"
+msgstr "Registrar Entrenamiento"
+
+msgid "Update Weight"
+msgstr "Actualizar Peso"
+
+msgid "Add to Pantry"
+msgstr "Agregar a Despensa"
+
+msgid "Today's Meals"
+msgstr "Comidas de Hoy"
+
+msgid "Today's Workouts"
+msgstr "Entrenamientos de Hoy"
+
+msgid "Today's Weight"
+msgstr "Peso de Hoy"
+
+msgid "No meals logged today."
+msgstr "Sin comidas registradas hoy."
+
+msgid "Log your first meal →"
+msgstr "Registrá tu primera comida →"
+
+msgid "No workouts logged today."
+msgstr "Sin entrenamientos registrados hoy."
+
+msgid "Log a workout →"
+msgstr "Registrá un entrenamiento →"
+
+msgid "View trends →"
+msgstr "Ver tendencias →"
+
+msgid "Suggestions for You"
+msgstr "Sugerencias para Vos"
+
+msgid "View all →"
+msgstr "Ver todo →"
+
+msgid "View Pantry →"
+msgstr "Ver Despensa →"
+
+msgid "View →"
+msgstr "Ver →"
+
+msgid "%(num)d pantry item running low"
+msgid_plural "%(num)d pantry items running low"
+msgstr[0] "%(num)d artículo de despensa con stock bajo"
+msgstr[1] "%(num)d artículos de despensa con stock bajo"
+
+msgid "You have %(count)d unread notification."
+msgid_plural "You have %(count)d unread notifications."
+msgstr[0] "Tenés %(count)d notificación sin leer."
+msgstr[1] "Tenés %(count)d notificaciones sin leer."
+
+msgid "+ %(n)d more — View all →"
+msgstr "+ %(n)d más — Ver todo →"
+
+msgid "%(count)d person"
+msgid_plural "%(count)d persons"
+msgstr[0] "%(count)d persona"
+msgstr[1] "%(count)d personas"
+
+# ─── Comidas ─────────────────────────────────────────────────────────────────
+
+msgid "No meals logged yet."
+msgstr "Sin comidas registradas todavía."
+
+msgid "Meal not found."
+msgstr "Comida no encontrada."
+
+msgid "Search meals…"
+msgstr "Buscar comidas…"
+
+msgid "Breakfast"
+msgstr "Desayuno"
+
+msgid "Lunch"
+msgstr "Almuerzo"
+
+msgid "Dinner"
+msgstr "Cena"
+
+msgid "Snack"
+msgstr "Merienda"
+
+# ─── Entrenamientos ──────────────────────────────────────────────────────────
+
+msgid "No workouts logged yet."
+msgstr "Sin entrenamientos registrados todavía."
+
+# ─── Despensa ────────────────────────────────────────────────────────────────
+
+msgid "Search items…"
+msgstr "Buscar artículos…"
+
+msgid "All stocked"
+msgstr "Todo abastecido"
+
+msgid "low stock"
+msgstr "stock bajo"
+
+msgid "No change"
+msgstr "Sin cambios"
+
+msgid "Add Purchase"
+msgstr "Agregar Compra"
+
+msgid "Pantry movements"
+msgstr "Movimientos de despensa"
+
+msgid "No pantry items yet."
+msgstr "Sin artículos en la despensa todavía."
+
+# ─── Métricas corporales ─────────────────────────────────────────────────────
+
+msgid "Current Weight"
+msgstr "Peso Actual"
+
+msgid "No weight data yet."
+msgstr "Sin datos de peso todavía."
+
+msgid "Height"
+msgstr "Altura"
+
+msgid "Weight"
+msgstr "Peso"
+
+msgid "Body fat %"
+msgstr "% de grasa corporal"
+
+msgid "No metrics logged yet."
+msgstr "Sin métricas registradas todavía."
+
+# ─── Captura / NLP ───────────────────────────────────────────────────────────
+
+msgid "Please enter some text to parse."
+msgstr "Por favor ingresá texto para procesar."
+
+msgid "Voice input is not configured. Please use text input instead."
+msgstr "La entrada de voz no está configurada. Por favor usá texto."
+
+msgid "Transcription failed: %(error)s"
+msgstr "La transcripción falló: %(error)s"
+
+msgid "What did you eat, do, or buy today?"
+msgstr "¿Qué comiste, hiciste o compraste hoy?"
+
+msgid "Tap the mic to speak or type below"
+msgstr "Tocá el micrófono para hablar o escribí abajo"
+
+msgid "Preview"
+msgstr "Vista previa"
+
+msgid "Confirm"
+msgstr "Confirmar"
+
+msgid "Discard"
+msgstr "Descartar"
+
+msgid "Parsing your input…"
+msgstr "Procesando tu entrada…"
+
+# ─── Sugerencias ─────────────────────────────────────────────────────────────
+
+msgid "No suggestions yet."
+msgstr "Sin sugerencias todavía."
+
+msgid "Accept"
+msgstr "Aceptar"
+
+msgid "Reject"
+msgstr "Rechazar"
+
+msgid "Dismiss"
+msgstr "Ignorar"
+
+# ─── Notificaciones ──────────────────────────────────────────────────────────
+
+msgid "No notifications yet."
+msgstr "Sin notificaciones todavía."
+
+msgid "Mark all as read"
+msgstr "Marcar todo como leído"
+
+# ─── Historial ───────────────────────────────────────────────────────────────
+
+msgid "No activity yet."
+msgstr "Sin actividad todavía."
+
+# ─── Perfil ──────────────────────────────────────────────────────────────────
+
+msgid "Height must be between 50 and 280 cm."
+msgstr "La altura debe estar entre 50 y 280 cm."
+
+msgid "Weight must be between 20 and 500 kg."
+msgstr "El peso debe estar entre 20 y 500 kg."
+
+msgid "Activity level"
+msgstr "Nivel de actividad"
+
+msgid "Sedentary"
+msgstr "Sedentario"
+
+msgid "Lightly active"
+msgstr "Ligeramente activo"
+
+msgid "Moderately active"
+msgstr "Moderadamente activo"
+
+msgid "Very active"
+msgstr "Muy activo"
+
+msgid "Extra active"
+msgstr "Extremadamente activo"
+
+msgid "Save changes"
+msgstr "Guardar cambios"
+
+msgid "Profile updated successfully."
+msgstr "Perfil actualizado correctamente."
+
+# ─── Dashboard ───────────────────────────────────────────────────────────────
+
+msgid "Workouts (this week)"
+msgstr "Entrenamientos (esta semana)"
+
+msgid "Active Days (30d)"
+msgstr "Días Activos (30d)"
+
+msgid "Avg. Calories"
+msgstr "Cal. Promedio"
+
+msgid "Calories (last 7 days)"
+msgstr "Calorías (últimos 7 días)"
+
+msgid "Weight trend"
+msgstr "Tendencia de peso"
+
+# ─── Salud / Análisis de sangre ──────────────────────────────────────────────
+
+msgid "No health records yet."
+msgstr "Sin registros de salud todavía."
+
+msgid "Add blood analysis"
+msgstr "Agregar análisis de sangre"
+
+# ─── UI genérica ─────────────────────────────────────────────────────────────
+
+msgid "Save"
+msgstr "Guardar"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Edit"
+msgstr "Editar"
+
+msgid "Add"
+msgstr "Agregar"
+
+msgid "Back"
+msgstr "Volver"
+
+msgid "Loading…"
+msgstr "Cargando…"
+
+msgid "Nothing here yet."
+msgstr "Nada por acá todavía."
+
+msgid "No results found."
+msgstr "Sin resultados."
+
+msgid "Error"
+msgstr "Error"
+
+msgid "Success"
+msgstr "Éxito"
+
+msgid "Warning"
+msgstr "Atención"
+
+msgid "min"
+msgstr "min"
+
+msgid "kg"
+msgstr "kg"
+
+msgid "cm"
+msgstr "cm"
+
+msgid "kcal"
+msgstr "kcal"
+
+# ─── Home — strings adicionales ──────────────────────────────────────────────
+
+msgid "Today"
+msgstr "Hoy"
+
+msgid "%(num)d more — View all →"
+msgstr "%(num)d más — Ver todo →"
+
+# ─── Despensa — strings adicionales ─────────────────────────────────────────
+
+msgid "%(num)d item tracked"
+msgid_plural "%(num)d items tracked"
+msgstr[0] "%(num)d artículo registrado"
+msgstr[1] "%(num)d artículos registrados"
+
+msgid "%(num)d low"
+msgstr "%(num)d bajo"
+
+msgid "All items"
+msgstr "Todos los artículos"
+
+msgid "Low stock only"
+msgstr "Solo stock bajo"
+
+msgid "All"
+msgstr "Todos"
+
+msgid "Produce"
+msgstr "Frutas y Verduras"
+
+msgid "Dairy"
+msgstr "Lácteos"
+
+msgid "Protein"
+msgstr "Proteínas"
+
+msgid "Grains"
+msgstr "Cereales"
+
+msgid "Beverages"
+msgstr "Bebidas"
+
+msgid "Condiments"
+msgstr "Condimentos"
+
+msgid "Snacks"
+msgstr "Snacks"
+
+msgid "Frozen"
+msgstr "Congelados"
+
+msgid "Other"
+msgstr "Otro"
+
+msgid "Low"
+msgstr "Bajo"
+
+msgid "Adjust Stock"
+msgstr "Ajustar Stock"
+
+msgid "New qty"
+msgstr "Nueva cant."
+
+msgid "Set"
+msgstr "Establecer"
+
+msgid "Use"
+msgstr "Usar"
+
+msgid "Your pantry is empty"
+msgstr "Tu despensa está vacía"
+
+msgid "Start by adding a purchase. Use the Capture screen to quickly log what you bought."
+msgstr "Empezá agregando una compra. Usá la pantalla de Captura para registrar rápidamente lo que compraste."
+
+msgid "Add first item"
+msgstr "Agregar primer artículo"
+
+msgid "Pantry Movement History"
+msgstr "Historial de Movimientos de Despensa"
+
+msgid "No pantry movements yet."
+msgstr "Sin movimientos de despensa todavía."
+
+# ─── Comidas — strings adicionales ──────────────────────────────────────────
+
+msgid "Your household's food log"
+msgstr "El registro de comidas de tu hogar"
+
+msgid "No meals logged yet"
+msgstr "Sin comidas registradas todavía"
+
+msgid "Use the Capture screen to quickly log what Diego or Rocío ate."
+msgstr "Usá la pantalla de Captura para registrar rápidamente lo que comieron Diego o Rocío."
+
+msgid "Log first meal"
+msgstr "Registrar primera comida"
+
+msgid "Load more"
+msgstr "Cargar más"
+
+msgid "No items recorded"
+msgstr "Sin artículos registrados"
+
+msgid "No participants recorded."
+msgstr "Sin participantes registrados."
+
+# ─── Entrenamientos — strings adicionales ───────────────────────────────────
+
+msgid "Stay active together"
+msgstr "Mantenerse activos juntos"
+
+msgid "No workouts logged yet"
+msgstr "Sin entrenamientos registrados todavía"
+
+msgid "Tell GaiaPulse about your exercise — run, gym, yoga, anything counts!"
+msgstr "Contale a GaiaPulse sobre tu ejercicio — correr, gym, yoga, ¡todo cuenta!"
+
+msgid "Log first workout"
+msgstr "Registrar primer entrenamiento"
+
+msgid "No exercises recorded"
+msgstr "Sin ejercicios registrados"
+
+# ─── Métricas corporales — strings adicionales ──────────────────────────────
+
+msgid "Track your health journey"
+msgstr "Seguí tu camino de salud"
+
+msgid "Log Metric"
+msgstr "Registrar Métrica"
+
+msgid "Body Fat"
+msgstr "Grasa Corporal"
+
+msgid "Waist"
+msgstr "Cintura"
+
+msgid "Sleep"
+msgstr "Sueño"
+
+msgid "hrs"
+msgstr "hs"
+
+msgid "Log History"
+msgstr "Historial de Registros"
+
+msgid "Want to see weight trends over time?"
+msgstr "¿Querés ver la tendencia de tu peso a lo largo del tiempo?"
+
+msgid "View the Dashboard →"
+msgstr "Ver el Panel →"
+
+msgid "No metrics logged yet for %(name)s"
+msgstr "Sin métricas registradas todavía para %(name)s"
+
+msgid "Start tracking weight, body fat, waist measurements, and sleep."
+msgstr "Empezá a registrar peso, grasa corporal, cintura y sueño."
+
+msgid "Log first metric"
+msgstr "Registrar primera métrica"
+
+# ─── Captura — strings adicionales ──────────────────────────────────────────
+
+msgid "Tell me what happened — I'll figure out the rest"
+msgstr "Contame qué pasó — yo me encargo del resto"
+
+msgid "Quick shortcuts"
+msgstr "Atajos rápidos"
+
+msgid "What happened today?"
+msgstr "¿Qué pasó hoy?"
+
+msgid "or use voice"
+msgstr "o usá voz"
+
+msgid "Tap the mic to start recording"
+msgstr "Tocá el micrófono para empezar a grabar"
+
+msgid "Recording… tap to stop"
+msgstr "Grabando… tocá para detener"
+
+msgid "Recording ready"
+msgstr "Grabación lista"
+
+msgid "Remove"
+msgstr "Quitar"
+
+msgid "Parse & Preview"
+msgstr "Procesar y Ver"
+
+msgid "Here's what I understood"
+msgstr "Esto es lo que entendí"
+
+msgid "Review the parsed intents below. You can edit or discard any of them before confirming."
+msgstr "Revisá los datos detectados abajo. Podés editar o descartar cualquiera antes de confirmar."
+
+msgid "You said:"
+msgstr "Dijiste:"
+
+msgid "Done"
+msgstr "Listo"
+
+msgid "Confirm All"
+msgstr "Confirmar Todo"
+
+msgid "Discard All"
+msgstr "Descartar Todo"
+
+msgid "Meal type"
+msgstr "Tipo de comida"
+
+msgid "Time (optional)"
+msgstr "Hora (opcional)"
+
+msgid "Activity"
+msgstr "Actividad"
+
+msgid "Duration (min)"
+msgstr "Duración (min)"
+
+msgid "Value"
+msgstr "Valor"
+
+msgid "Unit"
+msgstr "Unidad"
+
+msgid "Edits here will be applied on confirmation."
+msgstr "Los cambios se aplicarán al confirmar."
+
+msgid "Couldn't parse any intents"
+msgstr "No se pudo interpretar ninguna acción"
+
+msgid "Try rephrasing your input. Be specific about who, what, and when."
+msgstr "Intentá reformular tu entrada. Sé específico sobre quién, qué y cuándo."
+
+msgid "Try again"
+msgstr "Intentar de nuevo"
+
+msgid "Nothing to save"
+msgstr "Nada que guardar"
+
+msgid "Saved successfully!"
+msgstr "¡Guardado exitosamente!"
+
+msgid "← Dashboard"
+msgstr "← Panel"
+
+msgid "Log more"
+msgstr "Registrar más"
+
+msgid "Some actions could not be saved"
+msgstr "Algunas acciones no pudieron guardarse"
+
+msgid "Input discarded. Nothing was saved."
+msgstr "Entrada descartada. Nada fue guardado."
+
+msgid "← Log something new"
+msgstr "← Registrar algo nuevo"
+
+msgid "Here's what I understood:"
+msgstr "Esto es lo que entendí:"
+
+msgid "✓ Confirm & Save"
+msgstr "✓ Confirmar y Guardar"
+
+msgid "No intents detected. Try rephrasing your input."
+msgstr "No se detectaron acciones. Intentá reformular tu entrada."
+
+msgid "Could not parse input"
+msgstr "No se pudo procesar la entrada"
+
+# ─── Sugerencias — strings adicionales ──────────────────────────────────────
+
+msgid "Personalized recommendations based on your habits"
+msgstr "Recomendaciones personalizadas según tus hábitos"
+
+msgid "Refresh"
+msgstr "Actualizar"
+
+msgid "Why this suggestion?"
+msgstr "¿Por qué esta sugerencia?"
+
+msgid "Not for us"
+msgstr "No es para nosotros"
+
+msgid "Learned Preferences"
+msgstr "Preferencias Aprendidas"
+
+msgid "Item"
+msgstr "Artículo"
+
+msgid "Type"
+msgstr "Tipo"
+
+msgid "Signal"
+msgstr "Señal"
+
+# ─── Notificaciones — strings adicionales ───────────────────────────────────
+
+msgid "unread"
+msgstr "sin leer"
+
+msgid "Mark all read"
+msgstr "Marcar todo como leído"
+
+msgid "No notifications."
+msgstr "Sin notificaciones."
+
+msgid "No notifications in this category."
+msgstr "Sin notificaciones en esta categoría."
+
+msgid "We'll let you know when something needs attention."
+msgstr "Te avisamos cuando haya algo que requiera atención."
+
+msgid "Low Stock"
+msgstr "Stock Bajo"
+
+msgid "Inactivity"
+msgstr "Inactividad"
+
+msgid "Metric Reminder"
+msgstr "Recordatorio de Métrica"
+
+msgid "Trend"
+msgstr "Tendencia"
+
+msgid "Info"
+msgstr "Info"
+
+# ─── Historial — strings adicionales ────────────────────────────────────────
+
+msgid "← Newer"
+msgstr "← Más recientes"
+
+msgid "Older →"
+msgstr "Más antiguas →"
+
+msgid "Log something now"
+msgstr "Registrar algo ahora"
+
+# ─── Dashboard — strings adicionales ────────────────────────────────────────
+
+msgid "Statistics & Dashboard"
+msgstr "Estadísticas y Panel"
+
+msgid "Last 30 days overview"
+msgstr "Resumen de los últimos 30 días"
+
+msgid "total past 4 weeks"
+msgstr "total en las últimas 4 semanas"
+
+msgid "out of 30 days"
+msgstr "de 30 días"
+
+msgid "Pantry Items"
+msgstr "Artículos en Despensa"
+
+msgid "Weight Trend (30 days)"
+msgstr "Tendencia de Peso (30 días)"
+
+msgid "Workouts per Week"
+msgstr "Entrenamientos por Semana"
+
+msgid "No workout data yet"
+msgstr "Sin datos de entrenamiento todavía"
+
+msgid "Muscle Groups Trained"
+msgstr "Grupos Musculares Entrenados"
+
+msgid "No exercise data yet"
+msgstr "Sin datos de ejercicio todavía"
+
+msgid "Meals by Type (7 days)"
+msgstr "Comidas por Tipo (7 días)"
+
+msgid "No meal data yet"
+msgstr "Sin datos de comidas todavía"
+
+msgid "Activity Calendar (30 days)"
+msgstr "Calendario de Actividad (30 días)"
+
+msgid "Active day"
+msgstr "Día activo"
+
+msgid "Rest day"
+msgstr "Día de descanso"
+
+# ─── Perfil — strings adicionales ───────────────────────────────────────────
+
+msgid "Personal Info"
+msgstr "Información Personal"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Height (cm)"
+msgstr "Altura (cm)"
+
+msgid "Weight Goal (kg)"
+msgstr "Objetivo de Peso (kg)"
+
+msgid "Food Preferences"
+msgstr "Preferencias Alimentarias"
+
+msgid "Dietary Restrictions (comma-separated)"
+msgstr "Restricciones Alimentarias (separadas por coma)"
+
+msgid "e.g. gluten-free, lactose intolerant"
+msgstr "ej. sin gluten, intolerante a la lactosa"
+
+msgid "Activity Preferences"
+msgstr "Preferencias de Actividad"
+
+msgid "Impossible Activities (comma-separated)"
+msgstr "Actividades Imposibles (separadas por coma)"
+
+msgid "e.g. swimming, rock climbing"
+msgstr "ej. natación, escalada"
+
+msgid "These will never be suggested."
+msgstr "Estas nunca serán sugeridas."
+
+msgid "Save Profile"
+msgstr "Guardar Perfil"
+
+msgid "Preferences learned from your feedback on suggestions"
+msgstr "Preferencias aprendidas de tu feedback sobre las sugerencias"
+
+msgid "Household"
+msgstr "Hogar"
+
+# ─── Salud — strings adicionales ────────────────────────────────────────────
+
+msgid "Upload a lab report (PDF/image) to extract biomarkers and generate health-oriented suggestions."
+msgstr "Subí un informe de laboratorio (PDF/imagen) para extraer biomarcadores y generar sugerencias de salud."
+
+msgid "Unsupported file type. Use PDF, JPG, PNG, WEBP, or HEIC."
+msgstr "Tipo de archivo no soportado. Usá PDF, JPG, PNG, WEBP o HEIC."
+
+msgid "File is too large. Maximum allowed size is 20MB."
+msgstr "El archivo es demasiado grande. El tamaño máximo permitido es 20MB."
+
+msgid "Could not parse the report. Try a clearer PDF/image or check parser configuration."
+msgstr "No se pudo procesar el informe. Intentá con un PDF/imagen más claro o revisá la configuración."
+
+msgid "Upload failed."
+msgstr "Error al subir."
+
+msgid "Lab file"
+msgstr "Archivo de laboratorio"
+
+msgid "Upload and analyze"
+msgstr "Subir y analizar"
+
+msgid "Previous analyses"
+msgstr "Análisis anteriores"
+
+msgid "No date detected"
+msgstr "Sin fecha detectada"
+
+msgid "Unknown lab"
+msgstr "Laboratorio desconocido"
+
+msgid "No blood analyses yet."
+msgstr "Sin análisis de sangre todavía."
+
+# ─── Errores ────────────────────────────────────────────────────────────────
+
+msgid "Page not found"
+msgstr "Página no encontrada"
+
+msgid "That page doesn't exist."
+msgstr "Esa página no existe."
+
+msgid "Back to home"
+msgstr "Volver al inicio"
+
+msgid "Something went wrong"
+msgstr "Algo salió mal"
+
+msgid "An unexpected error occurred. Please try again."
+msgstr "Ocurrió un error inesperado. Por favor intentá de nuevo."
+
+# ─── Strings adicionales para templates ─────────────────────────────────────
+
+msgid "You have"
+msgstr "Tenés"
+
+msgid "unread notification."
+msgstr "notificación sin leer."
+
+msgid "unread notifications."
+msgstr "notificaciones sin leer."
+
+msgid "pantry item running low"
+msgstr "artículo de despensa con stock bajo"
+
+msgid "pantry items running low"
+msgstr "artículos de despensa con stock bajo"
+
+msgid "person"
+msgstr "persona"
+
+msgid "people"
+msgstr "personas"
+
+msgid "more — View all →"
+msgstr "más — Ver todo →"
+
+msgid "item tracked"
+msgstr "artículo registrado"
+
+msgid "items tracked"
+msgstr "artículos registrados"
+
+msgid "Threshold:"
+msgstr "Umbral:"
+
+msgid "No weight data yet"
+msgstr "Sin datos de peso todavía"
+
+msgid "No records yet."
+msgstr "Sin registros todavía."
+
+msgid "Height must be a number."
+msgstr "La altura debe ser un número."
+
+msgid "Target weight must be a number."
+msgstr "El objetivo de peso debe ser un número."
+
+msgid "Invalid activity level: %(level)s."
+msgstr "Nivel de actividad inválido: %(level)s."
+
+msgid "Workout"
+msgstr "Entrenamiento"
+
+msgid "Note:"
+msgstr "Nota:"
+
+msgid "Recording…"
+msgstr "Grabando…"
+
+msgid "Confidence:"
+msgstr "Confianza:"
+
+msgid "Transcribed:"
+msgstr "Transcripto:"
+
+msgid "Logging"
+msgstr "Registrando"
+
+msgid "Adding to pantry:"
+msgstr "Agregando a la despensa:"
+
+msgid "Logging body metric"
+msgstr "Registrando métrica corporal"
+
+msgid "Logging workout"
+msgstr "Registrando entrenamiento"
+
+msgid "Setting preference"
+msgstr "Configurando preferencia"
+
+msgid "+ %(n)d more — View all →"
+msgstr "+ %(n)d más — Ver todo →"
+
+msgid "Today's date"
+msgstr "Hoy"
+
+msgid "Good morning"
+msgstr "Buenos días"
+
+msgid "Good afternoon"
+msgstr "Buenas tardes"
+
+msgid "Good evening"
+msgstr "Buenas noches"
+
+msgid "Invalid feedback status: %(status)s."
+msgstr "Estado de retroalimentación inválido: %(status)s."
+
+msgid "Invalid signal: %(signal)s."
+msgstr "Señal inválida: %(signal)s."
+
+msgid "Preference saved."
+msgstr "Preferencia guardada."

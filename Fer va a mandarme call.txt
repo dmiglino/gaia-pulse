@@ -1,0 +1,15 @@
+Fer va a mandarme call_id (UUID), para identificar la llamada en toda la transcripcion.
+Ademas 2 campos que van a tener el puerto, uno para caller y otro para agent.
+Con eso puedo generar un campo "role" que pueda ser Agent o Caller (segun donde venga el puerto)
+Vamos a tener un topic interno (de Go a Nest), que solo vamos a mandar la transcripcion y la traduccion.
+La posibilidad mediante Adapters de cambiar este medio de comunicacion. Empezamos con RabbitMQAdapter, pero si se cae, que sea simple cambiar a Redis, GRCP o BullMQ.
+Esto va en ./infrastructure/adapters/*, y se importan en el InfrastructureModule (provider: Messaging, useFactory: rabbitMQAdapter)
+Tambien puede ser que el adapter venga de una variable de entorno, asi que al reiniciar el POD, ya toma el cambio en el adapter.
+
+Desde Go tengo que enviar first y end word start time, el result endtime.. todo viene de google en alternative.words[] y en result.endtime.. solo para los is_final
+exchangeName: pbx.integration.exchange.transcription
+queue: pbx.integration.queue
+
+Que el speech client no finalice solo, puede haber muchos silencios y capaz lo cierra ahi. Mejor con un endpooint, /POST finish-stream, y otro /POST start-steam.
+
+Exponer mi rabbit local tunnelmole

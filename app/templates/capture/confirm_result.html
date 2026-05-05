@@ -1,0 +1,38 @@
+{% if notice %}
+<div class="rounded-xl bg-amber-50 border border-amber-200 p-5 text-center space-y-2">
+  <p class="font-semibold text-amber-800">{{ _('Nothing to save') }}</p>
+  <p class="text-sm text-amber-700">{{ notice }}</p>
+  <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Try again') }}</a>
+</div>
+{% elif success %}
+<div class="rounded-xl bg-emerald-50 border border-emerald-200 p-5 text-center space-y-2">
+  <div class="text-2xl">✓</div>
+  <p class="font-semibold text-emerald-800">{{ _('Saved successfully!') }}</p>
+  <div class="text-sm text-emerald-700 space-y-1">
+    {% for r in result.results %}
+    <p>{{ r.intent|replace('_', ' ')|title }}
+      {% set res = r.get('result', {}) %}
+      {% if res.get('participants') %}: {{ res.participants }} participant(s){% endif %}
+      {% if res.get('added') %}: {{ res.added }} item(s) added{% endif %}
+      {% if res.get('consumed') %}: {{ res.consumed }} item(s) consumed{% endif %}
+    </p>
+    {% endfor %}
+  </div>
+  <div class="flex gap-2 justify-center pt-2">
+    <a href="/" class="text-sm text-indigo-600 hover:underline">{{ _('← Dashboard') }}</a>
+    <span class="text-slate-300">·</span>
+    <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Log more') }}</a>
+  </div>
+</div>
+{% else %}
+<div class="rounded-xl bg-rose-50 border border-rose-200 p-5 space-y-2">
+  <p class="font-semibold text-rose-800">{{ _('Some actions could not be saved') }}</p>
+  {% for r in result.results %}
+  <div class="text-sm {% if r.status == 'ok' %}text-emerald-700{% else %}text-rose-700{% endif %}">
+    {{ r.intent|replace('_', ' ')|title }}:
+    {% if r.status == 'ok' %}✓{% else %}✗ {{ r.get('error', 'Unknown error') }}{% endif %}
+  </div>
+  {% endfor %}
+  <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Try again') }}</a>
+</div>
+{% endif %}
