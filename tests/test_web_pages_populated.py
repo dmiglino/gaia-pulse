@@ -242,6 +242,70 @@ def test_dashboard_shows_the_weight_delta(
     assert "-1.6" in body
 
 
+def test_body_metrics_cards_show_the_latest_reading(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """Las cuatro tarjetas leían una clave que la ruta no escribía.
+
+    La plantilla pedía `latest_per_user` y la ruta pasaba `latest_metrics`, así que la
+    expresión caía siempre en el `{% else %}`: la pantalla mostraba "—" en las cuatro
+    con la base llena y seguía devolviendo 200. Solo un assert sobre el número
+    renderizado atrapa un desajuste de nombres entre ruta y plantilla.
+    """
+    body = authenticated_client.get("/body-metrics/").text
+    assert "78.4" in body, "la tarjeta de peso no muestra el último pesaje"
+    assert "18.2" in body and "84" in body
+    assert "post vacaciones" in body, "el historial no llega a la plantilla"
+
+
+def test_body_metrics_ignores_a_user_id_from_another_household(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session
+) -> None:
+    """`?user_id=` venía del query string sin validarse contra el hogar.
+
+    Iba directo a `get_user_metrics`, así que el id de cualquier persona de la base
+    devolvía **su** peso, su grasa corporal y sus horas de sueño. Todo dato personal
+    se filtra por el hogar de quien pregunta (`AGENTS.md`), y esta es la prueba de que
+    un id ajeno cae de vuelta en el usuario que pide en lugar de servirlo.
+    """
+    from app.models.body_metric import BodyMetricLog
+
+    other = Household(name="Otra casa")
+    db.add(other)
+    db.flush()
+    stranger = User(
+        household_id=other.id,
+        name="Ajena",
+        email="ajena@test.com",
+        password_hash="x",
+        onboarding_completed=True,
+    )
+    db.add(stranger)
+    db.flush()
+    db.add(BodyMetricLog(user_id=stranger.id, timestamp=UTC_NOW, weight_kg=99.9))
+    db.flush()
+
+    resp = authenticated_client.get(f"/body-metrics/?user_id={stranger.id}")
+    assert resp.status_code == 200
+    assert "99.9" not in resp.text, "fuga: métricas corporales de otro hogar"
+    assert "78.4" in resp.text, "debería caer de vuelta en el usuario que pide"
+
+
+def test_health_detail_does_not_leak_raw_enum_values(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """El detalle mostraba `status: high` y el `parsing_method` crudos.
+
+    Los rótulos ahora pasan por `dm.marker_status_badge` / `dm.analysis_status_badge`,
+    que son las únicas dos traducciones de esos enums: si alguien vuelve a imprimir
+    `m.status` directo, la clave de la base reaparece en pantalla.
+    """
+    body = authenticated_client.get(f"/health/{seeded['analysis_id']}").text
+    assert "LDL" in body and "Glucosa" in body
+    assert "status: " not in body
+    assert "analyzed" not in body, "el estado del análisis se muestra sin traducir"
+
+
 def test_home_warns_about_low_stock(
     authenticated_client: TestClient, seeded: dict[str, int]
 ) -> None:

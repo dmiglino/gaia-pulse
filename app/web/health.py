@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.clock import local_now
 from app.core.dependencies import DB, CurrentUser
 from app.services.blood_analysis_service import BloodAnalysisService
 from app.web.helpers import get_template_context, templates
@@ -84,6 +85,16 @@ def health_detail(
 
     ctx = get_template_context(request, db, current_user)
     ctx["analysis"] = analysis
+    # Cuántos días tiene el panel: un análisis de hace tres años describe a otra
+    # persona, y hasta ahora la pantalla mostraba su fecha sin decir nada más.
+    # `None` cuando el parser no encontró fecha, que no es lo mismo que "hoy".
+    # El `max(0, ...)` es porque la fecha la escribe el parser desde el PDF: una mal
+    # leída puede caer en el futuro, y "hace -5 días" es peor que "hace 0 días".
+    ctx["panel_age_days"] = (
+        max(0, (local_now().date() - analysis.analysis_date).days)
+        if analysis.analysis_date
+        else None
+    )
 
     # Prepare chart data: separate abnormal vs normal markers
     abnormal = []

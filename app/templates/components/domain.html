@@ -123,6 +123,40 @@
 {%- endmacro %}
 
 
+{#- ── Análisis de sangre ──────────────────────────────────────────────────────
+    `BloodAnalysis.status` es pending/analyzed/error y se mostraba crudo, en
+    inglés y en minúscula (`{{ a.status }}`), con tres paletas inline. -#}
+{% macro analysis_status_badge(status, size='sm') -%}
+{%- set labels = {'analyzed': _('Read'), 'pending': _('Processing'), 'error': _('Failed')} -%}
+{%- set tones = {'analyzed': 'ok', 'pending': 'neutral', 'error': 'danger'} -%}
+{%- set key = status | lower if status else '' -%}
+{{ ui.badge(labels.get(key, status | title), tone=tones.get(key, 'neutral'), size=size) }}
+{%- endmacro %}
+
+
+{#- Estado de un marcador dentro de su rango de referencia. El parser escribe
+    `low`/`critical_low`/`normal`/`high`/`critical_high`, y el detalle los mostraba
+    como `status: critical_high` — el nombre de la clave incluido. -#}
+{% macro marker_status_label(status) -%}
+{%- set labels = {
+  'critical_low': _('Very low'), 'low': _('Low'), 'normal': _('In range'),
+  'high': _('High'), 'critical_high': _('Very high'),
+} -%}
+{{- labels.get(status | lower if status else 'normal', status | title) -}}
+{%- endmacro %}
+
+
+{% macro marker_status_badge(status, size='sm') -%}
+{%- set tones = {'critical_low': 'danger', 'low': 'warn', 'normal': 'ok',
+                 'high': 'warn', 'critical_high': 'danger'} -%}
+{%- set icons = {'critical_low': 'trend-down', 'low': 'trend-down', 'normal': 'check',
+                 'high': 'trend-up', 'critical_high': 'trend-up'} -%}
+{%- set key = status | lower if status else 'normal' -%}
+{{ ui.badge(marker_status_label(status), tone=tones.get(key, 'neutral'),
+            icon=icons.get(key), size=size) }}
+{%- endmacro %}
+
+
 {#- ── Cantidad ────────────────────────────────────────────────────────────────
     `quantity` es `Numeric`, así que llega como `Decimal`: sin esto una porción de
     2 se mostraba como "2.00". Los enteros se muestran enteros y el resto con un

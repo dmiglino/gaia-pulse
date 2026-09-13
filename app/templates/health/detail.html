@@ -1,73 +1,147 @@
 {% extends "base.html" %}
-{% block title %}Blood Analysis Detail{% endblock %}
+{% block title %}{{ _('Blood analysis') }}{% endblock %}
+
+{#- Esta pantalla no tenía **ninguna** llamada a `_()`: era la única de la app
+    enteramente en inglés, y encima la que muestra datos de salud, con los rótulos
+    crudos de la base a la vista ("status: critical_high", "unknown parser").
+
+    Tres cosas más que arregla el rediseño:
+
+    - el borrado era un submit directo, sin confirmación: un toque borraba el panel
+      y su texto extraído sin vuelta atrás;
+    - el texto crudo del OCR (cientos de líneas) se rendía abierto arriba del botón
+      de borrar, así que el botón quedaba al final de un muro de texto;
+    - nada decía la antigüedad del panel ni que esto no es un diagnóstico. -#}
 
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-6">
-  <div class="flex items-center justify-between gap-3">
+<div class="px-4 sm:px-6 py-6 max-w-5xl mx-auto">
+
+  {{ ui.page_header(analysis.file_name or _('Panel #%(num)d', num=analysis.id),
+                    subtitle=(analysis.analysis_date | local_date('long')) if analysis.analysis_date
+                             else _('No date detected'),
+                    icon='analysis', tone='body',
+                    back='/health', back_label=_('Blood analysis')) }}
+
+  <div class="flex flex-wrap items-center gap-2 mb-5 -mt-2">
+    {{ dm.analysis_status_badge(analysis.status) }}
+    {{ ui.badge(analysis.lab_name or _('Unknown lab'), tone='neutral') }}
+    {%- if panel_age_days is not none %}
+    {{ ui.badge(ngettext('%(num)d day ago', '%(num)d days ago', panel_age_days),
+                tone='warn' if panel_age_days > 365 else 'neutral',
+                icon='clock' if panel_age_days > 365 else None) }}
+    {%- endif %}
+  </div>
+
+  {#- El encuadre no diagnóstico va arriba de todo lo que se lee como consejo, y
+      no al pie: es lo primero que hay que saber antes de interpretar un marcador
+      fuera de rango. -#}
+  <div class="mb-5">
+    {{ ui.notice(_('These readings are informational, not a diagnosis. A marker out of range needs your doctor, not a change of diet on its own.'),
+                 tone='info') }}
+  </div>
+
+  {%- if panel_age_days is not none and panel_age_days > 365 %}
+  <div class="mb-5">
+    {{ ui.notice(_('This panel is over a year old, so what it says about you today is a guess.'),
+                 tone='warn') }}
+  </div>
+  {%- endif %}
+
+  {%- if analysis.ai_summary %}
+  <div class="mb-5">
+  {% call ui.card() %}
+    {{ ui.section_title(_('Summary'), icon='sparkles', tone='brand') }}
+    <p class="text-sm text-ink whitespace-pre-line">{{ analysis.ai_summary }}</p>
+  {% endcall %}
+  </div>
+  {%- endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+
     <div>
-      <h1 class="text-2xl font-bold text-slate-900">Analysis #{{ analysis.id }}</h1>
-      <p class="text-sm text-slate-500 mt-1">
-        {{ analysis.analysis_date or "No date detected" }} · {{ analysis.lab_name or "Unknown lab" }} · {{ analysis.parsing_method or "unknown parser" }}
+    {% call ui.card() %}
+      {{ ui.section_title(_('Out of range'),
+                          subtitle=ngettext('%(num)d marker', '%(num)d markers', abnormal_markers | length),
+                          icon='warning', tone='warn') }}
+      {%- if abnormal_markers %}
+      <ul class="space-y-2 list-none m-0 p-0">
+        {%- for m in abnormal_markers %}
+        <li class="rounded-control border border-warn-solid/30 bg-warn-soft px-3 py-2.5">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-sm font-semibold text-ink">{{ m.display_name }}</p>
+            {{ dm.marker_status_badge(m.status) }}
+          </div>
+          <p class="text-xs text-ink-muted mt-1 tabular-nums">
+            {{ m.value }}{% if m.unit %} {{ m.unit }}{% endif %}
+            {%- if m.ref_min is not none or m.ref_max is not none %}
+            · {{ _('reference') }} {{ m.ref_min if m.ref_min is not none else '—' }}–{{ m.ref_max if m.ref_max is not none else '—' }}
+            {%- endif %}
+          </p>
+        </li>
+        {%- endfor %}
+      </ul>
+      {%- else %}
+      <p class="text-sm text-ink-muted">{{ _('Every marker the parser recognised is inside its reference range.') }}</p>
+      {%- endif %}
+    {% endcall %}
+    </div>
+
+    <div>
+    {% call ui.card() %}
+      {{ ui.section_title(_('In range'),
+                          subtitle=ngettext('%(num)d marker', '%(num)d markers', normal_markers | length),
+                          icon='check-circle', tone='ok') }}
+      {%- if normal_markers %}
+      <ul class="space-y-2 max-h-80 overflow-y-auto pr-1 list-none m-0 p-0">
+        {%- for m in normal_markers %}
+        <li class="flex items-center justify-between gap-2 rounded-control border border-line bg-card-alt px-3 py-2">
+          <p class="text-sm text-ink truncate">{{ m.display_name }}</p>
+          <p class="text-xs font-semibold text-ink-muted tabular-nums flex-shrink-0">
+            {{ m.value }}{% if m.unit %} {{ m.unit }}{% endif %}
+          </p>
+        </li>
+        {%- endfor %}
+      </ul>
+      {%- else %}
+      <p class="text-sm text-ink-muted">{{ _('No markers could be read from this file.') }}</p>
+      {%- endif %}
+    {% endcall %}
+    </div>
+  </div>
+
+  {%- if analysis.raw_text %}
+  {#- `<details>` nativo: el texto del OCR es material de auditoría ("¿leyó bien el
+      valor?"), no algo que se lee de arriba a abajo, y abierto empujaba el resto de
+      la pantalla fuera de la vista. -#}
+  <details class="mb-5 bg-card border border-line rounded-card shadow-sm">
+    <summary class="px-5 py-3.5 text-sm font-semibold text-ink cursor-pointer flex items-center gap-2">
+      {{ ic.icon('eye', 'w-4 h-4') }}{{ _('Text read from the file') }}
+      <span class="text-xs font-normal text-ink-subtle">{{ analysis.parsing_method or _('unknown reader') }}</span>
+    </summary>
+    <pre class="px-5 pb-5 text-xs text-ink-muted whitespace-pre-wrap font-mono">{{ analysis.raw_text }}</pre>
+  </details>
+  {%- endif %}
+
+  {#- Borrado en dos pasos, sin `confirm()` de JS: el diálogo del navegador no se
+      puede traducir desde una plantilla sin meter el msgid dentro de una expresión
+      de JS, y además no dice qué se pierde. -#}
+  <div x-data="{ confirming: false }" class="pt-2">
+    <div x-show="!confirming">
+      {{ ui.btn(_('Delete this panel'), tone='danger-soft', size='sm', type='button',
+                icon='trash', attrs='@click="confirming = true"') }}
+    </div>
+    <div x-show="confirming" x-cloak class="flex flex-wrap items-center gap-2">
+      <p class="text-sm text-ink-muted mr-1">
+        {{ _('This also deletes its markers and the text read from the file.') }}
       </p>
-    </div>
-    <a href="/health" class="text-sm font-medium text-brand-700 hover:text-brand-800">Back</a>
-  </div>
-
-  {% if analysis.ai_summary %}
-    <div class="bg-indigo-50 border border-indigo-200 rounded-2xl p-4">
-      <h2 class="text-sm font-semibold text-indigo-800 mb-2">AI Summary</h2>
-      <p class="text-sm text-indigo-900 whitespace-pre-line">{{ analysis.ai_summary }}</p>
-    </div>
-  {% endif %}
-
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white border border-slate-200 rounded-2xl p-4">
-      <h2 class="text-base font-semibold text-slate-800 mb-3">Abnormal markers</h2>
-      {% if abnormal_markers %}
-        <div class="space-y-2">
-          {% for m in abnormal_markers %}
-            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <p class="text-sm font-medium text-slate-900">{{ m.display_name }}</p>
-              <p class="text-xs text-slate-600">
-                {{ m.value }} {{ m.unit }} · status: {{ m.status }}
-                {% if m.ref_min is not none or m.ref_max is not none %}
-                  · ref: {{ m.ref_min if m.ref_min is not none else "—" }} - {{ m.ref_max if m.ref_max is not none else "—" }}
-                {% endif %}
-              </p>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-sm text-slate-500">No abnormal markers detected.</p>
-      {% endif %}
-    </div>
-
-    <div class="bg-white border border-slate-200 rounded-2xl p-4">
-      <h2 class="text-base font-semibold text-slate-800 mb-3">Normal markers</h2>
-      {% if normal_markers %}
-        <div class="space-y-2 max-h-80 overflow-auto pr-1">
-          {% for m in normal_markers %}
-            <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <p class="text-sm font-medium text-slate-900">{{ m.display_name }}</p>
-              <p class="text-xs text-slate-600">{{ m.value }} {{ m.unit }}</p>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <p class="text-sm text-slate-500">No normalized marker data available.</p>
-      {% endif %}
+      <form method="post" action="/health/{{ analysis.id }}/delete" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        {{ ui.btn(_('Delete'), tone='danger', size='sm', icon='trash') }}
+      </form>
+      {{ ui.btn(_('Keep it'), tone='secondary', size='sm', type='button',
+                attrs='@click="confirming = false"') }}
     </div>
   </div>
 
-  <div class="bg-white border border-slate-200 rounded-2xl p-4">
-    <h2 class="text-base font-semibold text-slate-800 mb-3">Raw text</h2>
-    <pre class="text-xs text-slate-700 whitespace-pre-wrap bg-slate-50 border border-slate-200 rounded-lg p-3">{{ analysis.raw_text or "No raw text extracted." }}</pre>
-  </div>
-
-  <form method="post" action="/health/{{ analysis.id }}/delete">
-    <button type="submit" class="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700">
-      Delete analysis
-    </button>
-  </form>
 </div>
 {% endblock %}

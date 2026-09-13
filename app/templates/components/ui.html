@@ -240,7 +240,11 @@
     de enlace, así que la lista de enlaces del lector de pantalla dejaría de
     encontrarlos. El patrón correcto para pestañas-que-son-navegación es
     `<nav>` + `<ul>` + `aria-current="page"` en la activa — que además es la misma
-    gramática de "estado activo" que ya usa `nav_item` en `base.html`. -#}
+    gramática de "estado activo" que ya usa `nav_item` en `base.html`.
+
+    Un item puede traer `avatar` (un `User`) en vez de `icon`: el selector de
+    persona de las métricas corporales es un grupo de pestañas donde lo que
+    identifica cada una es la cara, no un símbolo. -#}
 {% macro tabs(items, current, label=None) -%}
 <nav aria-label="{{ label or _('Sections') }}">
   <ul class="flex items-center gap-1 p-1 bg-card-alt border border-line rounded-control overflow-x-auto scrollbar-hide list-none m-0">
@@ -250,7 +254,8 @@
       <a href="{{ item.href }}"{% if active %} aria-current="page"{% endif %}
          class="flex items-center gap-1.5 px-3 py-1.5 rounded-chip text-sm font-medium whitespace-nowrap transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
                 {{ 'bg-card text-ink shadow-sm' if active else 'text-ink-muted hover:text-ink' }}">
-        {%- if item.icon %}{{ ic.icon(item.icon, 'w-4 h-4') }}{% endif -%}
+        {%- if item.avatar %}{{ avatar(item.avatar, size='xs') }}
+        {%- elif item.icon %}{{ ic.icon(item.icon, 'w-4 h-4') }}{% endif -%}
         {{ item.label }}
         {%- if item.count is defined and item.count is not none %}
         <span class="text-xs text-ink-subtle tabular-nums">{{ item.count }}</span>

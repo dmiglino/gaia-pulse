@@ -1,70 +1,83 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Blood Analysis') }}{% endblock %}
 
+{#- Los cuatro errores de subida ya existían en la ruta y solo se veían **después**
+    de elegir el archivo. Ahora el formulario dice de antemano qué acepta y cuánto
+    pesa el máximo: los tres primeros errores dejan de ser una sorpresa. -#}
+
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-5xl mx-auto space-y-6">
-  <div>
-    <h1 class="text-2xl font-bold text-slate-900">{{ _('Blood Analysis') }}</h1>
-    <p class="text-sm text-slate-500 mt-1">{{ _('Upload a lab report (PDF/image) to extract biomarkers and generate health-oriented suggestions.') }}</p>
+<div class="px-4 sm:px-6 py-6 max-w-5xl mx-auto">
+
+  {{ ui.page_header(_('Blood analysis'),
+                    subtitle=_('Upload a lab report and GaiaPulse reads its markers into your suggestions.'),
+                    icon='analysis', tone='body') }}
+
+  {%- set upload_error = request.query_params.get('error') %}
+  {%- if upload_error %}
+  {%- set error_messages = {
+        'unsupported_type': _('Unsupported file type. Use PDF, JPG, PNG, WEBP or HEIC.'),
+        'file_too_large': _('File is too large. The maximum size is 20 MB.'),
+        'parse_failed': _('Could not read the report. Try a sharper scan or a text PDF.'),
+      } -%}
+  <div class="mb-5">
+    {{ ui.notice(error_messages.get(upload_error, _('Upload failed.')), tone='danger') }}
   </div>
+  {%- endif %}
 
-  {% if request.query_params.get("error") %}
-    <div class="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm">
-      {% if request.query_params.get("error") == "unsupported_type" %}
-        {{ _('Unsupported file type. Use PDF, JPG, PNG, WEBP, or HEIC.') }}
-      {% elif request.query_params.get("error") == "file_too_large" %}
-        {{ _('File is too large. Maximum allowed size is 20MB.') }}
-      {% elif request.query_params.get("error") == "parse_failed" %}
-        {{ _('Could not parse the report. Try a clearer PDF/image or check parser configuration.') }}
-      {% else %}
-        {{ _('Upload failed.') }}
-      {% endif %}
-    </div>
-  {% endif %}
-
-  <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+  <div class="mb-6">
+  {% call ui.card() %}
     <form method="post" action="/health/upload" enctype="multipart/form-data" class="space-y-4">
-      <div>
-        <label for="file" class="block text-sm font-medium text-slate-700 mb-2">{{ _('Lab file') }}</label>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+      {% call ui.field_wrap(_('Lab report'), 'file',
+                            hint=_('PDF or photo, up to 20 MB. Both pages if the panel has two.')) %}
         <input id="file" name="file" type="file" required accept=".pdf,image/*"
-               class="block w-full text-sm text-slate-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100">
-      </div>
-      <button type="submit"
-              class="inline-flex items-center justify-center px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700">
-        {{ _('Upload and analyze') }}
-      </button>
+               class="block w-full text-sm text-ink-muted cursor-pointer
+                      file:mr-4 file:py-2 file:px-4 file:rounded-control file:border-0
+                      file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700
+                      file:cursor-pointer hover:file:bg-brand-100" />
+      {% endcall %}
+      {{ ui.btn(_('Upload and read it'), tone='primary', icon='analysis') }}
     </form>
+  {% endcall %}
   </div>
 
-  <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-    <h2 class="text-lg font-semibold text-slate-800 mb-4">{{ _('Previous analyses') }}</h2>
-    {% if analyses %}
-      <div class="space-y-3">
-        {% for a in analyses %}
-          <a href="/health/{{ a.id }}" class="block border border-slate-200 rounded-xl p-4 hover:border-brand-300 hover:bg-brand-50/30 transition-colors">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <p class="text-sm font-medium text-slate-900">{{ a.file_name or ("Analysis #" ~ a.id) }}</p>
-                <p class="text-xs text-slate-500 mt-1">
-                  {{ a.analysis_date or _('No date detected') }} · {{ a.lab_name or _('Unknown lab') }}
-                </p>
-              </div>
-              <span class="text-xs px-2 py-1 rounded-full {% if a.status == 'analyzed' %}bg-emerald-100 text-emerald-700{% elif a.status == 'error' %}bg-rose-100 text-rose-700{% else %}bg-slate-100 text-slate-700{% endif %}">
-                {{ a.status }}
-              </span>
-            </div>
-          </a>
-        {% endfor %}
-      </div>
-    {% else %}
-      {#- Sin acción: el formulario de subida está en esta misma pantalla, unos
-          centímetros más arriba. Un botón que solo scrollea sería ruido, y
-          `/health/upload` es POST — un `href` ahí daría 405. -#}
-      {{ ui.empty_state(
-          _('No blood analyses yet.'),
-          text=_('Upload a lab panel with the form above and GaiaPulse will read its markers into your suggestions.'),
-          icon='analysis', tone='body') }}
-    {% endif %}
-  </div>
+  {{ ui.section_title(_('Previous panels'), icon='clock', tone='body') }}
+
+  {%- if analyses %}
+  <ul class="space-y-3 list-none m-0 p-0">
+    {%- for a in analyses %}
+    <li>
+      {% call ui.card_link('/health/' ~ a.id, padding='px-4 py-3.5') %}
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-ink truncate">
+              {{ a.file_name or _('Panel #%(num)d', num=a.id) }}
+            </p>
+            <p class="text-xs text-ink-muted mt-0.5">
+              {{ a.analysis_date | local_date('medium') if a.analysis_date else _('No date detected') }}
+              · {{ a.lab_name or _('Unknown lab') }}
+            </p>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            {{ dm.analysis_status_badge(a.status) }}
+            <span class="text-ink-subtle">{{ ic.icon('chevron-right', 'w-4 h-4') }}</span>
+          </div>
+        </div>
+      {% endcall %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  {#- Sin acción: el formulario de subida está en esta misma pantalla, unos
+      centímetros más arriba. Un botón que solo scrollea sería ruido, y
+      `/health/upload` es POST — un `href` ahí daría 405. -#}
+  {% call ui.card(padding='') %}
+    {{ ui.empty_state(
+        _('No blood panels yet.'),
+        text=_('Upload one with the form above and its markers become part of what GaiaPulse suggests.'),
+        icon='analysis', tone='body') }}
+  {% endcall %}
+  {%- endif %}
+
 </div>
 {% endblock %}
