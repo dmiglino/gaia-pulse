@@ -1,5 +1,6 @@
 """Shared helpers for web route handlers: template rendering with auth context."""
 import hashlib
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,7 +25,11 @@ _ONBOARDING_EXEMPT_PREFIXES = ("/onboarding", "/login", "/logout", "/static")
 class CompatJinja2Templates(Jinja2Templates):
     """Compatibility wrapper for Starlette TemplateResponse signature changes."""
 
-    def TemplateResponse(self, *args, **kwargs):  # type: ignore[override]
+    # Annotated on purpose: an unannotated override made every call site return
+    # `Any`, and with `warn_return_any` that produced ~25 `no-any-return` errors
+    # across the web layer. Starlette's `_TemplateResponse` subclasses
+    # `HTMLResponse`, so this is the honest type, not a widening.
+    def TemplateResponse(self, *args: Any, **kwargs: Any) -> HTMLResponse:  # type: ignore[override]
         # New signature (Starlette >=1.0): TemplateResponse(request, name, context, ...)
         if args and isinstance(args[0], Request):
             return super().TemplateResponse(*args, **kwargs)

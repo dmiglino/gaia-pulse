@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, File, Request, UploadFile
+from fastapi import APIRouter, File, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
@@ -76,7 +76,7 @@ def health_detail(
     request: Request,
     current_user: CurrentUser,
     db: DB,
-) -> HTMLResponse:
+) -> Response:
     svc = BloodAnalysisService(db)
     analysis = svc.get_analysis(analysis_id, current_user.id)
     if analysis is None:

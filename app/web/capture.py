@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request, UploadFile
+from fastapi import APIRouter, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.config import get_settings
@@ -86,7 +86,7 @@ def capture_confirm(
     event_id: int,
     current_user: CurrentUser,
     db: DB,
-) -> HTMLResponse:
+) -> Response:
     svc = NLPService(db)
     result = svc.confirm_event(
         event_id=event_id,
@@ -117,7 +117,7 @@ def capture_discard(
     event_id: int,
     current_user: CurrentUser,
     db: DB,
-) -> HTMLResponse:
+) -> Response:
     svc = NLPService(db)
     svc.discard_event(event_id, current_user.id)
 

@@ -60,7 +60,7 @@ def suggestion_feedback(
     db: DB,
     status: str = Form(...),
     feedback_notes: str = Form(default=""),
-) -> HTMLResponse:
+) -> Response:
     if status not in _VALID_FEEDBACK_STATUSES:
         ctx = get_template_context(request, db, current_user)
         ctx["error"] = _("Invalid feedback status: %(status)s.", status=status)
@@ -89,7 +89,7 @@ def save_preference(
     item_type: str = Form(...),
     item_name: str = Form(...),
     preference_signal: str = Form(...),
-) -> HTMLResponse:
+) -> Response:
     if preference_signal not in _VALID_PREFERENCE_SIGNALS:
         if request.headers.get("HX-Request"):
             return templates.TemplateResponse(
