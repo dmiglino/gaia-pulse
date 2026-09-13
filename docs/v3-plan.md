@@ -915,23 +915,43 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 > recomendación. Todo esto es aritmética determinista sobre `behavior_signals`, que ya es la
 > tabla diseñada para exactamente esto.
 
-**Prerrequisito — anclar al sujeto (el bug de keying)**
+**Prerrequisito — anclar al sujeto (el bug de keying)** ✅ hecho
 
-- [ ] **Migración `0003`**: `subject_type` + `subject_name` en `suggestions` (la única
+- [x] **Migración `0003`**: `subject_type` + `subject_name` en `suggestions` (la única
       migración de todo v3). `behavior_signals` **no necesita columnas nuevas**: ya tiene
       `entity_type`, `entity_name`, `value`, `context_json` y `created_at` indexado.
-- [ ] Cada generador declara el sujeto de su candidato (alimento, actividad, grupo muscular,
-      marcador, ítem de stock).
-- [ ] El feedback se guarda contra ese sujeto en lugar de `title.lower()[:200]`.
-- [ ] El scorer matchea por sujeto normalizado en vez de bolsa-de-palabras, así rechazar
+      Las filas viejas quedan con las dos columnas en `NULL` a propósito: el sujeto no se
+      puede derivar del título sin volver a cometer el error, así que responder una
+      sugerencia pre-`0003` no enseña nada y lo deja anotado en el log.
+- [x] Cada generador declara el sujeto de su candidato (alimento, actividad, grupo muscular,
+      marcador, ítem de stock). Que ninguno se lo olvide lo cuida
+      `TestEveryCandidateDeclaresItsSubject`, que recorre los cuatro y exige un
+      `subject_type` del vocabulario más un `subject_name` no vacío —con un mínimo de
+      candidatos por generador, para que no pase en falso si un fixture deja de cubrir una
+      rama—. Es la red que reemplaza al `or title` que `candidate_subject` deliberadamente
+      no tiene.
+- [x] El feedback se guarda contra ese sujeto en lugar de `title.lower()[:200]`.
+- [x] El scorer matchea por sujeto normalizado en vez de bolsa-de-palabras, así rechazar
       *"Time to get moving!"* deja de suprimir todo candidato que comparta 60% de esos tokens
-      cruzando categorías.
-- [ ] Eliminar el `record_feedback` muerto de `engine.py` y dejar **un solo punto de
-      escritura** de señales: nuevo `app/recommendations/learning.py` con `record_signal()` y
-      `learned_affinity(user, subject)`. Hoy las escrituras están dispersas y por eso
-      `repeated_purchase` figura en la lista positiva del scorer sin que nada lo escriba.
-- [ ] **Dedup antes de persistir**: no crear una sugerencia pendiente cuyo sujeto ya tiene
-      una pendiente.
+      cruzando categorías. El mismo cambio en `filters.apply_signal_constraints`, que era
+      **peor** que el scorer: filtraba con 60% de solape de tokens y sin penalización
+      reversible —el candidato desaparecía antes de puntuarse— y miraba solo `value < 0`, así
+      que el −0.3 de un descarte borraba la tarjeta en lugar de bajarla. Ahora saca de la
+      lista solo un "no" explícito (`rejected_suggestion`).
+- [x] Dejar **un solo punto de escritura** de señales: nuevo `app/recommendations/learning.py`
+      con `record_signal()` y `net_affinity()`. `SuggestionService`, `MealService` y
+      `WorkoutService` ya no tienen `BehaviorSignalRepository` a mano —esa era la puerta por
+      la que se escribía salteando la normalización—, y por eso el vocabulario no puede
+      volver a divergir. **Corrección al diagnóstico original:** de los tres tipos que el
+      scorer leía sin escritor, `repeated_meal_choice` y `repeated_activity` **sí** tenían
+      quién los escribiera (`MealService` y `WorkoutService`); el único realmente huérfano
+      era `repeated_purchase`, y sigue sin escritor hasta la 4.4.1.
+      El `record_feedback` muerto de `engine.py` **ya se había borrado en la 4.3**, no acá.
+- [x] **Dedup antes de persistir**: no crear una sugerencia pendiente cuyo sujeto ya tiene
+      una pendiente. El tope (`limit`) se aplica **después** del dedup, no antes: al revés,
+      un lote con duplicados devolvía menos sugerencias de las pedidas. Para el hogar el
+      filtro exige `scope_type == "household"`, porque las personales también llevan
+      `household_id` y sin eso la tarjeta de despensa que aceptó uno bloqueaba la del otro.
 
 **4.4.1 — Aprender de lo que hacen, no solo de lo que tocan**
 
@@ -996,9 +1016,15 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
 - [ ] `snoozed` guarda `value=0.0` y no entra ni en la lista positiva ni en la negativa:
       **escrito y jamás leído**; y `dismissed` guarda `-0.3` y cae en la negativa, así que
       hoy **"posponer" actúa como rechazo**. `snoozed` pasa a ser una supresión acotada en el
-      tiempo vía `snoozed_until`, que ya existe en el modelo y no tiene ninguna ruta que lo
-      escriba.
-- [ ] El motivo de texto libre —que hoy muere en `notes`— se pasa por el matcher de reglas
+      tiempo vía `snoozed_until`. **Corrección:** ese campo existía en `Notification`, no en
+      `Suggestion`; en `Suggestion` lo agrega la `0003` del prerrequisito, junto con las dos
+      columnas de sujeto. Del lado del aprendizaje el prerrequisito ya hizo su parte:
+      `snoozed` no escribe ninguna señal (antes escribía la fila con `value=0.0`, que no se
+      leía) y `dismissed` escribe −0.3 que **baja el score sin borrar la tarjeta**. Lo que
+      falta acá es la supresión temporal en sí y la ruta que la escriba.
+- [x] El motivo de texto libre —que hoy muere en `notes`— viaja ya en el `context_json` de la
+      señal (`{"reason": ...}`), así que la 4.4.7 lo puede leer sin volver a buscar la
+      sugerencia. Lo que falta es pasarlo por el matcher de reglas
       que ya existe en `app/nlp/rules.py` contra los nombres conocidos de alimentos y
       actividades, para extraer el sujeto real de la queja: *"no me gusta el brócoli"* debe
       enseñar sobre el brócoli, no sobre el título de la sugerencia.

@@ -1,4 +1,7 @@
 """Tests for the recommendation engine."""
+
+from typing import Any
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -74,117 +77,192 @@ class TestHardConstraints:
         assert "Walk today" in titles
 
 
+def _signal(
+    user: User,
+    signal_type: str,
+    subject_type: str,
+    subject_name: str,
+    value: float,
+) -> Any:
+    """Una señal en memoria, con el sujeto en las columnas que el lector mira.
+
+    Estos tests usaban `entity_type="activity"`, que no es un tipo de sujeto. Pasaban
+    igual porque el scorer comparaba bolsas de palabras y el tipo no entraba en la
+    comparación —y porque las aserciones eran `>=`, que se cumple sin que el ajuste
+    exista—. Desde la 4.4 el tipo es parte de la clave.
+    """
+    from app.models.signal import BehaviorSignal
+
+    return BehaviorSignal(
+        user_id=user.id,
+        signal_type=signal_type,
+        entity_type=subject_type,
+        entity_name=subject_name,
+        value=value,
+        source_type="explicit",
+    )
+
+
+def _candidate(title: str, subject_type: str, subject_name: str, **extra: Any) -> dict[str, Any]:
+    """Un candidato de generador con su sujeto declarado, como los emiten los cuatro."""
+    base: dict[str, Any] = {
+        "title": title,
+        "text": f"{title} — cuerpo de la tarjeta",
+        "category": "activity",
+        "confidence": 0.5,
+        "subject_type": subject_type,
+        "subject_name": subject_name,
+    }
+    base.update(extra)
+    return base
+
+
 class TestScorer:
     def test_positive_signal_boosts_score(self, db: Session, diego: User) -> None:
-        from app.models.signal import BehaviorSignal
-
-        signals = [
-            BehaviorSignal(
-                user_id=diego.id,
-                signal_type="accepted_suggestion",
-                entity_type="activity",
-                entity_name="biking",
-                value=1.0,
-                source_type="explicit",
-            )
-        ]
+        signals = [_signal(diego, "accepted_suggestion", "exercise", "biking", 1.0)]
         candidates = [
-            {"title": "Go biking", "text": "Bike 30 min", "category": "activity", "confidence": 0.5},
-            {"title": "Go running", "text": "Run 30 min", "category": "activity", "confidence": 0.5},
+            _candidate("Go biking", "exercise", "biking"),
+            _candidate("Go running", "exercise", "running"),
         ]
         scored = score_candidates(candidates, diego, signals, [])
         assert len(scored) == 2
         # Biking should score higher due to positive signal
         biking = next(c for c in scored if "biking" in c["title"].lower())
         running = next(c for c in scored if "running" in c["title"].lower())
-        assert biking.get("_score", 0) >= running.get("_score", 0)
+        assert biking["_score"] > running["_score"]
 
     def test_negative_signal_reduces_score(self, db: Session, diego: User) -> None:
-        from app.models.signal import BehaviorSignal
-
-        signals = [
-            BehaviorSignal(
-                user_id=diego.id,
-                signal_type="rejected_suggestion",
-                entity_type="activity",
-                entity_name="running",
-                value=-1.0,
-                source_type="explicit",
-            )
-        ]
+        signals = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0)]
         candidates = [
-            {"title": "Go biking", "text": "Bike 30 min", "category": "activity", "confidence": 0.5},
-            {"title": "Go running", "text": "Run 30 min", "category": "activity", "confidence": 0.5},
+            _candidate("Go biking", "exercise", "biking"),
+            _candidate("Go running", "exercise", "running"),
         ]
         scored = score_candidates(candidates, diego, signals, [])
         biking = next(c for c in scored if "biking" in c["title"].lower())
         running = next(c for c in scored if "running" in c["title"].lower())
-        assert biking.get("_score", 0) >= running.get("_score", 0)
+        assert biking["_score"] > running["_score"]
+
+    def test_a_signal_only_moves_its_own_subject(self, db: Session, diego: User) -> None:
+        """El bug que la 4.4 arregla, fijado como test.
+
+        Rechazar *"Time to get moving!"* guardaba el título entero como entidad aprendida y
+        el scorer lo comparaba por tokens contra `title + text + rationale`: con 30% de
+        solape —"moving", "boost", "energy"— cualquier candidato bajaba de score, cruzando
+        categorías. Acá el rechazo es sobre el hábito de la constancia, y una tarjeta de
+        comida que usa esas mismas palabras no se entera.
+        """
+        signals = [_signal(diego, "rejected_suggestion", "habit", "workout consistency", -1.0)]
+        candidates = [
+            _candidate(
+                "Time to get moving!",
+                "habit",
+                "workout consistency",
+                text="Even a 30-minute session can boost your mood and energy.",
+            ),
+            _candidate(
+                "Use your spinach today",
+                "food",
+                "spinach",
+                category="meal",
+                text="Spinach will boost your energy — get moving on that salad.",
+            ),
+        ]
+        scored = score_candidates(candidates, diego, signals, [])
+        nudge = next(c for c in scored if c["subject_name"] == "workout consistency")
+        meal = next(c for c in scored if c["subject_name"] == "spinach")
+        assert nudge["_score"] < 0.5, "el sujeto rechazado baja"
+        assert meal["_score"] == 0.5, "la comida no tiene nada que ver y no se mueve"
+
+    def test_a_candidate_without_a_subject_keeps_its_raw_confidence(
+        self, db: Session, diego: User
+    ) -> None:
+        """Sin sujeto no hay aprendizaje: ni boost, ni penalización, ni fallback al título.
+
+        Es la contracara de no tener red de contención en `candidate_subject`. Lo que
+        garantiza que ningún generador se olvide es `TestEveryCandidateDeclaresItsSubject`.
+        """
+        signals = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0)]
+        candidates = [{"title": "Go running", "text": "Run 5km", "confidence": 0.5}]
+        scored = score_candidates(candidates, diego, signals, [])
+        assert scored[0]["_score"] == 0.5
 
 
 class TestSignalConstraints:
     def test_strongly_rejected_activity_filtered_out(self, db: Session, diego: User) -> None:
-        from app.models.signal import BehaviorSignal
-
-        signals = [
-            BehaviorSignal(
-                user_id=diego.id,
-                signal_type="rejected_suggestion",
-                entity_type="activity",
-                entity_name="running",
-                value=-1.0,
-                source_type="explicit",
-            )
-        ]
+        signals = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0)]
         candidates = [
-            {"title": "Go running today", "text": "Run 5km", "category": "activity", "confidence": 0.8},
-            {"title": "Go biking", "text": "Bike 30 min", "category": "activity", "confidence": 0.8},
+            _candidate("Go running today", "exercise", "running"),
+            _candidate("Go biking", "exercise", "biking"),
         ]
         filtered = apply_signal_constraints(candidates, signals)
         titles = [c["title"] for c in filtered]
         assert "Go running today" not in titles
         assert "Go biking" in titles
 
-    def test_no_rejected_signals_keeps_all(self, db: Session, diego: User) -> None:
-        from app.models.signal import BehaviorSignal
-
-        signals = [
-            BehaviorSignal(
-                user_id=diego.id,
-                signal_type="accepted_suggestion",
-                entity_type="activity",
-                entity_name="biking",
-                value=1.0,
-                source_type="explicit",
-            )
-        ]
+    def test_the_same_name_under_another_type_is_another_subject(
+        self, db: Session, diego: User
+    ) -> None:
+        """Un `muscle_group` "core" y un `exercise` "core" no son el mismo sujeto."""
+        signals = [_signal(diego, "rejected_suggestion", "muscle_group", "core", -1.0)]
         candidates = [
-            {"title": "Go running", "text": "Run 5km", "category": "activity", "confidence": 0.8},
-            {"title": "Go biking", "text": "Bike 30 min", "category": "activity", "confidence": 0.8},
+            _candidate("Train core today", "muscle_group", "core"),
+            _candidate("Try Core today", "exercise", "core"),
+        ]
+        filtered = apply_signal_constraints(candidates, signals)
+        assert [c["subject_type"] for c in filtered] == ["exercise"]
+
+    def test_accents_do_not_split_a_subject_in_two(self, db: Session, diego: User) -> None:
+        """El catálogo escribe "brócoli" y el texto libre de una captura, "brocoli"."""
+        signals = [_signal(diego, "rejected_suggestion", "food", "brocoli", -1.0)]
+        candidates = [_candidate("Cook brócoli", "food", "Brócoli", category="meal")]
+        assert apply_signal_constraints(candidates, signals) == []
+
+    def test_no_rejected_signals_keeps_all(self, db: Session, diego: User) -> None:
+        signals = [_signal(diego, "accepted_suggestion", "exercise", "biking", 1.0)]
+        candidates = [
+            _candidate("Go running", "exercise", "running"),
+            _candidate("Go biking", "exercise", "biking"),
         ]
         filtered = apply_signal_constraints(candidates, signals)
         # Positive signals don't filter — all candidates kept
         assert len(filtered) == 2
 
+    def test_dismissing_is_not_rejecting(self, db: Session, diego: User) -> None:
+        """Un descarte baja el score pero no borra el candidato de la lista.
+
+        El filtro miraba `value < 0` y nada más, así que el −0.3 de `dismissed` —y el de un
+        "más tarde", que grababa el mismo tipo de señal— hacía desaparecer la sugerencia
+        antes de puntuarla. Sacar algo de la lista pide un "no" explícito.
+        """
+        signals = [_signal(diego, "ignored_suggestion", "exercise", "running", -0.3)]
+        candidates = [_candidate("Go running", "exercise", "running")]
+        assert len(apply_signal_constraints(candidates, signals)) == 1
+
     def test_empty_signals_returns_all(self, db: Session, diego: User) -> None:
         candidates = [
-            {"title": "Run", "text": "Go run", "category": "activity", "confidence": 0.7},
-            {"title": "Swim", "text": "Go swim", "category": "activity", "confidence": 0.7},
+            _candidate("Run", "exercise", "running"),
+            _candidate("Swim", "exercise", "swimming"),
         ]
         filtered = apply_signal_constraints(candidates, [])
         assert len(filtered) == 2
 
     def test_diversity_penalty_applied_to_recent_duplicate(self, db: Session, diego: User) -> None:
         """Recently shown suggestions should score lower than fresh ones."""
-        from app.models.suggestion import Suggestion
         from datetime import datetime, timezone
+
+        from app.models.suggestion import Suggestion
 
         recent = Suggestion(
             scope_type="user",
             scope_user_id=diego.id,
             household_id=diego.household_id,
             category="activity",
-            title="Go biking",
+            subject_type="exercise",
+            subject_name="biking",
+            #: Con otra redacción que el candidato, a propósito: el castigo por repetición
+            #: se comparaba contra el título, así que "Go biking" y "Bike again today" eran
+            #: dos sugerencias distintas para el scorer y la misma para la persona.
+            title="Bike again today",
             text="Bike for 30 min",
             rationale="You like biking",
             confidence=0.8,
@@ -194,8 +272,8 @@ class TestSignalConstraints:
             created_at=datetime.now(timezone.utc),
         )
         candidates = [
-            {"title": "Go biking", "text": "Bike for 30 min", "category": "activity", "confidence": 0.8},
-            {"title": "Go running", "text": "Run 5km", "category": "activity", "confidence": 0.8},
+            _candidate("Go biking", "exercise", "biking", confidence=0.8),
+            _candidate("Go running", "exercise", "running", confidence=0.8),
         ]
         scored = score_candidates(candidates, diego, [], [recent])
         biking = next(c for c in scored if "biking" in c["title"].lower())
@@ -238,3 +316,175 @@ class TestMealWindow:
         # bug.
         monkeypatch.setattr(clock, "datetime", _FrozenDatetime)
         assert meal_generator._current_meal_type() == expected
+
+
+class TestEveryCandidateDeclaresItsSubject:
+    """Ningún generador puede emitir un candidato sin sujeto.
+
+    Este es el guardián que reemplaza al fallback: `learning.candidate_subject` devuelve
+    `None` en vez de caer al título, así que un generador que se olvide de declarar el
+    sujeto no rompe nada —simplemente deja de aprender, en silencio, para siempre—. La
+    única forma de que eso no pase es recorrerlos todos.
+
+    Los fixtures de abajo están armados para que cada generador entre a **todas** sus
+    ramas: por eso las aserciones de cantidad mínima, sin las cuales el test pasaría con un
+    generador que no produce nada.
+    """
+
+    @staticmethod
+    def _assert_subjects(candidates: list[dict[str, Any]], expected_at_least: int) -> None:
+        from app.recommendations.learning import SUBJECT_TYPES, normalize_subject
+
+        assert len(candidates) >= expected_at_least, (
+            f"el generador produjo {len(candidates)} candidatos: los fixtures dejaron de "
+            "cubrir sus ramas y el test ya no prueba lo que dice probar"
+        )
+        for candidate in candidates:
+            title = candidate.get("title")
+            assert candidate.get("subject_type") in SUBJECT_TYPES, (
+                f"candidato {title!r} sin `subject_type` válido: "
+                f"{candidate.get('subject_type')!r}"
+            )
+            assert normalize_subject(str(candidate.get("subject_name") or "")), (
+                f"candidato {title!r} con `subject_name` vacío o impronunciable: "
+                f"{candidate.get('subject_name')!r}"
+            )
+
+    @pytest.fixture
+    def stocked_pantry(
+        self, db: Session, household: Household, banana: FoodItem
+    ) -> dict[str, FoodItem]:
+        """Despensa con un ítem agotado, uno bajo y uno normal, más historial de compras."""
+        from datetime import datetime, timedelta, timezone
+
+        from app.models.pantry import PantryMovement
+
+        rice = FoodItem(canonical_name="rice", category="grain", base_unit="g")
+        milk = FoodItem(canonical_name="milk", category="dairy", base_unit="ml")
+        db.add_all([rice, milk])
+        db.flush()
+
+        db.add_all(
+            [
+                # agotado → "Items are out of stock" y el par de co-compra
+                PantryStock(
+                    household_id=household.id,
+                    food_item_id=milk.id,
+                    current_quantity=0,
+                    unit="ml",
+                    low_stock_threshold=500,
+                ),
+                # bajo pero disponible → "Stock up on low items" y "Use your last ..."
+                PantryStock(
+                    household_id=household.id,
+                    food_item_id=banana.id,
+                    current_quantity=1,
+                    unit="unit",
+                    low_stock_threshold=3,
+                ),
+                PantryStock(
+                    household_id=household.id,
+                    food_item_id=rice.id,
+                    current_quantity=900,
+                    unit="g",
+                    low_stock_threshold=200,
+                ),
+            ]
+        )
+
+        # Compras del mismo día, dos veces: co-ocurrencia leche+arroz, y arroz frecuente.
+        now = datetime.now(tz=timezone.utc)
+        for days_ago in (2, 9):
+            for food in (milk, rice):
+                db.add(
+                    PantryMovement(
+                        household_id=household.id,
+                        user_id=None,
+                        food_item_id=food.id,
+                        movement_type="purchase",
+                        quantity=1,
+                        unit=food.base_unit,
+                        timestamp=now - timedelta(days=days_ago),
+                    )
+                )
+        db.flush()
+        return {"rice": rice, "milk": milk, "banana": banana}
+
+    def test_meal_generator(
+        self, db: Session, diego: User, stocked_pantry: dict[str, FoodItem]
+    ) -> None:
+        from app.recommendations.generators import meal_generator
+
+        preferences = [
+            RecommendationPreference(
+                user_id=diego.id,
+                item_type="food",
+                item_name="Milanesa",
+                preference_signal="likes",
+                strength=0.9,
+            )
+        ]
+        candidates = meal_generator.generate(db, diego, preferences)
+        # pantry-featured + variedad + preferencia + un "usá lo último"
+        self._assert_subjects(candidates, 4)
+
+    def test_activity_generator_when_resting(self, db: Session, diego: User) -> None:
+        from app.recommendations.generators import activity_generator
+
+        preferences = [
+            RecommendationPreference(
+                user_id=diego.id,
+                item_type="exercise",
+                item_name="biking",
+                preference_signal="likes",
+                strength=1.0,
+            )
+        ]
+        # Sin entrenamientos: empujón de constancia + rotación + preferida + catálogo
+        candidates = activity_generator.generate(db, diego, preferences)
+        self._assert_subjects(candidates, 4)
+
+    def test_activity_generator_after_training_today(self, db: Session, diego: User) -> None:
+        """La rama del descanso: la única que solo aparece si entrenó hoy."""
+        from datetime import datetime, timezone
+
+        from app.models.workout import WorkoutParticipant, WorkoutSession
+        from app.recommendations.generators import activity_generator
+
+        session = WorkoutSession(
+            household_id=diego.household_id,
+            workout_type="gym",
+            timestamp_start=datetime.now(tz=timezone.utc),
+        )
+        db.add(session)
+        db.flush()
+        db.add(WorkoutParticipant(workout_session_id=session.id, user_id=diego.id))
+        db.flush()
+
+        candidates = activity_generator.generate(db, diego, [])
+        assert any(c["subject_name"] == "rest day" for c in candidates)
+        self._assert_subjects(candidates, 2)
+
+    def test_blood_generator(self, db: Session, diego: User) -> None:
+        from app.recommendations.generators import blood_generator
+
+        blood_values = {
+            "hemoglobin": {"value": 10.1, "unit": "g/dL", "status": "low"},
+            "ldl": {"value": 190, "unit": "mg/dL", "status": "critical_high"},
+            "tsh": {"value": 0.1, "unit": "mUI/L", "status": "low"},
+            # normal: no produce nada, y está para que eso siga siendo cierto
+            "glucose": {"value": 90, "unit": "mg/dL", "status": "normal"},
+        }
+        candidates = blood_generator.generate(db, diego, blood_values)
+        self._assert_subjects(candidates, 5)
+        assert all(c["subject_type"] == "biomarker" for c in candidates)
+        assert "glucose" not in {c["subject_name"] for c in candidates}
+
+    def test_pantry_generator(
+        self, db: Session, household: Household, stocked_pantry: dict[str, FoodItem]
+    ) -> None:
+        from app.recommendations.generators import pantry_generator
+
+        candidates = pantry_generator.generate(db, household.id)
+        # agotados + bajos + regulares + el par de co-compra
+        self._assert_subjects(candidates, 4)

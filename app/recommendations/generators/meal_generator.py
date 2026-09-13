@@ -140,6 +140,11 @@ def generate(
             suggestions.append(
                 {
                     "category": "meal",
+                    #: El sujeto es el alimento que encabeza la tarjeta, no la lista
+                    #: entera: es el que da el título, y el que la persona acepta o
+                    #: rechaza cuando toca el botón. Ver `recommendations/learning.py`.
+                    "subject_type": "food",
+                    "subject_name": featured[0],
                     "title": title,
                     "text": text,
                     "rationale": "Items available in pantry that should be used.",
@@ -160,6 +165,8 @@ def generate(
         suggestions.append(
             {
                 "category": "meal",
+                "subject_type": "food",
+                "subject_name": pick,
                 "title": f"Try {pick.title()} for variety",
                 "text": (
                     f"You haven't had {pick} recently. "
@@ -189,6 +196,8 @@ def generate(
         suggestions.append(
             {
                 "category": "meal",
+                "subject_type": "food",
+                "subject_name": pref.item_name,
                 "title": f"Have {pref.item_name} today",
                 "text": (
                     f"Based on your preferences, {pref.item_name} is a great option "
@@ -217,6 +226,8 @@ def generate(
         suggestions.append(
             {
                 "category": "meal",
+                "subject_type": "food",
+                "subject_name": food.canonical_name,
                 "title": f"Use your last {food.canonical_name}",
                 "text": (
                     f"Your {food.canonical_name} stock is running low "

@@ -35,6 +35,18 @@ class Suggestion(Base):
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    #: De qué habla la sugerencia, aparte de cómo quedó redactada: el alimento, el
+    #: ejercicio, el grupo muscular, el marcador de sangre, el hábito. Es la clave contra
+    #: la que se guarda el aprendizaje, y existe porque hasta la 4.4 esa clave era
+    #: `title.lower()[:200]` — o sea que rechazar una sugerencia enseñaba sobre su
+    #: redacción. Ver `app/recommendations/learning.py`.
+    #:
+    #: Nullable porque las filas anteriores a la `0003` no tienen sujeto y no se puede
+    #: derivar del título sin volver a cometer el error. Una sugerencia sin sujeto no
+    #: enseña nada, y eso es lo correcto para ella.
+    subject_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    subject_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # scoring / source
     priority: Mapped[int] = mapped_column(Integer, default=5, nullable=False)  # 1-10
     confidence: Mapped[float] = mapped_column(Numeric(4, 3), default=0.5, nullable=False)  # 0-1
@@ -47,6 +59,10 @@ class Suggestion(Base):
         String(30), default="pending", nullable=False, index=True
     )  # pending/accepted/rejected/snoozed/dismissed
     feedback_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Hasta cuándo dura un "más tarde". La columna homónima de `notifications` existe
+    #: desde la `0001`; acá no, y por eso `snoozed` era indistinguible de un descarte.
+    #: La escribe la 4.4.7.
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True

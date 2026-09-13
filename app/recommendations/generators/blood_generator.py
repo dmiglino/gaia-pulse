@@ -285,6 +285,14 @@ def generate(
             if status in ("critical_low", "critical_high"):
                 candidate["confidence"] = min(1.0, s["confidence"] + 0.05)
             candidate["source_type"] = "blood_analysis"
+            #: El sujeto es el marcador, no el consejo. Cada marcador anormal produce
+            #: hasta dos tarjetas con el mismo origen, así que anclarlas al alimento que
+            #: nombran —"lentils", "spinach"— habría hecho que rechazar una enseñara sobre
+            #: las lentejas cuando lo que la persona rechazó es que le hablen del hierro.
+            #: Y con el marcador como sujeto, el dedup de la 4.4 alcanza para que un
+            #: mismo panel no vuelva a producir la tarjeta que ya está pendiente.
+            candidate["subject_type"] = "biomarker"
+            candidate["subject_name"] = biomarker_key
             candidate["evidence_summary"] = (
                 f"{data.get('display_name', biomarker_key)}: "
                 f"{data.get('value')} {data.get('unit', '')} ({status})"

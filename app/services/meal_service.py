@@ -4,9 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc, local_today
 from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
+from app.recommendations import learning
 from app.repositories.food_repo import FoodRepository
 from app.repositories.meal_repo import MealRepository
-from app.repositories.suggestion_repo import BehaviorSignalRepository
 from app.schemas.meal import MealEventCreate
 
 
@@ -15,7 +15,6 @@ class MealService:
         self.db = db
         self.meal_repo = MealRepository(db)
         self.food_repo = FoodRepository(db)
-        self.signal_repo = BehaviorSignalRepository(db)
 
     def log_meal(self, household_id: int, data: MealEventCreate) -> MealEvent:
         """Create a full meal event with per-user participants and consumed items."""
@@ -64,12 +63,17 @@ class MealService:
                 self.db.add(item)
 
             # Record implicit behavior signals for each food eaten
+            #: Vía `learning.record_signal` y no `signal_repo.record` directo: es el único
+            #: lugar que normaliza el nombre antes de guardarlo, y sin eso el "Brócoli" de
+            #: una captura y el "brocoli" de otra quedaban como dos sujetos distintos que
+            #: nunca se sumaban entre sí ni matcheaban con el catálogo.
             for item_data in p_data.items:
-                self.signal_repo.record(
+                learning.record_signal(
+                    self.db,
                     user_id=p_data.user_id,
                     signal_type="repeated_meal_choice",
-                    entity_type="food",
-                    entity_name=item_data.food_name,
+                    subject_type="food",
+                    subject_name=item_data.food_name,
                     value=1.0,
                     source_type="implicit",
                     source_entity_type="meal_event",

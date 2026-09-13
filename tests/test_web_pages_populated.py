@@ -137,6 +137,10 @@ def seeded(
             household_id=household.id,
             scope_user_id=diego.id,
             category="activity",
+            #: El sujeto es lo que se aprende desde la 4.4: sin él, responder no graba
+            #: señal —y `test_responding_twice_only_records_one_signal` cuenta filas—.
+            subject_type="exercise",
+            subject_name="walking",
             title="Sumá una caminata liviana",
             text="Venís de cuatro días de fuerza sin cardio.",
             rationale="Balance entre fuerza y cardio en los últimos 7 días.",
@@ -649,6 +653,11 @@ def rocios_suggestion(db: Session, household: Household, rocio: User) -> Suggest
         household_id=household.id,
         scope_user_id=rocio.id,
         category="habit",
+        #: Con sujeto, así que si el aislamiento se rompiera **se grabaría** una señal:
+        #: sin esto, el `count() == 0` de los dos tests de abajo se cumpliría igual por
+        #: no tener sujeto y dejaría de probar el aislamiento.
+        subject_type="biomarker",
+        subject_name="sodium",
         title="Bajá el sodio esta semana",
         text="Tu último análisis de sangre trae la presión en el límite.",
         rationale="Marcador de sodio elevado en el panel del 3 de marzo.",

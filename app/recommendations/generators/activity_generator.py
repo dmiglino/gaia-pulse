@@ -137,6 +137,12 @@ def generate(
         suggestions.append(
             {
                 "category": "activity",
+                #: Un hábito, no un ejercicio: esta tarjeta no propone una actividad,
+                #: propone no hacer ninguna. Con `subject_type="exercise"` un rechazo acá
+                #: habría enseñado que no le gusta el descanso *como ejercicio*, y el
+                #: sujeto "rest" habría chocado con un ejercicio que se llamara igual.
+                "subject_type": "habit",
+                "subject_name": "rest day",
                 "title": "Consider a rest or light activity today",
                 "text": (
                     "You already worked out today. A short walk or yoga session can support "
@@ -155,6 +161,13 @@ def generate(
         suggestions.append(
             {
                 "category": "activity",
+                #: El candidato que le da nombre al bug: rechazar *"Time to get moving!"*
+                #: guardaba la frase entera como entidad aprendida, y "moving" y "boost"
+                #: y "energy" alcanzaban para penalizar o filtrar sugerencias de comida.
+                #: Su sujeto real es la constancia, y rechazarlo enseña una sola cosa:
+                #: esta persona no quiere que la empujen a entrenar.
+                "subject_type": "habit",
+                "subject_name": "workout consistency",
                 "title": "Time to get moving!",
                 "text": (
                     "It's been a few days since your last workout. "
@@ -175,6 +188,8 @@ def generate(
         suggestions.append(
             {
                 "category": "activity",
+                "subject_type": "muscle_group",
+                "subject_name": example,
                 "title": f"Train {example} today",
                 "text": (
                     f"Your {example} muscles are well-rested and ready for a session. "
@@ -197,6 +212,8 @@ def generate(
         suggestions.append(
             {
                 "category": "activity",
+                "subject_type": "exercise",
+                "subject_name": activity,
                 "title": f"Go {activity}",
                 "text": f"You enjoy {activity} — it's a great option for today's workout.",
                 "rationale": "Suggests an activity the user has expressed preference for.",
@@ -219,6 +236,8 @@ def generate(
         suggestions.append(
             {
                 "category": "activity",
+                "subject_type": "exercise",
+                "subject_name": name,
                 "title": f"Try {name.title()} today",
                 "text": (
                     f"A {intensity}-intensity {name} session is a good choice to maintain "

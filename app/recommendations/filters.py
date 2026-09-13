@@ -17,6 +17,7 @@ from typing import Any
 
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
+from app.recommendations import learning
 
 logger = logging.getLogger(__name__)
 
@@ -100,50 +101,47 @@ def _infer_category(candidate: dict[str, Any]) -> str | None:
 def apply_signal_constraints(
     candidates: list[dict[str, Any]],
     signals: list[Any],
-    rejection_overlap_threshold: float = 0.6,
 ) -> list[dict[str, Any]]:
-    """Remove candidates that strongly overlap with recently-rejected BehaviorSignals.
+    """Remove candidates whose subject the person has explicitly rejected.
 
-    This is a hard pre-filter (complements scorer penalties): if the user has
-    clearly rejected something (value < 0, high token overlap), don't show it
-    again regardless of how scoring would rank it.
+    This is a hard pre-filter (complements the scorer's penalty): if the user has
+    clearly said no to a subject, don't show it again regardless of how scoring
+    would rank it.
+
+    Hasta la 4.4 esto comparaba tokens: se tomaba `entity_name` de la señal —el título
+    renderizado de la sugerencia rechazada— y se lo cruzaba contra `title + text` del
+    candidato, borrándolo con 60% de solape. Con títulos de una frase el umbral se
+    alcanzaba por accidente y en la dirección peor posible, porque acá no hay penalización
+    que se pueda revertir: el candidato desaparece antes de tener score. Ahora hace falta
+    que el sujeto sea el mismo, y qué señales cuentan como "no" lo decide
+    `learning.rejected_subjects`, no un `value < 0` acá —que es lo que hacía que un
+    "más tarde" (`value=-0.3` en `dismissed`) borrara la sugerencia como si fuera un
+    rechazo.
 
     Args:
         candidates: Filtered candidate dicts from apply_hard_constraints.
         signals: Recent BehaviorSignal rows (pre-filtered to relevant window).
-        rejection_overlap_threshold: Token overlap fraction above which a
-            candidate is hard-excluded. Default 0.6 (60%).
 
     Returns:
-        Candidates with strongly-rejected items removed.
+        Candidates with explicitly-rejected subjects removed.
     """
-    rejected_entities = [
-        s.entity_name
-        for s in signals
-        if float(s.value) < 0 and s.signal_type in ("rejected_suggestion", "rejected_activity")
-    ]
-    if not rejected_entities:
+    rejected = learning.rejected_subjects(signals)
+    if not rejected:
         return candidates
 
     kept: list[dict[str, Any]] = []
     removed = 0
     for candidate in candidates:
-        ctokens = set(re.findall(r"\b[a-záéíóúüñ]{3,}\b", _normalise(
-            candidate.get("title", "") + " " + candidate.get("text", "")
-        )))
-        blocked = False
-        for entity_name in rejected_entities:
-            entity_tokens = set(re.findall(r"\b[a-záéíóúüñ]{3,}\b", _normalise(entity_name)))
-            if entity_tokens and ctokens:
-                overlap = len(entity_tokens & ctokens) / len(entity_tokens)
-                if overlap >= rejection_overlap_threshold:
-                    blocked = True
-                    break
-        if blocked:
-            logger.debug("Signal-constrained out candidate: %r", candidate.get("title"))
+        subject = learning.candidate_subject(candidate)
+        if subject is not None and subject in rejected:
+            logger.debug(
+                "Signal-constrained out candidate %r (rejected subject %s).",
+                candidate.get("title"),
+                subject,
+            )
             removed += 1
-        else:
-            kept.append(candidate)
+            continue
+        kept.append(candidate)
 
     if removed:
         logger.info("Signal constraint filter removed %d candidate(s).", removed)

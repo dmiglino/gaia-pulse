@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc, local_today
 from app.models.workout import WorkoutExercise, WorkoutParticipant, WorkoutSession
-from app.repositories.suggestion_repo import BehaviorSignalRepository
+from app.recommendations import learning
 from app.repositories.workout_repo import WorkoutRepository
 from app.schemas.workout import WorkoutSessionCreate
 
@@ -13,7 +13,6 @@ class WorkoutService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.workout_repo = WorkoutRepository(db)
-        self.signal_repo = BehaviorSignalRepository(db)
 
     def log_workout(self, household_id: int, data: WorkoutSessionCreate) -> WorkoutSession:
         """Create a workout session with per-user participants and exercises."""
@@ -59,11 +58,12 @@ class WorkoutService:
 
             # Record implicit signals for the activity
             if data.workout_type:
-                self.signal_repo.record(
+                learning.record_signal(
+                    self.db,
                     user_id=p_data.user_id,
                     signal_type="repeated_activity",
-                    entity_type="exercise",
-                    entity_name=data.workout_type,
+                    subject_type="exercise",
+                    subject_name=data.workout_type,
                     value=1.0,
                     source_type="implicit",
                     source_entity_type="workout_session",

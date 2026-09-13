@@ -1,18 +1,25 @@
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models.suggestion import Suggestion
 from app.models.user import User
-from app.repositories.suggestion_repo import BehaviorSignalRepository, SuggestionRepository
+from app.recommendations import learning
+from app.repositories.suggestion_repo import SuggestionRepository
 from app.schemas.suggestion import RecommendationPreferenceCreate, SuggestionFeedback
+
+logger = logging.getLogger(__name__)
 
 
 class SuggestionService:
+    #: Ya no hay `self.signal_repo`: las dos escrituras de señales de este servicio pasan
+    #: por `learning.record_signal`, que es el único punto que valida el sujeto y normaliza
+    #: el nombre. Tener el repositorio a mano acá era la puerta por la que se escribía
+    #: salteándolo.
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repo = SuggestionRepository(db)
-        self.signal_repo = BehaviorSignalRepository(db)
 
     def get_pending(self, user_id: int, household_id: int) -> list[Suggestion]:
         return self.repo.get_pending_for_user(user_id, household_id)
@@ -44,38 +51,79 @@ class SuggestionService:
         suggestion.feedback_notes = feedback.feedback_notes
         suggestion.responded_at = datetime.now(timezone.utc)
 
-        # Map feedback → behavior signal
-        signal_map = {
-            "accepted": ("accepted_suggestion", 1.0),
-            "rejected": ("rejected_suggestion", -1.0),
-            "dismissed": ("ignored_suggestion", -0.3),
-            "snoozed": ("ignored_suggestion", 0.0),
-        }
-        if feedback.status in signal_map:
-            signal_type, value = signal_map[feedback.status]
-            # Determine the entity from the suggestion category
-            entity_type = {
-                "meal": "food",
-                "activity": "exercise",
-                "pantry": "food",
-                "shopping": "food",
-                "variety": "food",
-            }.get(suggestion.category, "suggestion")
-
-            self.signal_repo.record(
-                user_id=user_id,
-                signal_type=signal_type,
-                entity_type=entity_type,
-                entity_name=suggestion.title.lower()[:200],
-                value=value,
-                source_type="explicit",
-                source_entity_type="suggestion",
-                source_entity_id=suggestion.id,
-            )
+        self._record_feedback_signal(suggestion, feedback, user_id)
 
         self.db.flush()
         self.db.commit()
         return suggestion
+
+    #: Qué señal graba cada respuesta. `snoozed` no graba ninguna: hasta la 4.4 escribía
+    #: `ignored_suggestion` con `value=0.0`, una fila que no entra ni en lo positivo ni en
+    #: lo negativo —escrita y jamás leída—. Un "más tarde" es una supresión acotada en el
+    #: tiempo, no una opinión sobre el sujeto, y donde vive es en `snoozed_until`
+    #: (4.4.7), no en la tabla de aprendizaje.
+    _FEEDBACK_SIGNALS: dict[str, tuple[str, float]] = {
+        "accepted": ("accepted_suggestion", 1.0),
+        "rejected": ("rejected_suggestion", -1.0),
+        "dismissed": ("ignored_suggestion", -0.3),
+    }
+
+    #: `RecommendationPreference.item_type` es más fino que el vocabulario de sujetos
+    #: (`food/recipe/exercise/cuisine/meal_type/ingredient`), y esa finura no le sirve al
+    #: aprendizaje: una receta y un ingrediente se comparan contra los mismos candidatos
+    #: de comida. `meal_type` es un hábito —"no desayuno" no habla de un alimento—.
+    _PREFERENCE_SUBJECT_TYPES: dict[str, str] = {
+        "food": "food",
+        "ingredient": "food",
+        "recipe": "food",
+        "cuisine": "food",
+        "exercise": "exercise",
+        "meal_type": "habit",
+    }
+
+    def _record_feedback_signal(
+        self, suggestion: Suggestion, feedback: SuggestionFeedback, user_id: int
+    ) -> None:
+        """Guardar lo que esta respuesta enseña, contra el sujeto de la sugerencia.
+
+        Hasta la 4.4 esto grababa `entity_name=suggestion.title.lower()[:200]` y el
+        `entity_type` salía de un mapa de categorías, así que lo aprendido era **la
+        redacción**: rechazar *"Time to get moving!"* enseñaba sobre las palabras
+        "moving", "boost" y "energy", y el scorer las cruzaba por bolsa de palabras contra
+        candidatos de comida. El sujeto lo declara ahora el generador y viaja en la fila.
+        """
+        mapped = self._FEEDBACK_SIGNALS.get(feedback.status)
+        if mapped is None:
+            return
+
+        if not suggestion.subject_type or not suggestion.subject_name:
+            #: Sin sujeto no se graba nada. Las filas anteriores a la `0003` no lo tienen
+            #: y no se puede derivar del título sin volver a cometer el error, así que
+            #: responderlas no enseña —que es correcto— y queda anotado en el log en vez
+            #: de en la tabla.
+            logger.info(
+                "Sugerencia %d respondida con %r sin sujeto: no se graba señal.",
+                suggestion.id,
+                feedback.status,
+            )
+            return
+
+        signal_type, value = mapped
+        learning.record_signal(
+            self.db,
+            user_id=user_id,
+            signal_type=signal_type,
+            subject_type=suggestion.subject_type,
+            subject_name=suggestion.subject_name,
+            value=value,
+            source_type="explicit",
+            source_entity_type="suggestion",
+            source_entity_id=suggestion.id,
+            #: El motivo de texto libre iba a `feedback_notes` y ahí moría. Guardarlo
+            #: también en la señal es lo que permite que la 4.4.7 lo lea sin volver a
+            #: buscar la sugerencia.
+            context={"reason": feedback.feedback_notes} if feedback.feedback_notes else None,
+        )
 
     def save_preference(
         self, user_id: int, data: RecommendationPreferenceCreate
@@ -90,14 +138,27 @@ class SuggestionService:
         )
         # Also record as an explicit signal
         value = -1.0 if data.preference_signal in ("dislikes", "impossible", "avoid") else 1.0
-        self.signal_repo.record(
-            user_id=user_id,
-            signal_type="explicit_preference",
-            entity_type=data.item_type,
-            entity_name=data.item_name,
-            value=value,
-            source_type="explicit",
-        )
+        subject_type = self._PREFERENCE_SUBJECT_TYPES.get(data.item_type)
+        if subject_type is None:
+            #: `item_type` es texto libre de 40 caracteres que llega del NLP, y hasta la
+            #: 4.4 se guardaba tal cual como `entity_type`: una preferencia de tipo
+            #: "ingredient" escribía señales que el scorer —que compara con `"food"`—
+            #: nunca iba a mirar. Ahora un tipo que no sabemos traducir no escribe una
+            #: fila muerta; deja rastro acá.
+            logger.info(
+                "Preferencia de tipo %r sin sujeto equivalente: no se graba señal.",
+                data.item_type,
+            )
+        else:
+            learning.record_signal(
+                self.db,
+                user_id=user_id,
+                signal_type="explicit_preference",
+                subject_type=subject_type,
+                subject_name=data.item_name,
+                value=value,
+                source_type="explicit",
+            )
         self.db.commit()
 
     def get_user_preferences(self, user_id: int) -> list:

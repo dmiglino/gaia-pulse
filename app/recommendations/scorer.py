@@ -2,18 +2,26 @@
 
 Scoring model (additive):
 - Base score: candidate's own confidence value
-- Positive behaviour signals boost items that share tokens with accepted/liked entities
-- Negative behaviour signals penalise items sharing tokens with rejected entities
-- Recently suggested items receive a diversity penalty (avoid repetition)
+- The candidate's **subject** is looked up in what the person has taught the app: a
+  positive net affinity boosts it, a negative one penalises it
+- A subject already suggested in the last few days receives a diversity penalty
 - Scores are clamped to [0.0, 1.0]
 
 The result list is sorted by score descending.
+
+Hasta la 4.4 el match era por bolsa de palabras: se tokenizaban `title + text +
+rationale` del candidato y `entity_name` de la señal —que era el **título renderizado** de
+la sugerencia respondida—, y con 30% de solape ya había ajuste. Eso hacía que rechazar
+*"Time to get moving!"* penalizara cualquier candidato que compartiera "moving", "boost" o
+"energy", cruzando categorías: una sugerencia de comida bajaba de score por un rechazo de
+actividad. Ahora la comparación es la igualdad del sujeto normalizado, y el vocabulario
+—qué es un sujeto, qué señales cuentan— vive en `app/recommendations/learning.py`, del
+mismo lado que las escrituras.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -21,43 +29,16 @@ from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import Suggestion
 from app.models.user import User
+from app.recommendations import learning
 
 logger = logging.getLogger(__name__)
 
 # Tuning knobs
 _POSITIVE_SIGNAL_BOOST = 0.12
 _NEGATIVE_SIGNAL_PENALTY = 0.15
-_DIVERSITY_PENALTY = 0.20        # per recent duplicate
-_RECENT_SUGGESTION_DAYS = 7      # window for diversity check
-_RECENT_SIGNAL_DAYS = 30         # window for behaviour signal lookup
-
-
-def _tokens(text: str) -> set[str]:
-    """Extract meaningful word tokens from a string for fuzzy matching."""
-    words = re.findall(r"\b[a-záéíóúüñ]{3,}\b", text.lower())
-    # Remove common stop words
-    stopwords = {
-        "the", "and", "for", "with", "you", "your", "have", "that",
-        "this", "are", "was", "not", "but", "has", "can", "try", "will",
-        "been", "its", "from", "had", "eat", "use", "add", "get", "our",
-    }
-    return {w for w in words if w not in stopwords}
-
-
-def _candidate_tokens(candidate: dict[str, Any]) -> set[str]:
-    title = candidate.get("title", "")
-    text = candidate.get("text", "")
-    rationale = candidate.get("rationale", "")
-    return _tokens(f"{title} {text} {rationale}")
-
-
-def _signal_overlap(candidate_tokens: set[str], entity_name: str) -> float:
-    """Return a fraction (0–1) of how much the entity_name overlaps with candidate tokens."""
-    entity_tokens = _tokens(entity_name)
-    if not entity_tokens or not candidate_tokens:
-        return 0.0
-    overlap = entity_tokens & candidate_tokens
-    return len(overlap) / len(entity_tokens)
+_DIVERSITY_PENALTY = 0.20  # per subject already suggested recently
+_RECENT_SUGGESTION_DAYS = 7  # window for diversity check
+_RECENT_SIGNAL_DAYS = 30  # window for behaviour signal lookup
 
 
 def score_candidates(
@@ -77,6 +58,11 @@ def score_candidates(
     Returns:
         The same list, each dict augmented with a "_score" key, sorted
         by _score descending.
+
+    Un candidato sin sujeto queda con su confianza cruda: no recibe boost, ni penalización,
+    ni castigo por repetición. Es la consecuencia buscada de no tener fallback al título
+    (ver `learning.candidate_subject`); que ningún generador se olvide de declararlo lo
+    cuida un test que los recorre, no una rama acá.
     """
     if not candidates:
         return []
@@ -86,80 +72,66 @@ def score_candidates(
 
     # Filter signals to recent window
     relevant_signals = [
-        s for s in signals
-        if s.created_at is None or as_utc(s.created_at) >= cutoff_signals
+        s for s in signals if s.created_at is None or as_utc(s.created_at) >= cutoff_signals
     ]
+    affinity = learning.net_affinity(relevant_signals)
 
-    # Positive and negative signal lists
-    positive_signals = [
-        s for s in relevant_signals
-        if s.signal_type in (
-            "accepted_suggestion",
-            "repeated_meal_choice",
-            "repeated_purchase",
-            "repeated_activity",
-        )
-        or float(s.value) > 0
-    ]
-    negative_signals = [
-        s for s in relevant_signals
-        if s.signal_type in (
-            "rejected_suggestion",
-            "rejected_activity",
-        )
-        or float(s.value) < 0
-    ]
-
-    # Recent suggestion titles for diversity penalty
-    recent_titles: set[str] = {
-        s.title.lower()
-        for s in recent_suggestions
-        if s.created_at is None or as_utc(s.created_at) >= cutoff_suggestions
-    }
+    #: Los sujetos ya sugeridos hace poco, para no repetirlos. Antes esto era un conjunto
+    #: de títulos, y las dos comparaciones —exacta y por solape de tokens— fallaban del
+    #: mismo modo: "Use your milk today" y "Use your last milk" son la misma sugerencia
+    #: con dos redacciones, y no se reconocían entre sí.
+    recent_subjects: set[tuple[str, str]] = set()
+    for suggestion in recent_suggestions:
+        if suggestion.created_at is not None and as_utc(suggestion.created_at) < cutoff_suggestions:
+            continue
+        if suggestion.subject_type and suggestion.subject_name:
+            recent_subjects.add(
+                learning.subject_key(suggestion.subject_type, suggestion.subject_name)
+            )
 
     scored: list[dict[str, Any]] = []
 
     for candidate in candidates:
         base_score = float(candidate.get("confidence", 0.5))
-        ctokens = _candidate_tokens(candidate)
+        subject = learning.candidate_subject(candidate)
         adjustment = 0.0
 
-        # Positive signal boosts
-        for sig in positive_signals:
-            overlap = _signal_overlap(ctokens, sig.entity_name)
-            if overlap > 0.3:
-                boost = _POSITIVE_SIGNAL_BOOST * overlap * min(float(sig.value), 1.0)
+        if subject is not None:
+            net = affinity.get(subject, 0.0)
+            if net > 0:
+                #: `min(net, 1.0)`: la suma no está acotada —cada comida registrada escribe
+                #: un `repeated_meal_choice` de valor 1.0— y sin el techo un alimento de
+                #: todos los días se llevaba el boost entero por delante de todo lo demás.
+                #: El techo lo acota; repartir el peso entre afinidad estable y saciedad
+                #: reciente es la 4.4.6.
+                boost = _POSITIVE_SIGNAL_BOOST * min(net, 1.0)
                 adjustment += boost
                 logger.debug(
-                    "Candidate %r: +%.3f from positive signal %r (overlap=%.2f)",
-                    candidate.get("title"), boost, sig.entity_name, overlap,
+                    "Candidate %r: +%.3f from subject %s (net=%.2f)",
+                    candidate.get("title"),
+                    boost,
+                    subject,
+                    net,
                 )
-
-        # Negative signal penalties
-        for sig in negative_signals:
-            overlap = _signal_overlap(ctokens, sig.entity_name)
-            if overlap > 0.3:
-                penalty = _NEGATIVE_SIGNAL_PENALTY * overlap * min(abs(float(sig.value)), 1.0)
+            elif net < 0:
+                penalty = _NEGATIVE_SIGNAL_PENALTY * min(-net, 1.0)
                 adjustment -= penalty
                 logger.debug(
-                    "Candidate %r: -%.3f from negative signal %r (overlap=%.2f)",
-                    candidate.get("title"), penalty, sig.entity_name, overlap,
+                    "Candidate %r: -%.3f from subject %s (net=%.2f)",
+                    candidate.get("title"),
+                    penalty,
+                    subject,
+                    net,
                 )
 
-        # Diversity penalty for recently shown suggestions
-        title_lower = candidate.get("title", "").lower()
-        if title_lower in recent_titles:
-            adjustment -= _DIVERSITY_PENALTY
-            logger.debug("Candidate %r: -%.2f diversity penalty.", candidate.get("title"), _DIVERSITY_PENALTY)
-        else:
-            # Check partial overlap with recent suggestion titles
-            for rt in recent_titles:
-                rt_tokens = _tokens(rt)
-                if rt_tokens and ctokens:
-                    overlap = len(rt_tokens & ctokens) / len(rt_tokens)
-                    if overlap >= 0.6:
-                        adjustment -= _DIVERSITY_PENALTY * overlap
-                        break
+            if subject in recent_subjects:
+                adjustment -= _DIVERSITY_PENALTY
+                logger.debug(
+                    "Candidate %r: -%.2f diversity penalty (subject %s already suggested).",
+                    candidate.get("title"),
+                    _DIVERSITY_PENALTY,
+                    subject,
+                )
 
         final_score = max(0.0, min(1.0, base_score + adjustment))
         scored_candidate = {**candidate, "_score": round(final_score, 4)}

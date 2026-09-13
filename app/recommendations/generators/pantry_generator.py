@@ -77,6 +77,18 @@ def generate(
         suggestions.append(
             {
                 "category": "shopping",
+                #: Un hábito y no un alimento, aunque la tarjeta nombre cinco: lo que la
+                #: persona acepta o rechaza acá es el aviso de reposición, no la leche.
+                #: Anclarlo al primer ítem de la lista habría enseñado sobre la leche cada
+                #: vez que la lista arrancara con ella.
+                #:
+                #: El costo, anotado: con el dedup por sujeto de la 4.4, mientras haya una
+                #: de estas pendiente no se genera otra, así que si además se acaba algo
+                #: nuevo la lista pendiente queda vieja. Se acepta porque el aviso por ítem
+                #: —el que sí se retira cuando el ítem se repone— es la notificación de
+                #: `low_stock` de la 4.3, no esta tarjeta.
+                "subject_type": "habit",
+                "subject_name": "out of stock alert",
                 "title": "Items are out of stock",
                 "text": (
                     f"The following items have run out: {', '.join(names)}. "
@@ -103,6 +115,8 @@ def generate(
         suggestions.append(
             {
                 "category": "shopping",
+                "subject_type": "habit",
+                "subject_name": "low stock alert",
                 "title": "Stock up on low items",
                 "text": (
                     f"The following items are running low: {', '.join(names)}. "
@@ -138,6 +152,8 @@ def generate(
                 suggestions.append(
                     {
                         "category": "shopping",
+                        "subject_type": "habit",
+                        "subject_name": "restock regulars",
                         "title": "Restock your regulars",
                         "text": (
                             f"You regularly buy {', '.join(names)} but they're not in stock. "
@@ -184,6 +200,11 @@ def generate(
                     suggestions.append(
                         {
                             "category": "shopping",
+                            #: Esta sí nombra un alimento y habla de ese alimento, así que
+                            #: su sujeto es el que falta —no el par—: es lo que hay que
+                            #: comprar, y es sobre lo que un rechazo enseña.
+                            "subject_type": "food",
+                            "subject_name": missing,
                             "title": f"Buy {missing} — you often use it with {partner}",
                             "text": (
                                 f"You've purchased {food_a.canonical_name} and "

@@ -41,6 +41,11 @@ def _suggestion(db: Session, household: Household, user: User, **kwargs) -> Sugg
         "household_id": household.id,
         "scope_user_id": user.id,
         "category": "meal",
+        #: Desde la 4.4 el sujeto es lo que se aprende: sin él la respuesta no graba
+        #: señal (a propósito — no se deriva del título). Los generadores siempre lo
+        #: declaran, así que un fixture sin sujeto no representa nada real.
+        "subject_type": "food",
+        "subject_name": "lentils",
         "title": "Try lentils tonight",
         "text": "You have lentils and haven't had legumes this week.",
         "rationale": "Dietary variety supports micronutrient balance.",

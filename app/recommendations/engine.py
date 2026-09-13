@@ -23,7 +23,7 @@ from app.models.household import Household
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference, Suggestion
 from app.models.user import User
-from app.recommendations import filters, scorer
+from app.recommendations import filters, learning, scorer
 from app.recommendations.generators import (
     activity_generator,
     blood_generator,
@@ -97,8 +97,9 @@ class RecommendationEngine:
         ranked = scorer.score_candidates(candidates, user, signals, recent_suggestions)
 
         # ── Persist top-N as Suggestion records ────────────────────────
+        pending = self._pending_subjects_for_user(db, user.id)
         created: list[Suggestion] = []
-        for item in ranked[:limit]:
+        for item in self._without_duplicate_subjects(ranked, pending, limit):
             suggestion = self._make_user_suggestion(user, item)
             db.add(suggestion)
             created.append(suggestion)
@@ -136,8 +137,9 @@ class RecommendationEngine:
         candidates = pantry_generator.generate(db, household.id, limit=limit * 2)
 
         # For household suggestions we skip user-specific filtering
+        pending = self._pending_subjects_for_household(db, household.id)
         created: list[Suggestion] = []
-        for item in candidates[:limit]:
+        for item in self._without_duplicate_subjects(candidates, pending, limit):
             suggestion = self._make_household_suggestion(household, item)
             db.add(suggestion)
             created.append(suggestion)
@@ -199,6 +201,83 @@ class RecommendationEngine:
             .all()
         )
 
+    def _pending_subjects_for_user(self, db: Session, user_id: int) -> set[tuple[str, str]]:
+        """Subjects that already have a pending suggestion for this user."""
+        rows = (
+            db.query(Suggestion.subject_type, Suggestion.subject_name)
+            .filter(
+                Suggestion.scope_user_id == user_id,
+                Suggestion.status == "pending",
+                Suggestion.subject_type.isnot(None),
+                Suggestion.subject_name.isnot(None),
+            )
+            .all()
+        )
+        return {learning.subject_key(t, n) for t, n in rows}
+
+    def _pending_subjects_for_household(
+        self, db: Session, household_id: int
+    ) -> set[tuple[str, str]]:
+        """Subjects that already have a pending household-scoped suggestion.
+
+        Filtra por `scope_type` además de por household: las sugerencias personales de
+        Diego y Rocío también llevan `household_id`, y sin esa condición una tarjeta de
+        despensa aceptada por uno bloqueaba la del otro.
+        """
+        rows = (
+            db.query(Suggestion.subject_type, Suggestion.subject_name)
+            .filter(
+                Suggestion.household_id == household_id,
+                Suggestion.scope_type == "household",
+                Suggestion.status == "pending",
+                Suggestion.subject_type.isnot(None),
+                Suggestion.subject_name.isnot(None),
+            )
+            .all()
+        )
+        return {learning.subject_key(t, n) for t, n in rows}
+
+    @staticmethod
+    def _without_duplicate_subjects(
+        ranked: list[dict[str, Any]],
+        already_pending: set[tuple[str, str]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Take up to *limit* candidates, at most one per subject.
+
+        Este es el dedup **antes** de persistir que pide el plan. Hasta acá el único
+        control de repetición era la penalización de diversidad del scorer, que es un
+        ajuste de score y no un filtro: un candidato de confianza 0.95 bajaba a 0.75 y
+        seguía saliendo primero, así que cada corrida del job escribía otra vez la misma
+        sugerencia. Con esto, mientras una siga pendiente no se genera otra del mismo
+        sujeto —y la penalización de diversidad queda para lo ya respondido, que sí puede
+        volver a aparecer pero más abajo.
+
+        El corte por `limit` se aplica **después** del dedup, no antes: recortar primero
+        habría devuelto menos de `limit` sugerencias cada vez que el tope se llenaba de
+        duplicados, que es justamente el caso frecuente.
+        """
+        seen = set(already_pending)
+        kept: list[dict[str, Any]] = []
+        for item in ranked:
+            if len(kept) >= limit:
+                break
+            subject = learning.candidate_subject(item)
+            #: Un candidato sin sujeto pasa: no hay con qué deduplicarlo, y descartarlo
+            #: sería peor —una sugerencia menos por un dato que le falta a la app, no a
+            #: la persona.
+            if subject is not None:
+                if subject in seen:
+                    logger.debug(
+                        "Skipping candidate %r: subject %s already pending.",
+                        item.get("title"),
+                        subject,
+                    )
+                    continue
+                seen.add(subject)
+            kept.append(item)
+        return kept
+
     def _make_user_suggestion(
         self, user: User, item: dict[str, Any]
     ) -> Suggestion:
@@ -208,6 +287,8 @@ class RecommendationEngine:
             household_id=user.household_id,
             scope_user_id=user.id,
             category=item.get("category", "meal"),
+            subject_type=item.get("subject_type"),
+            subject_name=item.get("subject_name"),
             title=item["title"],
             text=item["text"],
             rationale=item.get("rationale", ""),
@@ -227,6 +308,8 @@ class RecommendationEngine:
             household_id=household.id,
             scope_user_id=None,
             category=item.get("category", "shopping"),
+            subject_type=item.get("subject_type"),
+            subject_name=item.get("subject_name"),
             title=item["title"],
             text=item["text"],
             rationale=item.get("rationale", ""),
