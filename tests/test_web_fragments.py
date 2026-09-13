@@ -1,12 +1,17 @@
 """Web-layer tests for the HTMX fragment routes added in v3."""
 
+import re
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.i18n import _
 from app.models.food import FoodItem
+from app.models.household import Household
 from app.models.pantry import PantryStock
 from app.models.user import User
+from app.schemas.notification import NotificationCreate
+from app.services.notification_service import NotificationService
 from app.web.flash import FLASH_COOKIE_NAME
 
 
@@ -14,6 +19,64 @@ def test_notifications_badge(authenticated_client: TestClient) -> None:
     r = authenticated_client.get("/notifications/badge")
     assert r.status_code == 200, r.text
     assert 'id="notif-badge"' in r.text
+
+
+def test_notification_read_and_dismiss_return_fragments(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """These buttons used to `hx-post` at `/api/v1/...`, which answers JSON —
+    HTMX swapped that JSON straight into the page."""
+    svc = NotificationService(db)
+    n = svc.create(
+        NotificationCreate(
+            user_id=diego.id,
+            household_id=diego.household_id,
+            category="inactivity",
+            title="No workouts in 4 days",
+            body="Time to move!",
+        )
+    )
+
+    r = authenticated_client.post(f"/notifications/{n.id}/read", headers={"HX-Request": "true"})
+    assert r.status_code == 200, r.text
+    assert f'id="notif-{n.id}"' in r.text
+    assert "No workouts in 4 days" in r.text
+    # The re-rendered card must have lost the unread styling.
+    assert "bg-indigo-50/30" not in r.text
+    db.refresh(n)
+    assert n.is_read
+
+    r = authenticated_client.post(f"/notifications/{n.id}/dismiss", headers={"HX-Request": "true"})
+    assert r.status_code == 200, r.text
+    assert r.text.strip() == ""
+    db.refresh(n)
+    assert n.is_dismissed
+
+
+def test_cannot_act_on_another_households_notification(
+    authenticated_client: TestClient, db: Session
+) -> None:
+    """The id in the URL must not be enough: scope by the acting user."""
+    other_home = Household(name="Someone else", timezone="UTC")
+    db.add(other_home)
+    db.flush()
+    n = NotificationService(db).create(
+        NotificationCreate(
+            household_id=other_home.id,
+            category="low_stock",
+            title="Their pantry",
+            body="Not yours",
+        )
+    )
+
+    for action in ("read", "dismiss"):
+        r = authenticated_client.post(
+            f"/notifications/{n.id}/{action}", headers={"HX-Request": "true"}
+        )
+        assert r.status_code == 404, (action, r.text)
+    db.refresh(n)
+    assert not n.is_read
+    assert not n.is_dismissed
 
 
 def test_suggestions_index_and_generate(authenticated_client: TestClient) -> None:
@@ -119,3 +182,19 @@ def test_flash_messages_component_accepts_type_text_aliases(
     )
     assert r.status_code == 200, r.text
     assert _("Preference saved.") in r.text
+
+
+def test_no_template_htmx_call_targets_the_json_api() -> None:
+    """The test that would have caught the whole routing defect class.
+
+    `AGENTS.md` keeps the two routings apart: `/api/...` answers JSON, page
+    routes answer HTML. An `hx-post` at a JSON route swaps JSON into the DOM.
+    """
+    from pathlib import Path
+
+    offenders = []
+    for tpl in Path("app/templates").rglob("*.html"):
+        for lineno, line in enumerate(tpl.read_text().splitlines(), 1):
+            if re.search(r'(hx-(get|post|put|delete)|action)="/api/', line):
+                offenders.append(f"{tpl}:{lineno}")
+    assert not offenders, offenders

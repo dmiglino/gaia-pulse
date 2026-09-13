@@ -1,0 +1,39 @@
+{# One notification. Also returned on its own by POST /notifications/{id}/read,
+   so it must not depend on anything but `n`. #}
+<div class="bg-white rounded-xl border {% if not n.is_read %}border-indigo-200 bg-indigo-50/30{% else %}border-slate-100{% endif %} shadow-sm p-4 flex gap-3"
+     id="notif-{{ n.id }}">
+  <!-- Category icon -->
+  <div class="flex-shrink-0 text-xl mt-0.5" aria-hidden="true">
+    {% if n.category == 'low_stock' %}🛒
+    {% elif n.category == 'inactivity' %}🏃
+    {% elif n.category == 'metric_reminder' %}⚖️
+    {% elif n.category == 'suggestion' %}💡
+    {% elif n.category == 'trend' %}📈
+    {% else %}🔔{% endif %}
+  </div>
+  <div class="flex-1 min-w-0">
+    <div class="flex items-start justify-between gap-2">
+      <p class="text-sm font-semibold {% if not n.is_read %}text-slate-900{% else %}text-slate-600{% endif %}">
+        {{ n.title }}
+      </p>
+      <span class="text-xs text-slate-400 flex-shrink-0">
+        {{ n.created_at.strftime('%b %d') }}
+      </span>
+    </div>
+    <p class="text-sm text-slate-600 mt-0.5">{{ n.body }}</p>
+  </div>
+  <div class="flex-shrink-0 flex flex-col gap-1">
+    {% if not n.is_read %}
+    <button hx-post="/notifications/{{ n.id }}/read"
+            hx-target="#notif-{{ n.id }}"
+            hx-swap="outerHTML"
+            aria-label="{{ _('Mark as read') }}"
+            class="text-xs text-slate-400 hover:text-slate-600">✓</button>
+    {% endif %}
+    <button hx-post="/notifications/{{ n.id }}/dismiss"
+            hx-target="#notif-{{ n.id }}"
+            hx-swap="outerHTML"
+            aria-label="{{ _('Dismiss') }}"
+            class="text-xs text-slate-300 hover:text-rose-400">✕</button>
+  </div>
+</div>

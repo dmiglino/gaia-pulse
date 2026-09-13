@@ -48,8 +48,27 @@ class NotificationService:
     def get_unread_count(self, user_id: int, household_id: int) -> int:
         return self.repo.get_unread_count(user_id, household_id)
 
-    def mark_read(self, notification_id: int) -> bool:
+    def _get_owned(
+        self, notification_id: int, user_id: int, household_id: int
+    ) -> Notification | None:
+        """Fetch a notification only if the acting user is allowed to act on it.
+
+        A notification is either addressed to one member (``user_id`` set) or to
+        the whole household (``user_id`` null). Anything else belongs to someone
+        outside this household: without this check the id in the URL was enough
+        to read or dismiss it.
+        """
         n = self.repo.get(notification_id)
+        if not n:
+            return None
+        if n.user_id == user_id:
+            return n
+        if n.user_id is None and n.household_id == household_id:
+            return n
+        return None
+
+    def mark_read(self, notification_id: int, user_id: int, household_id: int) -> bool:
+        n = self._get_owned(notification_id, user_id, household_id)
         if not n:
             return False
         n.read_at = datetime.now(timezone.utc)
@@ -61,8 +80,8 @@ class NotificationService:
         self.db.commit()
         return count
 
-    def dismiss(self, notification_id: int) -> bool:
-        n = self.repo.get(notification_id)
+    def dismiss(self, notification_id: int, user_id: int, household_id: int) -> bool:
+        n = self._get_owned(notification_id, user_id, household_id)
         if not n:
             return False
         n.dismissed_at = datetime.now(timezone.utc)

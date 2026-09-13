@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.core.dependencies import DB, CurrentUser
 from app.schemas.notification import NotificationRead
@@ -36,7 +36,8 @@ def get_unread_count(current_user: CurrentUser, db: DB) -> dict:
 @router.post("/{notification_id}/read")
 def mark_read(notification_id: int, current_user: CurrentUser, db: DB) -> dict:
     svc = NotificationService(db)
-    svc.mark_read(notification_id)
+    if not svc.mark_read(notification_id, current_user.id, current_user.household_id):
+        raise HTTPException(status_code=404, detail="Notification not found")
     return {"status": "read"}
 
 
@@ -50,5 +51,6 @@ def mark_all_read(current_user: CurrentUser, db: DB) -> dict:
 @router.post("/{notification_id}/dismiss")
 def dismiss(notification_id: int, current_user: CurrentUser, db: DB) -> dict:
     svc = NotificationService(db)
-    svc.dismiss(notification_id)
+    if not svc.dismiss(notification_id, current_user.id, current_user.household_id):
+        raise HTTPException(status_code=404, detail="Notification not found")
     return {"status": "dismissed"}

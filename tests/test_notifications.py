@@ -50,7 +50,7 @@ class TestNotificationService:
             category="info", title="Test", body="Body",
         ))
         assert not n.is_read
-        svc.mark_read(n.id)
+        svc.mark_read(n.id, diego.id, household.id)
         db.refresh(n)
         assert n.is_read
 
@@ -62,7 +62,7 @@ class TestNotificationService:
             user_id=diego.id, household_id=household.id,
             category="info", title="Test", body="Body",
         ))
-        svc.dismiss(n.id)
+        svc.dismiss(n.id, diego.id, household.id)
         db.refresh(n)
         assert n.is_dismissed
 
