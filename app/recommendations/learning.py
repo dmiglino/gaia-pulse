@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -116,6 +117,17 @@ SIGNAL_HORIZON_DAYS: int = int(4 * max(_HALF_LIFE_DAYS.values()))
 #: número que ya está declarado arriba y no un umbral nuevo: filtrar es más caro que
 #: puntuar (el candidato no llega a existir), así que deja de hacerse antes.
 _FILTER_DECAY_FLOOR = 0.5
+
+#: Cuánta evidencia hace falta para que la app esté a mitad de camino de estar segura.
+#: Con este valor una sola observación pesa un tercio de lo que pesaría la certeza, dos
+#: pesan la mitad y seis tres cuartos: **un descarte es una pista, seis son una regla**.
+#:
+#: Sin esto el ajuste era `knob * min(|suma|, 1.0)`, así que un único tap —accidental o
+#: no— movía el score tanto como diez observaciones consistentes, y el tope estaba puesto
+#: para que la suma no se desbordara, no para modelar cuánto sabemos. Ahora la fuerza de
+#: lo aprendido es *para qué lado* (el promedio de las señales) por *cuánto lo sostiene*
+#: (esto), que son dos preguntas distintas y hasta acá estaban sumadas en un solo número.
+_EVIDENCE_HALF_SATURATION = 2.0
 
 
 def half_life_days(source_type: str) -> float:
@@ -232,20 +244,66 @@ def record_signal(
     )
 
 
-def net_affinity(
-    signals: list[BehaviorSignal], *, now: datetime | None = None
-) -> dict[tuple[str, str], float]:
-    """Cuánto le gusta cada sujeto, sumando lo positivo y lo negativo de *signals*.
+@dataclass(frozen=True)
+class SubjectAffinity:
+    """Lo que la app aprendió sobre un sujeto: para qué lado, y con cuánto respaldo.
 
-    Se suma en vez de clasificar cada señal por separado porque un mismo sujeto puede
+    Son dos preguntas distintas y hasta la 4.4.3 vivían sumadas en un solo número. "Comí
+    pollo una vez" y "comí pollo veinte veces" apuntan para el mismo lado con confianza
+    muy distinta, y "comí pollo diez veces y una vez rechacé una sugerencia de pollo"
+    apunta para el mismo lado que "comí pollo una vez", pero sabiendo mucho más.
+    """
+
+    #: La suma firmada de los pesos descontados: para qué lado, con cuánta fuerza bruta.
+    net: float
+    #: Cuántas observaciones descontadas lo sostienen, en valor absoluto. Una señal de
+    #: `value=1.0` de hoy aporta 1; la misma de hace una semivida aporta 0.5; un
+    #: `repeated_purchase` (0.5) aporta medio. Es "cuánto vio la app", no "para qué lado".
+    evidence: float
+
+    @property
+    def direction(self) -> float:
+        """El promedio de las señales, en `[-1, 1]`: la opinión, sin la certeza."""
+        if self.evidence <= 0:
+            return 0.0
+        return max(-1.0, min(1.0, self.net / self.evidence))
+
+    @property
+    def confidence(self) -> float:
+        """Cuánto confiar en esa opinión: satura hacia 1 y nunca llega.
+
+        `n / (n + k)`: una observación 0.33, dos 0.5, seis 0.75, veinte 0.91. Satura a
+        propósito —la diferencia entre seis y veinte observaciones no debería mover el
+        score— y no llega nunca a 1 porque la app no termina de estar segura de nada.
+        """
+        if self.evidence <= 0:
+            return 0.0
+        return self.evidence / (self.evidence + _EVIDENCE_HALF_SATURATION)
+
+    @property
+    def strength(self) -> float:
+        """Lo que el scorer usa: la opinión ponderada por la certeza, en `[-1, 1]`."""
+        return self.direction * self.confidence
+
+
+def subject_affinities(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> dict[tuple[str, str], SubjectAffinity]:
+    """Qué aprendió la app de cada sujeto, según *signals*.
+
+    Se agrega en vez de clasificar cada señal por separado porque un mismo sujeto puede
     tener las dos cosas —comió pollo seis veces y rechazó una sugerencia de pollo— y con
     dos listas separadas el candidato recibía el boost **y** la penalización, que es un
-    resultado que no significa nada. La suma neta al menos dice para qué lado.
+    resultado que no significa nada.
 
     Cada señal entra con su peso descontado por la edad (`signal_weight`), así que lo
     reciente manda y lo viejo se apaga solo. Antes cada fila valía su `value` crudo para
     siempre, y el resultado era un promedio de toda la historia: seis meses de pollo no
     los podían mover dos semanas de otra cosa.
+
+    Y se cuenta **cuántas** además de **cuánto**: hasta la 4.4.3 esto devolvía solo la
+    suma, el scorer la recortaba con `min(suma, 1.0)` y un único tap movía el score igual
+    que diez observaciones consistentes. Ver `SubjectAffinity`.
 
     Quién decide el signo es `value`, no el tipo: `POSITIVE_SIGNAL_TYPES` y
     `NEGATIVE_SIGNAL_TYPES` están para que el vocabulario sea revisable de un lado solo, y
@@ -253,15 +311,18 @@ def net_affinity(
     tanto descartar como posponer—.
     """
     reference = now or datetime.now(tz=timezone.utc)
-    totals: dict[tuple[str, str], float] = {}
+    nets: dict[tuple[str, str], float] = {}
+    evidences: dict[tuple[str, str], float] = {}
     for signal in signals:
         if signal.signal_type not in POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES:
             continue
         key = subject_key(signal.entity_type, signal.entity_name)
         if not key[1]:
             continue
-        totals[key] = totals.get(key, 0.0) + signal_weight(signal, now=reference)
-    return totals
+        weight = signal_weight(signal, now=reference)
+        nets[key] = nets.get(key, 0.0) + weight
+        evidences[key] = evidences.get(key, 0.0) + abs(weight)
+    return {key: SubjectAffinity(net=net, evidence=evidences[key]) for key, net in nets.items()}
 
 
 def rejected_subjects(

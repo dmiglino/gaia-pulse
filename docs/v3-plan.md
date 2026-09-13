@@ -1062,15 +1062,47 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       (`< 0.501`). La intención del test sobrevive; el mecanismo que la sostiene cambió de un
       corte duro a una semivida.
 
-**4.4.3 — Confianza por sujeto: un toque no es una regla**
+**4.4.3 — Confianza por sujeto: un toque no es una regla** ✅ hecho (menos la ausencia)
 
-- [ ] El boost/penalización escala con la **cantidad de observaciones** y satura, en vez de
+- [x] El boost/penalización escala con la **cantidad de observaciones** y satura, en vez de
       ser un valor fijo: un descarte es una pista, seis descartes es una regla. Hoy un solo
       tap accidental puede vetar un alimento para siempre.
-- [ ] Umbral mínimo de evidencia antes de que una señal filtre (en vez de solo puntuar).
-- [ ] Con esto en pie se puede sumar la **ausencia como señal débil** que la 4.4.1 dejó
-      pendiente: hasta que un negativo suave necesite varias observaciones para filtrar, una
-      sola sugerencia no comida veta el alimento para siempre.
+      → `learning.SubjectAffinity` parte en dos lo que era un solo número: `direction` (el
+      promedio de las señales, en `[-1, 1]`: **para qué lado**) y `confidence`
+      (`evidencia / (evidencia + 2)`: **cuánto lo sostiene**), y el scorer usa el producto.
+      Una observación vale 0.33 de la certeza, dos 0.5, seis 0.75, veinte 0.91: satura, y
+      nunca llega a 1 porque la app no termina de estar segura de nada.
+      La "evidencia" es la suma de los pesos **en valor absoluto** —descontados por edad,
+      así que la 4.4.2 sigue mandando—: una señal de 1.0 de hoy cuenta como una
+      observación, la misma de hace una semivida como media, y un `repeated_purchase`
+      (0.5) como media desde el principio.
+- [x] Con eso se fue el `min(suma, 1.0)` del scorer, que era un recorte puesto para que la
+      suma no se desbordara —cada comida registrada escribe un `repeated_meal_choice` de
+      1.0— y no para modelar cuánto sabe la app. El efecto real de ese tope era que **un
+      único tap movía el score exactamente igual que diez observaciones consistentes**.
+      Ahora el ajuste está acotado por construcción, no por un `min()` a mano.
+- [x] La fuerza declarada de una preferencia explícita entra como fuerza:
+      `SuggestionService.save_preference` escribía la señal con un ±1 fijo aunque
+      `strength` (0–1) ya viajaba en el schema y ya se guardaba en la preferencia, así que
+      un "no me encanta" pesaba igual que un "no lo como". Hoy ningún llamador manda
+      `strength` (los tres usan el default 1.0), así que el cambio no altera nada de lo que
+      pasa hoy: lo que arregla es que la columna deje de escribirse para nada.
+- [x] Cuatro tests nuevos (`TestConfidenceByEvidence`): que una observación mueve menos que
+      seis, que la certeza satura —el salto de 1 a 6 mueve más del doble que el de 6 a 24, y
+      el ajuste nunca pasa el knob—, que lo aprendido es un **promedio y no un conteo**
+      ("diez sí y un no" sigue siendo sí, con más certeza que "un sí" solo), y que un solo
+      tap ya no descarga la penalización entera.
+- [ ] **Umbral mínimo de evidencia antes de que una señal filtre** (en vez de solo puntuar),
+      junto con la **ausencia como señal débil** que la 4.4.1 dejó pendiente. Van juntos, y
+      por eso no entran acá: el único tipo que hoy filtra es `rejected_suggestion`, que
+      siempre se escribe con `-1.0` desde un tap deliberado en "no" —y pedirle a alguien que
+      lo apriete dos veces para ser escuchado es peor producto, no mejor—. El umbral existe
+      para dejar entrar negativos *débiles* sin darles poder de veto, y el único negativo
+      débil previsto es la ausencia. Escribir el umbral ahora sería un lector sin escritor;
+      escribir la ausencia sin el umbral sería un veto por una sugerencia no comida. Se
+      hacen en el mismo commit, con el barrido que la ausencia necesita.
+      Lo que ya está resuelto de ese "para siempre" es la parte temporal: desde la 4.4.2 un
+      rechazo vale como veto una semivida y después solo pesa en el score.
 
 **4.4.4 — Aprender el atributo, no solo el nombre exacto**
 

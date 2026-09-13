@@ -137,7 +137,13 @@ class SuggestionService:
             notes=data.notes,
         )
         # Also record as an explicit signal
-        value = -1.0 if data.preference_signal in ("dislikes", "impossible", "avoid") else 1.0
+        #: El peso es la fuerza que declaró la persona, no un ±1 fijo. `strength` (0–1) ya
+        #: viajaba en el schema y se guardaba en la preferencia, y la señal lo ignoraba: un
+        #: "no me encanta" (0.3) pesaba lo mismo que un "no lo como" (1.0). Desde la 4.4.3
+        #: el ajuste del scorer es la opinión por la evidencia que la sostiene, y esto es lo
+        #: que hace que una opinión tibia entre como tibia en vez de como certeza.
+        direction = -1.0 if data.preference_signal in ("dislikes", "impossible", "avoid") else 1.0
+        value = direction * data.strength
         subject_type = self._PREFERENCE_SUBJECT_TYPES.get(data.item_type)
         if subject_type is None:
             #: `item_type` es texto libre de 40 caracteres que llega del NLP, y hasta la

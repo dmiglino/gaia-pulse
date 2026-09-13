@@ -12,7 +12,7 @@ from app.models.household import Household
 from app.models.pantry import PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
-from app.recommendations import learning
+from app.recommendations import learning, scorer
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
 from app.recommendations.scorer import score_candidates
 
@@ -309,6 +309,95 @@ class TestTemporalDecay:
         #: que unas pocas semividas, el corte volvería a decidir en lugar del decaimiento.
         four_half_lives = 4 * learning.half_life_days("explicit")
         assert four_half_lives <= learning.SIGNAL_HORIZON_DAYS
+
+
+class TestConfidenceByEvidence:
+    """Un toque no es una regla (4.4.3).
+
+    Hasta acá el ajuste era `knob * min(|suma de pesos|, 1.0)`: el tope existía para que la
+    suma no se desbordara —cada comida registrada escribe un `repeated_meal_choice` de
+    1.0—, no para modelar cuánto sabe la app. La consecuencia era que un único tap movía el
+    score exactamente igual que diez observaciones consistentes, y que un descarte
+    accidental pesaba como una decisión.
+    """
+
+    def test_one_observation_moves_less_than_six(self, db: Session, diego: User) -> None:
+        candidate = _candidate("Go biking", "exercise", "biking")
+        once = [_signal(diego, "repeated_activity", "exercise", "biking", 1.0)]
+        six_times = once * 6
+
+        (weak,) = score_candidates([candidate], diego, once, [])
+        (firm,) = score_candidates([candidate], diego, six_times, [])
+        assert 0.5 < weak["_score"] < firm["_score"]
+
+    def test_confidence_saturates_instead_of_growing(self, db: Session, diego: User) -> None:
+        """La diferencia entre seis y veinte observaciones no debería mover el score.
+
+        Es lo que separa "aprender que le gusta" de "contar cuántas veces lo comió": sin
+        saturación un alimento de todos los días se lleva el ajuste entero por delante de
+        todo lo demás, para siempre, y el loop empuja a repetir en vez de a variar.
+        """
+        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
+        ate_it = _signal(
+            diego, "repeated_meal_choice", "food", "milanesa", 1.0, source_type="implicit"
+        )
+
+        def score_after(times: int) -> float:
+            (one,) = score_candidates([candidate], diego, [ate_it] * times, [])
+            return float(one["_score"])
+
+        once, six, many = score_after(1), score_after(6), score_after(24)
+        #: La primera observación enseña; la vigésima ya no. Que el primer tramo mueva más
+        #: que el cuarto —cuatro veces más señales— es la saturación misma.
+        assert once < six < many
+        assert (six - once) > 2 * (many - six)
+        #: Y nunca más allá del knob: el ajuste está acotado por construcción, no por un
+        #: `min()` puesto a mano en el scorer.
+        assert many <= 0.5 + scorer._POSITIVE_SIGNAL_BOOST
+
+    def test_what_is_learned_is_an_average_and_not_a_tally(self, diego: User) -> None:
+        """Diez veces sí y una vez no sigue siendo "sí", y con más certeza que una sola vez.
+
+        Con la suma cruda, "10 sí + 1 no" y "9 sí" eran el mismo número y las dos cosas
+        estaban recortadas al mismo tope: la app no podía distinguir "le gusta" de "le
+        gusta y ya lo vi muchas veces".
+        """
+        ten_yes = [
+            _signal(diego, "repeated_meal_choice", "food", "pollo", 1.0, source_type="implicit")
+        ] * 10
+        one_no = [_signal(diego, "rejected_suggestion", "food", "pollo", -1.0)]
+        (learned,) = learning.subject_affinities(ten_yes + one_no).values()
+
+        assert learned.evidence == pytest.approx(11.0)
+        assert learned.direction == pytest.approx(9 / 11)
+        assert learned.strength > 0
+
+        (thin,) = learning.subject_affinities(ten_yes[:1]).values()
+        assert thin.direction == pytest.approx(1.0), "una sola señal apunta derecho"
+        assert thin.strength < learned.strength, "pero sabe mucho menos"
+
+    def test_a_subject_with_no_signals_has_no_opinion(self, diego: User) -> None:
+        empty = learning.SubjectAffinity(net=0.0, evidence=0.0)
+        assert (empty.direction, empty.confidence, empty.strength) == (0.0, 0.0, 0.0)
+
+    def test_a_single_tap_no_longer_swings_the_whole_penalty(
+        self, db: Session, diego: User
+    ) -> None:
+        """El caso que motivó la 4.4.3: un descarte accidental.
+
+        Sigue bajando el score —es información— pero ya no lo baja tanto como una decisión
+        repetida. Lo que ese tap **sí** hace de entrada es sacar al sujeto de la lista por
+        una semivida (`apply_signal_constraints`), que es la parte que la persona pidió
+        explícitamente al apretar "no".
+        """
+        candidate = _candidate("Go running", "exercise", "running")
+        one_no = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0)]
+        four_nos = one_no * 4
+
+        (after_one,) = score_candidates([candidate], diego, one_no, [])
+        (after_four,) = score_candidates([candidate], diego, four_nos, [])
+        assert after_four["_score"] < after_one["_score"] < 0.5
+        assert after_one["_score"] > 0.5 - scorer._NEGATIVE_SIGNAL_PENALTY / 2
 
 
 class TestSignalConstraints:

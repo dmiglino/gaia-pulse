@@ -2,8 +2,9 @@
 
 Scoring model (additive):
 - Base score: candidate's own confidence value
-- The candidate's **subject** is looked up in what the person has taught the app: a
-  positive net affinity boosts it, a negative one penalises it
+- The candidate's **subject** is looked up in what the person has taught the app: the
+  boost or penalty is the *direction* of what was learned (the average of the signals)
+  scaled by how much evidence backs it (`learning.SubjectAffinity`)
 - A subject already suggested in the last few days receives a diversity penalty
 - Scores are clamped to [0.0, 1.0]
 
@@ -79,7 +80,7 @@ def score_candidates(
     relevant_signals = [
         s for s in signals if s.created_at is None or as_utc(s.created_at) >= cutoff_signals
     ]
-    affinity = learning.net_affinity(relevant_signals)
+    affinity = learning.subject_affinities(relevant_signals)
 
     #: Los sujetos ya sugeridos hace poco, para no repetirlos. Antes esto era un conjunto
     #: de títulos, y las dos comparaciones —exacta y por solape de tokens— fallaban del
@@ -102,31 +103,26 @@ def score_candidates(
         adjustment = 0.0
 
         if subject is not None:
-            net = affinity.get(subject, 0.0)
-            if net > 0:
-                #: `min(net, 1.0)`: la suma no está acotada —cada comida registrada escribe
-                #: un `repeated_meal_choice` de valor 1.0— y sin el techo un alimento de
-                #: todos los días se llevaba el boost entero por delante de todo lo demás.
-                #: El techo lo acota; repartir el peso entre afinidad estable y saciedad
-                #: reciente es la 4.4.6.
-                boost = _POSITIVE_SIGNAL_BOOST * min(net, 1.0)
-                adjustment += boost
+            learned = affinity.get(subject)
+            #: `strength` ya viene acotado a `[-1, 1]` y ponderado por cuánta evidencia lo
+            #: sostiene (4.4.3), así que acá no hace falta ningún tope: antes era
+            #: `min(suma, 1.0)`, un recorte puesto para que la suma no se desbordara —cada
+            #: comida registrada escribe un `repeated_meal_choice` de 1.0— y que de paso
+            #: hacía que un único tap moviera el score igual que diez observaciones
+            #: consistentes. Repartir lo positivo entre afinidad estable y saciedad
+            #: reciente sigue siendo la 4.4.6.
+            strength = learned.strength if learned is not None else 0.0
+            if strength:
+                knob = _POSITIVE_SIGNAL_BOOST if strength > 0 else _NEGATIVE_SIGNAL_PENALTY
+                delta = knob * strength
+                adjustment += delta
                 logger.debug(
-                    "Candidate %r: +%.3f from subject %s (net=%.2f)",
+                    "Candidate %r: %+.3f from subject %s (dirección=%+.2f, evidencia=%.2f)",
                     candidate.get("title"),
-                    boost,
+                    delta,
                     subject,
-                    net,
-                )
-            elif net < 0:
-                penalty = _NEGATIVE_SIGNAL_PENALTY * min(-net, 1.0)
-                adjustment -= penalty
-                logger.debug(
-                    "Candidate %r: -%.3f from subject %s (net=%.2f)",
-                    candidate.get("title"),
-                    penalty,
-                    subject,
-                    net,
+                    learned.direction if learned else 0.0,
+                    learned.evidence if learned else 0.0,
                 )
 
             if subject in recent_subjects:
