@@ -400,6 +400,192 @@ class TestConfidenceByEvidence:
         assert after_one["_score"] > 0.5 - scorer._NEGATIVE_SIGNAL_PENALTY / 2
 
 
+#: El índice de atributos tal como lo devolvería el catálogo sembrado, para los tests que
+#: hablan del scorer y no de la consulta. Que sea un literal es a propósito: el scorer no
+#: toca la base, y lo único que necesita saber es a qué categoría pertenece cada nombre.
+_VEGETABLES = ("brocoli", "coliflor", "kale", "espinaca")
+_FOOD_ATTRIBUTES: dict[tuple[str, str], tuple[str, str]] = {
+    ("food", name): ("food_category", "vegetable") for name in _VEGETABLES
+} | {
+    ("food", "milanesa"): ("food_category", "protein"),
+    ("food", "banana"): ("food_category", "fruit"),
+}
+
+
+class TestAttributeLevelLearning:
+    """Aprender la categoría, no solo el nombre exacto (4.4.4).
+
+    Hasta acá lo aprendible era el sujeto puntual, así que rechazar brócoli, coliflor y
+    kale no enseñaba **nada** sobre la espinaca: un alimento sin señales propias salía con
+    su confianza cruda, aunque la app supiera de sobra qué opina de las verduras. Eso es
+    recordar; esto es aprender.
+    """
+
+    def test_three_rejected_vegetables_move_an_unseen_one(self, diego: User) -> None:
+        """El ejemplo del plan, palabra por palabra."""
+        rejections = [
+            _signal(diego, "rejected_suggestion", "food", name, -1.0)
+            for name in ("brocoli", "coliflor", "kale")
+        ]
+        spinach = _candidate("Espinaca a la crema", "food", "espinaca", category="meal")
+
+        (blind,) = score_candidates([spinach], diego, rejections, [])
+        (taught,) = score_candidates(
+            [spinach], diego, rejections, [], subject_attributes=_FOOD_ATTRIBUTES
+        )
+        assert blind["_score"] == 0.5, "sin el índice, una espinaca sin señales no se mueve"
+        assert taught["_score"] < 0.5
+
+    def test_a_generalization_stays_weaker_than_direct_evidence(self, diego: User) -> None:
+        """Una categoría es una de las razones por las que algo gusta, nunca la razón entera.
+
+        Sin `_ATTRIBUTE_SIGNAL_SCALE` esto no se sostendría: la confianza satura hacia 1, así
+        que con suficientes verduras registradas —meses, no años— una verdura que la persona
+        nunca comió llegaría al mismo ajuste que su comida favorita.
+        """
+        many_rejections = [
+            _signal(diego, "rejected_suggestion", "food", name, -1.0) for name in _VEGETABLES[:3]
+        ] * 30
+        unseen = _candidate("Espinaca a la crema", "food", "espinaca", category="meal")
+        rejected_itself = _candidate("Brócoli al vapor", "food", "brocoli", category="meal")
+
+        by_category, direct = score_candidates(
+            [unseen, rejected_itself],
+            diego,
+            many_rejections,
+            [],
+            subject_attributes=_FOOD_ATTRIBUTES,
+        )
+        assert by_category["subject_name"] == "espinaca"
+        assert direct["_score"] < by_category["_score"] < 0.5
+
+    def test_a_favourite_does_not_boost_itself_through_its_own_category(self, diego: User) -> None:
+        """Descontarse es lo que hace que los dos niveles no digan lo mismo dos veces.
+
+        Un alimento de todos los días es el que más aporta a su categoría: sin la resta de
+        `SubjectAffinity.without` cobraría el ajuste puntual y otra vez, en chico, por su
+        propia evidencia — un favorito con un ajuste más grande que el knob, por partida
+        doble, sin que hubiera aparecido ni un dato nuevo.
+        """
+        ate_it = [
+            _signal(diego, "repeated_meal_choice", "food", "milanesa", 1.0, source_type="implicit")
+        ] * 12
+        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
+
+        (alone,) = score_candidates([candidate], diego, ate_it, [])
+        (with_index,) = score_candidates(
+            [candidate], diego, ate_it, [], subject_attributes=_FOOD_ATTRIBUTES
+        )
+        assert with_index["_score"] == alone["_score"]
+        assert alone["_score"] <= 0.5 + scorer._POSITIVE_SIGNAL_BOOST
+
+    def test_the_attribute_needs_more_evidence_than_the_subject(self, diego: User) -> None:
+        """La vara más alta, medida: una verdura rechazada mueve mucho menos que el sujeto.
+
+        Y tres mueven más del doble que una, que es lo que distingue un patrón de una
+        coincidencia: si una sola señal ya generalizara casi igual que tres, cualquier
+        semana rara reescribiría una categoría entera —y una categoría son treinta
+        alimentos, no uno—.
+        """
+        unseen = _candidate("Espinaca a la crema", "food", "espinaca", category="meal")
+
+        def drop_from(*names: str) -> float:
+            signals = [_signal(diego, "rejected_suggestion", "food", name, -1.0) for name in names]
+            (one,) = score_candidates(
+                [unseen], diego, signals, [], subject_attributes=_FOOD_ATTRIBUTES
+            )
+            return 0.5 - float(one["_score"])
+
+        one_vegetable = drop_from("brocoli")
+        three_vegetables = drop_from("brocoli", "coliflor", "kale")
+        (itself,) = score_candidates(
+            [unseen],
+            diego,
+            [_signal(diego, "rejected_suggestion", "food", "espinaca", -1.0)],
+            [],
+            subject_attributes=_FOOD_ATTRIBUTES,
+        )
+        point_level = 0.5 - float(itself["_score"])
+
+        assert three_vegetables > 2 * one_vegetable
+        assert one_vegetable < point_level / 3
+
+    def test_a_category_is_never_a_veto(self, diego: User) -> None:
+        """Generalizar para ordenar es útil; generalizar para vetar es otra cosa.
+
+        `apply_signal_constraints` sigue mirando solo el sujeto puntual, y a propósito:
+        sacar la espinaca de la lista porque la persona rechazó tres **otras** verduras es
+        ponerle en la boca un "no" que no dijo.
+        """
+        rejections = [
+            _signal(diego, "rejected_suggestion", "food", name, -1.0)
+            for name in ("brocoli", "coliflor", "kale")
+        ]
+        candidates = [_candidate("Espinaca a la crema", "food", "espinaca", category="meal")]
+        assert apply_signal_constraints(candidates, rejections) == candidates
+
+    def test_a_food_the_catalogue_does_not_know_has_no_category(self, diego: User) -> None:
+        """De un alimento de texto libre no sabemos la categoría, y adivinarla es el match
+        difuso que la 4.4 vino a sacar."""
+        rejections = [
+            _signal(diego, "rejected_suggestion", "food", name, -1.0)
+            for name in ("brocoli", "coliflor", "kale")
+        ]
+        unknown = _candidate("Tarta de acelga de la vecina", "food", "tarta de la vecina")
+
+        (scored,) = score_candidates(
+            [unknown], diego, rejections, [], subject_attributes=_FOOD_ATTRIBUTES
+        )
+        assert scored["_score"] == 0.5
+
+    def test_the_index_reads_the_catalogue_including_aliases(
+        self, db: Session, banana: FoodItem
+    ) -> None:
+        """El índice sale del catálogo, y los alias entran con la categoría del canónico.
+
+        Importa porque el texto libre de una captura escribe el alias —"palta", no
+        "avocado"— y la señal quedó guardada con **ese** nombre.
+        """
+        db.add(
+            FoodItem(
+                canonical_name="avocado",
+                category="fat",
+                base_unit="unit",
+                aliases_json=["palta", "Aguacate"],
+            )
+        )
+        #: Sin categoría no entra: es la fila que crea `get_or_create` con texto libre, y un
+        #: `None` en el índice sería un sujeto llamado "none".
+        db.add(FoodItem(canonical_name="tarta de la vecina", base_unit="unit"))
+        db.flush()
+
+        index = learning.attribute_index(db)
+        assert index[("food", "banana")] == ("food_category", "fruit")
+        assert index[("food", "palta")] == ("food_category", "fat")
+        assert index[("food", "aguacate")] == ("food_category", "fat")
+        assert ("food", "tarta de la vecina") not in index
+
+    def test_the_attribute_type_is_not_a_recordable_subject(self, db: Session, diego: User) -> None:
+        """`food_category` existe solo como atributo: no hay fila con ese tipo.
+
+        La otra opción era grabar una segunda señal por comida con la categoría del alimento
+        —lo que la 4.4.1 dejó anotado— y es peor: congelaría la categoría del día en que se
+        comió, y solo aprendería de las comidas futuras. Derivar en cada lectura es
+        retroactivo y se corrige solo.
+        """
+        assert "food_category" not in learning.SUBJECT_TYPES
+        with pytest.raises(ValueError, match="food_category"):
+            learning.record_signal(
+                db,
+                user_id=diego.id,
+                signal_type="rejected_suggestion",
+                subject_type="food_category",
+                subject_name="vegetable",
+                value=-1.0,
+                source_type="explicit",
+            )
+
+
 class TestSignalConstraints:
     def test_strongly_rejected_activity_filtered_out(self, db: Session, diego: User) -> None:
         signals = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0)]

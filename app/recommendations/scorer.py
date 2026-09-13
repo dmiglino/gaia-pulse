@@ -5,6 +5,9 @@ Scoring model (additive):
 - The candidate's **subject** is looked up in what the person has taught the app: the
   boost or penalty is the *direction* of what was learned (the average of the signals)
   scaled by how much evidence backs it (`learning.SubjectAffinity`)
+- Y lo mismo con el **atributo** del sujeto —la categoría del alimento—, descontando lo
+  que el sujeto mismo aportó y valiendo la mitad: es lo que permite acertar con algo que
+  la persona nunca vio, sin que una categoría pese como una opinión sobre el plato
 - A subject already suggested in the last few days receives a diversity penalty
 - Scores are clamped to [0.0, 1.0]
 
@@ -23,6 +26,7 @@ mismo lado que las escrituras.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -46,12 +50,29 @@ _RECENT_SUGGESTION_DAYS = 7  # window for diversity check
 #: mismo lado que las semividas de las que se deriva.
 _RECENT_SIGNAL_DAYS = learning.SIGNAL_HORIZON_DAYS
 
+#: Cuánto vale una generalización comparada con la evidencia directa: la mitad, siempre.
+#: La vara de evidencia más alta del nivel atributo (`learning`) decide *cuándo* se le
+#: cree; esto decide *cuánto* se le cree una vez que se le cree, y hace falta además
+#: porque la confianza satura hacia 1: con cien verduras registradas —cosa que pasa en
+#: meses, no en años— una verdura que la persona nunca comió llegaría al mismo ajuste que
+#: su comida favorita. Una categoría es una de las razones por las que algo gusta, nunca
+#: la razón entera.
+_ATTRIBUTE_SIGNAL_SCALE = 0.5
+
+
+def _learned_delta(strength: float) -> float:
+    """El ajuste que le corresponde a una fuerza aprendida, con la perilla de su signo."""
+    knob = _POSITIVE_SIGNAL_BOOST if strength > 0 else _NEGATIVE_SIGNAL_PENALTY
+    return knob * strength
+
 
 def score_candidates(
     candidates: list[dict[str, Any]],
     user: User,
     signals: list[BehaviorSignal],
     recent_suggestions: list[Suggestion],
+    *,
+    subject_attributes: Mapping[tuple[str, str], tuple[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Score and rank recommendation candidates.
 
@@ -60,6 +81,10 @@ def score_candidates(
         user: The User model instance.
         signals: Recent BehaviorSignal rows for the user.
         recent_suggestions: Recent Suggestion rows for context (diversity).
+        subject_attributes: A qué atributo generaliza cada sujeto puntual
+            (`learning.attribute_index`). Es opcional y llega por keyword porque el
+            scorer no toca la base: quien tiene sesión —el motor— arma el índice y lo
+            pasa, y sin él el nivel atributo simplemente no aporta nada.
 
     Returns:
         The same list, each dict augmented with a "_score" key, sorted
@@ -81,6 +106,12 @@ def score_candidates(
         s for s in signals if s.created_at is None or as_utc(s.created_at) >= cutoff_signals
     ]
     affinity = learning.subject_affinities(relevant_signals)
+
+    #: Lo mismo, un nivel más arriba: lo que la app aprendió de cada **categoría**. Se
+    #: calcula acá y no por candidato porque son las mismas señales agrupadas de otra
+    #: forma, y hay hasta cinco candidatos por corrida contra cientos de señales.
+    attributes = subject_attributes or {}
+    by_attribute = learning.attribute_affinities(relevant_signals, attributes)
 
     #: Los sujetos ya sugeridos hace poco, para no repetirlos. Antes esto era un conjunto
     #: de títulos, y las dos comparaciones —exacta y por solape de tokens— fallaban del
@@ -113,8 +144,7 @@ def score_candidates(
             #: reciente sigue siendo la 4.4.6.
             strength = learned.strength if learned is not None else 0.0
             if strength:
-                knob = _POSITIVE_SIGNAL_BOOST if strength > 0 else _NEGATIVE_SIGNAL_PENALTY
-                delta = knob * strength
+                delta = _learned_delta(strength)
                 adjustment += delta
                 logger.debug(
                     "Candidate %r: %+.3f from subject %s (dirección=%+.2f, evidencia=%.2f)",
@@ -123,6 +153,27 @@ def score_candidates(
                     subject,
                     learned.direction if learned else 0.0,
                     learned.evidence if learned else 0.0,
+                )
+
+            #: El segundo nivel: lo que la app sabe de la categoría del candidato, sin
+            #: contar al candidato mismo. Es lo único que puede mover una espinaca que
+            #: la persona nunca vio en una sugerencia, y por eso se suma **además** del
+            #: ajuste puntual en vez de reemplazarlo cuando este es cero: un alimento con
+            #: una señal propia también hereda algo de su categoría, solo que ahí la
+            #: evidencia propia es la que manda.
+            generalized = learning.generalized_affinity(
+                subject, attributes=attributes, points=affinity, groups=by_attribute
+            )
+            if generalized is not None and generalized.strength:
+                delta = _learned_delta(generalized.strength) * _ATTRIBUTE_SIGNAL_SCALE
+                adjustment += delta
+                logger.debug(
+                    "Candidate %r: %+.3f from attribute %s (dirección=%+.2f, evidencia=%.2f)",
+                    candidate.get("title"),
+                    delta,
+                    attributes.get(subject),
+                    generalized.direction,
+                    generalized.evidence,
                 )
 
             if subject in recent_subjects:

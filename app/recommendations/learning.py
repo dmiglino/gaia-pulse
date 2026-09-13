@@ -23,6 +23,11 @@ Lo que este módulo define es ese vocabulario:
   catálogo, no de scoring.
 - **El tipo entra en la clave.** Un `muscle_group` llamado "core" y un alimento llamado
   "core" no son el mismo sujeto, y sin el tipo un negativo de uno silenciaba al otro.
+- **Se aprende en dos niveles: el sujeto y su atributo.** Rechazar brócoli, coliflor y
+  kale enseña algo sobre las verduras, y eso es lo que permite acertar con una espinaca
+  que la persona nunca vio en una sugerencia. El nivel atributo pide más evidencia, pesa
+  menos que la evidencia directa, no se cuenta a sí mismo y **no filtra** nada: generalizar
+  para ordenar es útil, generalizar para vetar es ponerle en la boca un "no" que no dijo.
 
 No hay LLM acá ni modelo entrenado: es aritmética determinista sobre una tabla, que es lo
 que la 4.4 se propuso y todo lo que hace falta para dos personas.
@@ -33,6 +38,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -41,6 +47,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
+from app.repositories.food_repo import FoodRepository
 from app.repositories.suggestion_repo import BehaviorSignalRepository
 
 logger = logging.getLogger(__name__)
@@ -83,6 +90,24 @@ POSITIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
 #: segundo tipo que mantener sincronizado. Que no vuelva a aparecer un tipo que se lee y no
 #: se escribe lo cuida `test_every_signal_type_the_reader_knows_has_a_writer`.
 NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion"})
+
+#: Los tipos de sujeto que existen **solo como atributo**: son a lo que generaliza un
+#: sujeto puntual, y a propósito **no** están en `SUBJECT_TYPES`, así que `record_signal`
+#: los rechaza y nunca hay una fila con estos tipos.
+#:
+#: Que no se graben es la decisión, no un pendiente. La otra opción era escribir una
+#: segunda fila por comida con la categoría del alimento —es lo que la 4.4.1 dejó
+#: anotado— y es peor por dos razones: congelaría la categoría del día en que se comió
+#: (recategorizar la palta de "fat" a "fruit" no arreglaría nada de lo ya aprendido), y
+#: solo aprendería de las comidas futuras, cuando lo que la app ya tiene son meses de
+#: señales de alimentos cuya categoría el catálogo sabe hoy. Derivar en cada lectura es
+#: retroactivo y se corrige solo. Y de paso no hay escritor que pueda olvidarse: el
+#: atributo sale del catálogo, no de que tres servicios se acuerden de grabarlo.
+ATTRIBUTE_SUBJECT_TYPES: frozenset[str] = frozenset(
+    {
+        "food_category",  # `FoodItem.category`: vegetable/fruit/protein/grain/dairy/…
+    }
+)
 
 
 #: Cuántos días tarda una señal en pesar la mitad, según de dónde salió. Sin esto una
@@ -128,6 +153,14 @@ _FILTER_DECAY_FLOOR = 0.5
 #: lo aprendido es *para qué lado* (el promedio de las señales) por *cuánto lo sostiene*
 #: (esto), que son dos preguntas distintas y hasta acá estaban sumadas en un solo número.
 _EVIDENCE_HALF_SATURATION = 2.0
+
+#: Lo mismo, pero para el nivel atributo: el triple de evidencia para llegar a la misma
+#: confianza. Se deriva del valor puntual en vez de ser un número aparte, y el factor es 3
+#: porque es el mínimo que se lee como patrón y no como coincidencia: rechazar brócoli
+#: alcanza para aprender sobre el brócoli, y hacen falta tres verduras distintas para que
+#: valga concluir algo sobre las verduras. Con dos, cualquier semana rara reescribiría una
+#: categoría entera —y una categoría son treinta alimentos, no uno—.
+_ATTRIBUTE_EVIDENCE_HALF_SATURATION = 3 * _EVIDENCE_HALF_SATURATION
 
 
 def half_life_days(source_type: str) -> float:
@@ -260,6 +293,10 @@ class SubjectAffinity:
     #: `value=1.0` de hoy aporta 1; la misma de hace una semivida aporta 0.5; un
     #: `repeated_purchase` (0.5) aporta medio. Es "cuánto vio la app", no "para qué lado".
     evidence: float
+    #: Cuánta evidencia hace falta para estar a mitad de camino de la certeza. Es un campo
+    #: y no una constante del módulo porque el nivel atributo (4.4.4) pide más que el
+    #: puntual: la misma aritmética, con la vara más alta.
+    half_saturation: float = _EVIDENCE_HALF_SATURATION
 
     @property
     def direction(self) -> float:
@@ -278,12 +315,28 @@ class SubjectAffinity:
         """
         if self.evidence <= 0:
             return 0.0
-        return self.evidence / (self.evidence + _EVIDENCE_HALF_SATURATION)
+        return self.evidence / (self.evidence + self.half_saturation)
 
     @property
     def strength(self) -> float:
         """Lo que el scorer usa: la opinión ponderada por la certeza, en `[-1, 1]`."""
         return self.direction * self.confidence
+
+    def without(self, part: SubjectAffinity) -> SubjectAffinity:
+        """Lo mismo, descontando lo que *part* aportó. Conserva la vara de evidencia.
+
+        Sirve para una sola cosa y es la que hace que el nivel atributo agregue
+        información en vez de repetirla: lo que la app sabe de las verduras **sin contar
+        la espinaca** es lo único que la espinaca no sabía ya de sí misma.
+        """
+        return SubjectAffinity(
+            net=self.net - part.net,
+            #: Un piso en cero porque restar dos flotantes que deberían cancelarse deja
+            #: residuos del orden de 1e-16, y un `evidence` negativo daría una confianza
+            #: negativa: una opinión al revés por un error de redondeo.
+            evidence=max(0.0, self.evidence - part.evidence),
+            half_saturation=self.half_saturation,
+        )
 
 
 def subject_affinities(
@@ -323,6 +376,106 @@ def subject_affinities(
         nets[key] = nets.get(key, 0.0) + weight
         evidences[key] = evidences.get(key, 0.0) + abs(weight)
     return {key: SubjectAffinity(net=net, evidence=evidences[key]) for key, net in nets.items()}
+
+
+def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
+    """El atributo al que generaliza cada sujeto puntual que el catálogo sepa clasificar.
+
+    Hoy solo alimentos: `("food", "espinaca") → ("food_category", "vegetable")`, y los
+    alias del catálogo entran con la misma categoría que su nombre canónico, porque el
+    texto libre de una captura escribe el alias y la señal quedó guardada con ese nombre.
+
+    Se arma una vez por corrida del motor y se pasa al scorer: es una consulta sobre una
+    tabla de decenas de filas, y el scorer no toca la base —lo que le llega es un
+    diccionario, así que sigue siendo una función de sus argumentos y se puede testear sin
+    sesión—.
+
+    Los ejercicios **no** están todavía, y no es un olvido: los candidatos de actividad
+    salen de una lista de ocho actividades escrita a mano en `activity_generator`, cuyos
+    nombres en su mayoría no existen en el catálogo de `ExerciseType` ("biking" contra
+    "Cycling", "gym" y "swimming" que no están), así que el atributo resolvería para unos y
+    para otros no, en silencio. Reemplazar esa lista por el catálogo es la 4.5, y ahí los
+    ejercicios entran acá con el mismo shape —una entrada más en este índice, ninguna otra
+    cosa cambia—. Cuál de sus dos atributos discrimina depende de ese mismo reemplazo: para
+    una actividad es la intensidad, para un ejercicio de gimnasio es el grupo muscular.
+    """
+    index: dict[tuple[str, str], tuple[str, str]] = {}
+    for canonical_name, category, aliases in FoodRepository(db).name_categories():
+        attribute = subject_key("food_category", category)
+        if not attribute[1]:
+            continue
+        for name in (canonical_name, *aliases):
+            point = subject_key("food", name)
+            if point[1]:
+                index[point] = attribute
+    return index
+
+
+def attribute_affinities(
+    signals: list[BehaviorSignal],
+    attributes: Mapping[tuple[str, str], tuple[str, str]],
+    *,
+    now: datetime | None = None,
+) -> dict[tuple[str, str], SubjectAffinity]:
+    """Lo mismo que `subject_affinities`, pero agrupando cada sujeto en su atributo.
+
+    Es lo que permite acertar con algo que la persona **nunca vio**: sin esto, un alimento
+    sin señales propias no recibía ni boost ni penalización, aunque la app supiera de sobra
+    qué opina de su categoría. Rechazar brócoli, coliflor y kale no enseñaba nada sobre la
+    espinaca.
+
+    Una señal cuyo sujeto el catálogo no clasifica no entra —de un alimento de texto libre
+    no sabemos la categoría, y adivinarla es exactamente el match difuso que la 4.4 vino a
+    sacar—. Y la vara de evidencia es la del atributo: más alta que la puntual.
+    """
+    reference = now or datetime.now(tz=timezone.utc)
+    nets: dict[tuple[str, str], float] = {}
+    evidences: dict[tuple[str, str], float] = {}
+    for signal in signals:
+        if signal.signal_type not in POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES:
+            continue
+        attribute = attributes.get(subject_key(signal.entity_type, signal.entity_name))
+        if attribute is None:
+            continue
+        weight = signal_weight(signal, now=reference)
+        nets[attribute] = nets.get(attribute, 0.0) + weight
+        evidences[attribute] = evidences.get(attribute, 0.0) + abs(weight)
+    return {
+        key: SubjectAffinity(
+            net=net,
+            evidence=evidences[key],
+            half_saturation=_ATTRIBUTE_EVIDENCE_HALF_SATURATION,
+        )
+        for key, net in nets.items()
+    }
+
+
+def generalized_affinity(
+    subject: tuple[str, str],
+    *,
+    attributes: Mapping[tuple[str, str], tuple[str, str]],
+    points: Mapping[tuple[str, str], SubjectAffinity],
+    groups: Mapping[tuple[str, str], SubjectAffinity],
+) -> SubjectAffinity | None:
+    """Lo que la app sabe del atributo de *subject* **sin contar a *subject* mismo**.
+
+    Descontarse es lo que hace que los dos niveles no digan lo mismo dos veces. Un alimento
+    que se come todos los días es el que más aporta a su categoría, así que sin la resta
+    cobraría el ajuste puntual y otra vez, en chico, por su propia evidencia — y un
+    favorito terminaba con un ajuste más grande que el knob, por partida doble, sin que
+    hubiera aparecido ni un dato nuevo.
+
+    Devuelve `None` cuando el catálogo no sabe clasificar el sujeto o cuando la app no vio
+    nada de esa categoría: no hay generalización que hacer.
+    """
+    attribute = attributes.get(subject)
+    if attribute is None:
+        return None
+    group = groups.get(attribute)
+    if group is None:
+        return None
+    own = points.get(subject)
+    return group if own is None else group.without(own)
 
 
 def rejected_subjects(

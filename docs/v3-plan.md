@@ -968,6 +968,10 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       ahora, sin ningún candidato que declare ese `subject_type`, es exactamente el bug de
       `repeated_purchase` —escritor sin lector, o lector sin escritor— que este mismo commit
       viene a cerrar.
+      → **Al llegar la 4.4.4 esa señal no se escribió, y no se va a escribir**: el atributo
+      se deriva del catálogo en cada lectura, que es retroactivo y no tiene escritor que se
+      pueda olvidar. El razonamiento está en la 4.4.4; lo que esta línea dejó anotado quedó
+      resuelto, no pendiente.
 - [x] Entrenamientos: `WorkoutExercise` emite señal por ejercicio **y** por su
       `muscle_group`, y el `perceived_effort` (RPE) modula el valor: de 9 en adelante pesa la
       mitad (`_HIGH_EFFORT_WEIGHT`), porque haber hecho algo es evidencia de que se puede
@@ -1104,17 +1108,84 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       Lo que ya está resuelto de ese "para siempre" es la parte temporal: desde la 4.4.2 un
       rechazo vale como veto una semivida y después solo pesa en el score.
 
-**4.4.4 — Aprender el atributo, no solo el nombre exacto**
+**4.4.4 — Aprender el atributo, no solo el nombre exacto** ✅ hecho (los alimentos; los
+ejercicios esperan la 4.5)
 
-- [ ] Si alguien rechaza brócoli, coliflor y kale, lo aprendible es la **categoría**, y
+- [x] Si alguien rechaza brócoli, coliflor y kale, lo aprendible es la **categoría**, y
       `FoodItem.category` ya viene en el seed. Aprendizaje en dos niveles: el sujeto puntual
       y su atributo (`FoodItem.category`, `ExerciseType.muscle_group`/`intensity`), con el
       nivel de atributo exigiendo más evidencia que el puntual.
-- [ ] Con eso la app puede acertar con algo que el usuario **nunca vio antes**, que es la
+      → El atributo **se deriva en cada lectura del catálogo**, no se graba:
+      `FoodRepository.name_categories()` + `learning.attribute_index(db)` arman
+      `("food", "espinaca") → ("food_category", "vegetable")` una vez por corrida del motor
+      y el scorer lo recibe como diccionario, así que sigue siendo una función de sus
+      argumentos y se testea sin sesión. Los alias del catálogo entran con la categoría de
+      su canónico, porque el texto libre de una captura escribe el alias ("palta", no
+      "avocado") y la señal quedó guardada con **ese** nombre. Las filas sin categoría
+      —justamente las que crea `get_or_create` con texto libre— no entran: de esas no
+      sabemos el atributo, y adivinarlo es el match difuso que la 4.4 vino a sacar.
+      La vara más alta es un solo número y está **derivada**, no escrita:
+      `_ATTRIBUTE_EVIDENCE_HALF_SATURATION = 3 × _EVIDENCE_HALF_SATURATION`. El factor es 3
+      porque es el mínimo que se lee como patrón y no como coincidencia: un rechazo alcanza
+      para aprender del brócoli, y hacen falta tres verduras distintas para concluir algo de
+      las verduras. Con dos, cualquier semana rara reescribiría una categoría entera —y una
+      categoría son treinta alimentos, no uno—.
+- [x] Con eso la app puede acertar con algo que el usuario **nunca vio antes**, que es la
       diferencia entre recordar y aprender.
-- [ ] Acá entra la señal por `FoodItem.category` que la 4.4.1 dejó anotada: el escritor y el
+      → Medido: tres rechazos frescos de verduras mueven una espinaca que nunca apareció en
+      una sugerencia −0.025 (evidencia 3 → certeza 0.33), diez la mueven −0.047 y noventa
+      −0.070. Un solo rechazo **del propio sujeto** vale −0.050, o sea que ni una categoría
+      saturada le gana a una sola opinión directa. Eso lo sostienen dos cosas distintas, y a
+      propósito: la vara de evidencia decide **cuándo** se le cree a una generalización, y
+      `_ATTRIBUTE_SIGNAL_SCALE = 0.5` en el scorer decide **cuánto**, para siempre. Hace
+      falta el segundo porque la certeza satura hacia 1: con cien verduras registradas
+      —meses, no años— una verdura no comida llegaría al mismo ajuste que la comida
+      favorita. Una categoría es una de las razones por las que algo gusta, nunca la razón
+      entera.
+      Y el atributo **no se cuenta a sí mismo**: `SubjectAffinity.without` le descuenta al
+      grupo lo que aportó el candidato, porque un alimento de todos los días es el que más
+      aporta a su categoría y sin la resta cobraría el ajuste puntual y otra vez, en chico,
+      por su propia evidencia — un favorito con un ajuste más grande que el knob, por
+      partida doble, sin que hubiera aparecido ni un dato nuevo.
+      El atributo **no filtra**: `rejected_subjects` sigue mirando solo el sujeto puntual.
+      Generalizar para ordenar una lista es útil; sacar la espinaca porque la persona
+      rechazó tres **otras** verduras es ponerle en la boca un "no" que no dijo.
+- [x] Acá entra la señal por `FoodItem.category` que la 4.4.1 dejó anotada: el escritor y el
       lector del nivel atributo se hacen juntos, en el mismo commit, porque separarlos es
       cómo nació `repeated_purchase`.
+      → **No hay escritor, y ahí está la corrección al plan.** Grabar una segunda fila por
+      comida con la categoría del alimento es peor por dos razones que no se veían al
+      anotarlo: congelaría la categoría del día en que se comió —recategorizar la palta de
+      `fat` a `fruit` no arreglaría nada de lo ya aprendido— y solo aprendería de las comidas
+      **futuras**, cuando lo que la app ya tiene son meses de señales de alimentos cuya
+      categoría el catálogo sabe hoy. Derivar en cada lectura es retroactivo y se corrige
+      solo. Y el riesgo que el plan quería evitar desaparece por otra vía: sin escritor no
+      hay nada que se pueda olvidar de escribir, que es exactamente cómo nació
+      `repeated_purchase`. Para que no quede una puerta abierta, `food_category` vive en un
+      `ATTRIBUTE_SUBJECT_TYPES` aparte y **no** está en `SUBJECT_TYPES`, así que
+      `record_signal` lo rechaza y no puede existir una fila con ese tipo; un test lo fija.
+- [x] Ni un generador ni un servicio cambian. El scorer resuelve el atributo desde el
+      `subject_name` que los candidatos ya declaran desde la 4.4a, así que el cambio entra
+      por el lado del lector solo: `learning.py`, `scorer.py`, una línea en `engine.py` y un
+      método de repositorio.
+- [x] Ocho tests nuevos (`TestAttributeLevelLearning`): el ejemplo del plan tal cual —tres
+      verduras rechazadas mueven una cuarta que nunca se sugirió, y sin el índice no la
+      mueven—, que una generalización queda por debajo de la evidencia directa aun con 90
+      observaciones, que un favorito no se impulsa a sí mismo por su propia categoría, que
+      tres verduras mueven más del doble que una y una mueve menos de un tercio que el
+      sujeto propio, que una categoría **nunca** es un veto, que un alimento que el catálogo
+      no conoce no tiene categoría, que el índice lee los alias, y que `food_category` no es
+      un sujeto grabable.
+- [ ] **Los ejercicios no están en el índice todavía, y no es un olvido.** Los candidatos de
+      actividad salen de una lista de ocho actividades escrita a mano en
+      `activity_generator`, cuyos nombres en su mayoría no existen en el catálogo de
+      `ExerciseType` ("biking" contra "Cycling", "gym" y "swimming" que no están), así que el
+      atributo resolvería para unos y para otros no, **en silencio**. Reemplazar esa lista
+      por el catálogo es la 4.5, y ahí los ejercicios entran con el mismo shape: una entrada
+      más en `attribute_index`, ninguna otra cosa cambia. Cuál de sus dos atributos
+      discrimina depende de ese mismo reemplazo —para una actividad es la intensidad, para un
+      ejercicio de gimnasio es el grupo muscular—, porque el seed le pone
+      `muscle_group="full_body"` a casi todo el cardio.
 
 **4.4.5 — Gusto con contexto horario**
 

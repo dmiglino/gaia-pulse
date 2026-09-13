@@ -99,7 +99,16 @@ class RecommendationEngine:
         candidates = filters.apply_signal_constraints(candidates, signals)
 
         # ── Score and rank ─────────────────────────────────────────────
-        ranked = scorer.score_candidates(candidates, user, signals, recent_suggestions)
+        #: El índice de atributos se arma una vez por corrida y se pasa al scorer, que no
+        #: toca la base. Es lo que permite que una espinaca herede lo que la app aprendió
+        #: de las verduras.
+        ranked = scorer.score_candidates(
+            candidates,
+            user,
+            signals,
+            recent_suggestions,
+            subject_attributes=learning.attribute_index(db),
+        )
 
         # ── Persist top-N as Suggestion records ────────────────────────
         pending = self._pending_subjects_for_user(db, user.id)
