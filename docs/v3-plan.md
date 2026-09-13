@@ -181,6 +181,15 @@ este tamaño sin tests de humo es imprudente.
 
 ### F. La capa de inteligencia
 
+> **Este bloque es una foto del arranque de v3, no del estado actual.** Los números y las
+> líneas citadas describen lo que había cuando se escribió el plan; lo que ya se arregló
+> queda marcado en las sub-fases de abajo. En particular, desde la 4.1 los jobs corren una
+> o dos veces por día a hora local fija, así que las cuentas de F2 que se apoyan en el
+> intervalo de 6 horas ("~84 notificaciones", "cada 6h se escriben hasta 5 filas") hay que
+> leerlas como el diagnóstico original: hoy serían ~21 y dos veces por día. Peor todavía
+> para el punto que hace F2: con el job una vez al día, **los tres cooldowns por categoría
+> (6h, 48h, 72h) son más cortos que el período de su propio job y ya no suprimen nada.**
+
 El diagnóstico honesto: **hay reglas, pero no razonamiento; hay feedback, pero no
 aprendizaje; hay trabajos programados, pero no sentido del tiempo.** Todo el motor es
 100% determinista (`grep -r openai app/recommendations/` → 0 resultados) y su vocabulario
@@ -526,13 +535,25 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       `TIMEZONE` mal escrito degrada a UTC con un warning en vez de tumbar cada página.
       `to_local()` **interpreta** un naive como UTC y convierte, en vez de afirmarle la
       timezone local encima — que es el bug que hoy tiene `notification_jobs.py:131`.
-- [ ] Falta `is_quiet_hours()` sobre ese mismo módulo.
-- [ ] `scheduler.py` pasa de `IntervalTrigger` a `CronTrigger` en la timezone configurada
+- [x] `is_quiet_hours()` sobre ese mismo módulo, más `as_utc()` y `local_day_bounds()`.
+      La franja se define por horas enteras locales (`QUIET_HOURS_START` /
+      `QUIET_HOURS_END`) y **cruza la medianoche** cuando el inicio es posterior al fin,
+      que es el caso normal (22 → 8); con inicio igual a fin no hay silencio, que es la
+      forma de apagarlo sin agregar un flag aparte.
+- [x] `scheduler.py` pasa de `IntervalTrigger` a `CronTrigger` en la timezone configurada
       (stock a la mañana, inactividad al mediodía, peso al arrancar el día), de modo que la
-      hora deje de depender de cuándo arrancó el proceso.
-- [ ] Gate de horario de silencio antes de crear cualquier notificación.
-- [ ] Unificar naive/aware en repositorios y servicios.
-- [ ] **"Un día" todavía es un día UTC, y ahora se ve en pantalla.** Detectado durante el
+      hora deje de depender de cuándo arrancó el proceso. Los cuatro horarios viven en una
+      sola tabla, `_SCHEDULE`, con el motivo de cada hora escrito al lado.
+- [x] Gate de horario de silencio antes de crear cualquier notificación. Va en la puerta de
+      los tres jobs y **no** dentro de `NotificationService.create`, porque esos tres son
+      sus únicos llamadores: `app/web/` y `app/api/` solo leen, marcan, descartan y
+      posponen. El job se saltea entero en vez de postergarse — `CronTrigger` lo vuelve a
+      llamar mañana a la misma hora local.
+- [x] Unificar naive/aware en repositorios y servicios: `datetime.utcnow()` y
+      `.replace(tzinfo=utc)` (que **afirma** en vez de convertir) salen de
+      `notification_jobs`, `notification_repo`, `body_metric_repo`, `workout_repo`,
+      `pantry_repo` y `suggestion_repo`, reemplazados por `datetime.now(UTC)` y `as_utc()`.
+- [x] **"Un día" todavía es un día UTC, y ahora se ve en pantalla.** Detectado durante el
       rediseño de las comidas (Fase 3): `MealService.get_today_meals` pasa `date.today()`,
       que es la fecha del *reloj del proceso*, y `MealRepository.get_household_meals` arma
       los límites del día con `datetime.combine(...)` **naive** para compararlos contra una
@@ -541,9 +562,53 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       que hereda esos mismos límites vía `on_date` — la muestra en el día equivocado.
       Se arregla acá y no en la Fase 3 porque el arreglo es el reloj (`local_today()` +
       límites aware convertidos a UTC), no la plantilla. Alcanza también a
-      `get_today_workouts` y al resto de los `get_today_*`.
-- [ ] Conectar `notification_job_interval_minutes` o eliminarlo del config, del README y de
-      `.env.example`.
+      `get_today_workouts` y al resto de los `get_today_*`. Arreglado con
+      `local_day_bounds()` en `meal_repo` y `workout_repo`, `local_today()` en
+      `meal_service`, `workout_service` y las tres fechas de `dashboard_service`, y
+      `to_local()` sobre el día de cada sesión del calendario de días activos, que pintaba
+      el cuadradito del día siguiente. De paso, `get_today_sessions` pasa `end_date`: sin
+      él "hoy" era "desde el arranque de hoy en adelante" y una sesión con fecha futura
+      contaba como de hoy. Último `date.today()` vivo de la app: el año máximo del año de
+      nacimiento en `onboarding.py`, que el 31 de diciembre a la noche ofrecía un año que
+      todavía no había empezado acá.
+- [x] **Los tres cooldowns por categoría quedaron inertes** — consecuencia del cambio de
+      trigger que no estaba en el plan. `low_stock` mira 6h, `inactivity` 48h y
+      `metric_reminder` 72h, pero entre dos corridas de su propio job ahora pasan 24h, así
+      que ninguno puede suprimir nada. No se toca acá: el chequeo que hace falta es por
+      sujeto y lo trae la 4.2. Queda anotado en el código para que nadie lea esas ventanas
+      como una defensa activa.
+- [x] Conectar `notification_job_interval_minutes` o eliminarlo del config, del README y de
+      `.env.example`. **Eliminados los dos**, junto con `suggestion_job_interval_minutes`:
+      al primero no lo leía ningún código y al segundo solo el trigger que reemplazamos.
+      Una perilla que ya no controla nada es la misma clase de mentira que vino a sacar esta
+      sub-fase. En su lugar `.env.example` y el README documentan `QUIET_HOURS_START` /
+      `QUIET_HOURS_END`, y la descripción de `TIMEZONE` deja de ser decorativa.
+- [x] `tests/test_clock.py`: 29 tests sobre la franja que cruza la medianoche, la diferencia
+      entre convertir y afirmar, los límites del día local, que la hora de los cuatro jobs no
+      dependa del arranque del proceso, que un job silenciado **no abra ni la sesión** de
+      base y — el control negativo, sin el cual una app que no vuelve a avisar nada pasa la
+      suite entera — que fuera de la franja el job sí escriba su notificación. El módulo fija
+      `TIMEZONE` y la franja en vez de heredarlas del entorno: varias horas están escritas a
+      mano y con otra zona fallaban por el `.env` y no por el código. Un detalle que costó
+      encontrar: en SQLite, `DateTime(timezone=True)` descarta la tzinfo y guarda la hora de
+      pared tal cual, así que el test del día tiene que escribir lo que escribe la app — el
+      instante en UTC — o no detecta la regresión.
+- [x] **Lo que la revisión encontró que el barrido había salteado.** El rótulo de la serie de
+      peso hacía `timestamp.strftime(...)` sobre la columna cruda en `dashboard_service` y en
+      `body_metric_service`: un pesaje de las 22:00 salía rotulado con la fecha de mañana, y
+      el rótulo cambiaba según el motor de base — lo mismo que el diff arreglaba 57 líneas más
+      abajo en el mismo archivo. Además, los tres `log_*` guardaban `data.timestamp` tal cual,
+      así que un POST a la API con offset propio quedaba guardado con la hora de pared de
+      *esa* zona: ahora pasan por `as_utc()`, que es de lo que dependen los límites del día.
+      `meal_generator` dejó de armar la zona a mano (era el último lector de
+      `settings.timezone` fuera del reloj, y con un `TIMEZONE` mal escrito explotaba en vez de
+      degradar), y `scheduler` pasa `household_tz()` al trigger y al scheduler por la misma
+      razón. De paso: el tercer elemento de `_SCHEDULE` era prosa que ningún código leía —
+      la razón de cada hora vive en el comentario de su entrada — y los tres
+      `user_repo = UserRepository(db)` de `notification_jobs` no los usaba nadie.
+      Queda anotado como advisory, sin acción: en una zona cuyo cambio de horario cae a las
+      24:00 (Chile), la hora repetida no pertenece a ningún día local y `local_day_bounds`
+      deja un hueco. Buenos Aires no tiene DST desde 2009.
 
 **4.2 — Dedup por sujeto, con escalada en vez de repetición**
 

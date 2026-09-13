@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, joinedload
@@ -79,13 +79,13 @@ class PantryStockRepository(BaseRepository[PantryStock]):
                 food_item_id=food_item_id,
                 current_quantity=max(0.0, delta),
                 unit=unit,
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(UTC),
             )
             self.db.add(stock)
         else:
             new_qty = float(stock.current_quantity) + delta
             stock.current_quantity = max(0.0, new_qty)
-            stock.updated_at = datetime.utcnow()
+            stock.updated_at = datetime.now(UTC)
         self.db.flush()
         return stock
 

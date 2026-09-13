@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
@@ -120,7 +120,7 @@ class SuggestionRepository(BaseRepository[Suggestion]):
             pref.strength = strength
             if notes:
                 pref.notes = notes
-            pref.updated_at = datetime.utcnow()
+            pref.updated_at = datetime.now(UTC)
         self.db.flush()
         return pref
 

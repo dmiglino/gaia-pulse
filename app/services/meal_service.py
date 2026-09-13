@@ -2,6 +2,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc, local_today
 from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
 from app.repositories.food_repo import FoodRepository
 from app.repositories.meal_repo import MealRepository
@@ -20,7 +21,11 @@ class MealService:
         """Create a full meal event with per-user participants and consumed items."""
         event = MealEvent(
             household_id=household_id,
-            timestamp=data.timestamp,
+            #: Todo lo que se guarda es UTC — de eso dependen ahora los límites del
+            #: día local. El schema acepta un `datetime` cualquiera, así que un POST a
+            #: `/api/v1/meals` con offset propio entraba tal cual y en SQLite quedaba
+            #: guardado con la hora de pared de *su* zona, no de la nuestra.
+            timestamp=as_utc(data.timestamp),
             meal_type=data.meal_type,
             context=data.context,
             notes=data.notes,
@@ -100,7 +105,9 @@ class MealService:
         )
 
     def get_today_meals(self, household_id: int) -> list[MealEvent]:
-        return self.meal_repo.get_today_meals(household_id, date.today())
+        #: `date.today()` es el día del reloj del proceso — UTC en el contenedor —,
+        #: así que entre las 21:00 y la medianoche local "hoy" era mañana.
+        return self.meal_repo.get_today_meals(household_id, local_today())
 
     def get_meal(self, meal_id: int) -> MealEvent | None:
         return self.meal_repo.get_with_participants(meal_id)

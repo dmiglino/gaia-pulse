@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,8 +40,18 @@ class Settings(BaseSettings):
 
     # Background jobs
     enable_background_jobs: bool = True
-    notification_job_interval_minutes: int = 60
-    suggestion_job_interval_minutes: int = 360
+
+    #: La franja en la que la app no genera notificaciones, en horas locales
+    #: enteras. Cruza la medianoche cuando el inicio es mayor que el fin (22 → 8),
+    #: y con los dos valores iguales queda vacía. Ver `app/core/clock.py`.
+    #:
+    #: Acá un valor fuera de rango tumba el arranque, a diferencia de `timezone`,
+    #: que se degrada a UTC: la timezone se lee en cada render y no vale tirar
+    #: todas las páginas por un typo, pero esto se lee solo en los jobs, y un
+    #: `QUIET_HOURS_START=25` silencioso dejaría el horario de silencio apagado
+    #: sin que nadie se enterara.
+    quiet_hours_start: int = Field(default=22, ge=0, le=23)
+    quiet_hours_end: int = Field(default=8, ge=0, le=23)
 
     # Localization
     timezone: str = "America/Argentina/Buenos_Aires"

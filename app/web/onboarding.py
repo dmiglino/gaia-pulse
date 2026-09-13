@@ -1,11 +1,12 @@
 """Onboarding flow — shown once per user immediately after first login."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.core.clock import local_today
 from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
 from app.models.body_metric import BodyMetricLog
@@ -40,7 +41,9 @@ def onboarding_index(request: Request, current_user: CurrentUser, db: DB) -> Res
     if current_user.onboarding_completed:
         return RedirectResponse(url="/", status_code=302)
     ctx = get_template_context(request, db, current_user)
-    ctx["current_year"] = date.today().year
+    #: El año del hogar, no el del proceso: el 31 de diciembre a la noche el
+    #: contenedor en UTC ya está en enero y el wizard ofrecía un año de más.
+    ctx["current_year"] = local_today().year
     return templates.TemplateResponse("onboarding/index.html", ctx)
 
 
@@ -75,7 +78,7 @@ def onboarding_complete(
             year = int(birth_year)
         except ValueError:
             year = 0
-        if 1900 <= year <= date.today().year:
+        if 1900 <= year <= local_today().year:
             current_user.birth_date = date(year, 1, 1)
         else:
             unreadable.append(_("Year of birth"))
@@ -101,7 +104,7 @@ def onboarding_complete(
             db.add(
                 BodyMetricLog(
                     user_id=current_user.id,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     weight_kg=value,
                 )
             )

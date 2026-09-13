@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -36,7 +36,10 @@ class BodyMetricRepository(BaseRepository[BodyMetricLog]):
         return self.db.scalar(stmt)
 
     def get_weight_series(self, user_id: int, days: int = 30) -> list[BodyMetricLog]:
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        #: Aware. `timestamp` es `timestamptz`, y un cutoff naive lo interpreta
+        #: Postgres en la timezone de la *sesión*, no en UTC: la ventana de
+        #: "últimos 30 días" se corría el offset del servidor.
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         stmt = (
             select(BodyMetricLog)
             .where(

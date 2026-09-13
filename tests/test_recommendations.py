@@ -218,6 +218,7 @@ class TestMealWindow:
         from datetime import datetime, timedelta, timezone
         from zoneinfo import ZoneInfo
 
+        from app.core import clock
         from app.recommendations.generators import meal_generator
 
         tz = ZoneInfo(get_settings().timezone)
@@ -231,5 +232,9 @@ class TestMealWindow:
             def now(cls, tz: timezone | ZoneInfo | None = None) -> datetime:  # type: ignore[override]
                 return local.astimezone(tz) if tz else local.replace(tzinfo=None)
 
-        monkeypatch.setattr(meal_generator, "datetime", _FrozenDatetime)
+        # El reloj se congela en `app.core.clock`, que es de donde el generador saca
+        # la hora local desde que dejó de armar la zona por su cuenta. Sigue siendo
+        # el mismo instante real: leerlo en UTC cae en otra ventana, y ahí estaba el
+        # bug.
+        monkeypatch.setattr(clock, "datetime", _FrozenDatetime)
         assert meal_generator._current_meal_type() == expected

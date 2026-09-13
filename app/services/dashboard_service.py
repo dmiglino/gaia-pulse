@@ -1,8 +1,9 @@
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today, to_local
 from app.repositories.body_metric_repo import BodyMetricRepository
 from app.repositories.meal_repo import MealRepository
 from app.repositories.pantry_repo import PantryStockRepository
@@ -17,9 +18,7 @@ class DashboardService:
         self.workout_repo = WorkoutRepository(db)
         self.pantry_repo = PantryStockRepository(db)
 
-    def get_user_dashboard_data(
-        self, user_id: int, household_id: int
-    ) -> dict[str, Any]:
+    def get_user_dashboard_data(self, user_id: int, household_id: int) -> dict[str, Any]:
         """Aggregate all dashboard data for a user."""
         weight_trend = self._weight_trend_data(user_id)
         workout_freq = self._workout_frequency_data(user_id, household_id)
@@ -40,7 +39,10 @@ class DashboardService:
     def _weight_trend_data(self, user_id: int) -> dict[str, Any]:
         series = self.metric_repo.get_weight_series(user_id, days=30)
         return {
-            "labels": [m.timestamp.strftime("%b %d") for m in series],
+            #: La columna guarda UTC, así que un pesaje de las 22:00 de acá salía
+            #: rotulado con la fecha de mañana — y el rótulo cambiaba según el motor,
+            #: porque `strftime` sobre el valor crudo depende de cómo lo devolvió.
+            "labels": [to_local(m.timestamp).strftime("%b %d") for m in series],
             "data": [float(m.weight_kg) if m.weight_kg else None for m in series],
         }
 
@@ -48,7 +50,7 @@ class DashboardService:
         """Workouts per week for last 4 weeks."""
         weeks = []
         counts = []
-        today = date.today()
+        today = local_today()
         for i in range(3, -1, -1):
             week_start = today - timedelta(days=today.weekday() + 7 * i)
             week_end = week_start + timedelta(days=6)
@@ -81,7 +83,7 @@ class DashboardService:
             household_id,
             limit=200,
             user_id=user_id,
-            start_date=date.today() - timedelta(days=6),
+            start_date=local_today() - timedelta(days=6),
         )
         type_counts: dict[str, int] = {}
         for m in meals:
@@ -94,15 +96,20 @@ class DashboardService:
     def _active_days_data(self, user_id: int, household_id: int) -> dict[str, Any]:
         """Last 30 days: active=had workout, inactive=no workout."""
         sessions = self.workout_repo.get_user_recent_sessions(user_id, household_id, days=30)
-        active_dates = {s.timestamp_start.date() for s in sessions}
-        today = date.today()
+        #: El día **local** de cada sesión. `timestamp_start.date()` sobre una
+        #: columna aware da el día UTC, así que un entrenamiento de las 21:00 de
+        #: acá pintaba el cuadradito del día siguiente en el calendario.
+        active_dates = {to_local(s.timestamp_start).date() for s in sessions}
+        today = local_today()
         days_data = []
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
-            days_data.append({
-                "date": d.isoformat(),
-                "active": d in active_dates,
-            })
+            days_data.append(
+                {
+                    "date": d.isoformat(),
+                    "active": d in active_dates,
+                }
+            )
         return {"days": days_data}
 
     def _pantry_summary(self, household_id: int) -> dict[str, Any]:

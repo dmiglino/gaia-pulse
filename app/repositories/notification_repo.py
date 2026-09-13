@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -81,7 +81,10 @@ class NotificationRepository(BaseRepository[Notification]):
             )
         )
         notifications = list(self.db.scalars(stmt).all())
-        now = datetime.utcnow()
+        #: Aware: `read_at` es `timestamptz` y un naive acá lo interpreta Postgres
+        #: en la timezone de la sesión, así que "marcar todo como leído" grababa
+        #: una hora corrida y "leído hace un rato" se leía con el offset de más.
+        now = datetime.now(UTC)
         for n in notifications:
             n.read_at = now
         self.db.flush()
@@ -101,9 +104,7 @@ class NotificationRepository(BaseRepository[Notification]):
         ``household_id``, the household clause matched the *other* member's row
         and suppressed this user's notification for the whole window.
         """
-        from datetime import timedelta
-
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=hours)
         if user_id is not None:
             scope = and_(Notification.user_id == user_id)
         else:

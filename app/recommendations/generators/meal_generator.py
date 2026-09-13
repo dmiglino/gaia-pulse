@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.clock import local_now
 from app.models.food import FoodItem
 from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
 from app.models.pantry import PantryStock
@@ -37,8 +36,12 @@ def _current_meal_type() -> str:
 
     This used to read the UTC hour, so at 08:00 in Buenos Aires (UTC-3) the
     engine believed it was 11:00 and suggested lunch at breakfast time.
+
+    La zona sale de `app.core.clock`, que es el único lugar que lee
+    `settings.timezone`: armándola acá, un `TIMEZONE` mal escrito hacía explotar la
+    generación de sugerencias en vez de degradar a UTC como promete el resto.
     """
-    hour = datetime.now(tz=ZoneInfo(get_settings().timezone)).hour
+    hour = local_now().hour
     if 5 <= hour < 10:
         return "breakfast"
     if 10 <= hour < 14:
@@ -50,7 +53,7 @@ def _current_meal_type() -> str:
 
 def _get_recent_food_names(db: Session, user: User, days: int = _RECENCY_DAYS) -> Counter[str]:
     """Return a Counter of food names consumed by the user in the last N days."""
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     rows = (
         db.query(MealItemConsumed.normalized_free_text_name)
         .join(MealParticipant, MealParticipant.id == MealItemConsumed.meal_participant_id)

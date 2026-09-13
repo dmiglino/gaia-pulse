@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc, to_local
 from app.models.body_metric import BodyMetricLog
 from app.repositories.body_metric_repo import BodyMetricRepository
 from app.schemas.body_metric import BodyMetricCreate, BodyMetricTrend
@@ -13,7 +14,8 @@ class BodyMetricService:
     def log_metric(self, user_id: int, data: BodyMetricCreate) -> BodyMetricLog:
         metric = BodyMetricLog(
             user_id=user_id,
-            timestamp=data.timestamp,
+            #: Como en `MealService.log_meal`: la columna es UTC.
+            timestamp=as_utc(data.timestamp),
             weight_kg=data.weight_kg,
             body_fat_pct=data.body_fat_pct,
             muscle_mass_kg=data.muscle_mass_kg,
@@ -39,7 +41,8 @@ class BodyMetricService:
 
     def get_trend(self, user_id: int, days: int = 30) -> BodyMetricTrend:
         series = self.repo.get_weight_series(user_id, days=days)
-        dates = [m.timestamp.strftime("%Y-%m-%d") for m in series]
+        #: El mismo rótulo corrido que el del gráfico del dashboard: la columna es UTC.
+        dates = [to_local(m.timestamp).strftime("%Y-%m-%d") for m in series]
         weights = [float(m.weight_kg) if m.weight_kg else None for m in series]
 
         weight_change = None

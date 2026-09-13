@@ -17,6 +17,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import Suggestion
 from app.models.user import User
@@ -86,7 +87,7 @@ def score_candidates(
     # Filter signals to recent window
     relevant_signals = [
         s for s in signals
-        if s.created_at is None or s.created_at.replace(tzinfo=timezone.utc) >= cutoff_signals
+        if s.created_at is None or as_utc(s.created_at) >= cutoff_signals
     ]
 
     # Positive and negative signal lists
@@ -113,7 +114,7 @@ def score_candidates(
     recent_titles: set[str] = {
         s.title.lower()
         for s in recent_suggestions
-        if s.created_at is None or s.created_at.replace(tzinfo=timezone.utc) >= cutoff_suggestions
+        if s.created_at is None or as_utc(s.created_at) >= cutoff_suggestions
     }
 
     scored: list[dict[str, Any]] = []

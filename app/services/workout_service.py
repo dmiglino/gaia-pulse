@@ -2,6 +2,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc, local_today
 from app.models.workout import WorkoutExercise, WorkoutParticipant, WorkoutSession
 from app.repositories.suggestion_repo import BehaviorSignalRepository
 from app.repositories.workout_repo import WorkoutRepository
@@ -18,7 +19,9 @@ class WorkoutService:
         """Create a workout session with per-user participants and exercises."""
         session = WorkoutSession(
             household_id=household_id,
-            timestamp_start=data.timestamp_start,
+            #: Como en `MealService.log_meal`: la columna es UTC y de eso dependen los
+            #: límites del día local.
+            timestamp_start=as_utc(data.timestamp_start),
             duration_minutes=data.duration_minutes,
             workout_type=data.workout_type,
             location=data.location,
@@ -95,7 +98,9 @@ class WorkoutService:
         )
 
     def get_today_sessions(self, household_id: int) -> list[WorkoutSession]:
-        return self.workout_repo.get_today_sessions(household_id, date.today())
+        #: `date.today()` es el día del reloj del proceso — UTC en el contenedor —,
+        #: así que entre las 21:00 y la medianoche local "hoy" era mañana.
+        return self.workout_repo.get_today_sessions(household_id, local_today())
 
     def get_session(self, session_id: int) -> WorkoutSession | None:
         return self.workout_repo.get_with_details(session_id)

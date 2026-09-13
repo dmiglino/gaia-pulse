@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
 from app.models.workout import WorkoutExercise, WorkoutParticipant, WorkoutSession
@@ -61,7 +62,7 @@ def _days_since_last_workout(db: Session, user: User) -> int | None:
     )
     if last is None:
         return None
-    delta = datetime.now(tz=timezone.utc) - last[0].replace(tzinfo=timezone.utc)
+    delta = datetime.now(tz=timezone.utc) - as_utc(last[0])
     return delta.days
 
 

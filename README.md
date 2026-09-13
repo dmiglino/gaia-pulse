@@ -40,7 +40,7 @@ The app accepts natural language and voice input for all data entry and requires
 - **Preview / confirm flow** — NLP results are stored as `pending_confirmation` and shown to the user before any data is saved
 - **Recommendation engine** — meal, activity, and pantry suggestions personalised per user and updated by behavior signals
 - **Dashboard** — Chart.js visualisations: weight trend, workout frequency, muscle group distribution, meal type breakdown, activity calendar
-- **Background jobs** — APScheduler runs notification and suggestion generation on configurable intervals
+- **Background jobs** — APScheduler runs four jobs at fixed local wall-clock times in `TIMEZONE`, not on intervals, so a restart never moves them (see [Background job schedule](#background-job-schedule)). The three notification jobs skip their run entirely inside the quiet window (`QUIET_HOURS_START`–`QUIET_HOURS_END`); suggestion generation is not gated by it
 - **PWA manifest** — installable on mobile home screens
 - **OpenAPI docs** — available at `/api/docs` and `/api/redoc`
 
@@ -75,6 +75,24 @@ FastAPI mounts two routers:
 - All other paths — Jinja2 server-rendered HTML; unauthenticated requests redirect to `/login`
 
 HTMX drives partial-page updates on the rendered views. Alpine.js handles lightweight client-side state (modals, toggles). There is no separate frontend build process.
+
+### Background job schedule
+
+Jobs run at fixed local wall-clock times in `TIMEZONE` (APScheduler `CronTrigger`), not
+on an interval, so the times do not shift when the process restarts. The table of record
+is `_SCHEDULE` in `app/jobs/scheduler.py`.
+
+| Job | Local time | Why then |
+|---|---|---|
+| `metric_reminders` | 08:20 | Before breakfast — weigh-ins are done fasted |
+| `low_stock_notifications` | 09:10 | Morning, while there is still time to shop |
+| `inactivity_notifications` | 13:05 | Midday, with the day still ahead |
+| `suggestion_generation` | 07:40, 18:40 | Before breakfast, and before dinner is decided |
+
+The first three create notifications and are gated by the quiet window: inside it they
+skip the run entirely rather than deferring it, since what they would announce is still
+true tomorrow. `suggestion_generation` only writes suggestions, which nobody is woken up
+for, so it is not gated. `ENABLE_BACKGROUND_JOBS=false` registers none of them.
 
 ### Database schema
 
@@ -111,6 +129,7 @@ GaiaPulse/
 ├── app/
 │   ├── main.py                  # App factory, lifespan, exception handlers
 │   ├── core/
+│   │   ├── clock.py             # Local "now"/"today", day bounds, quiet hours
 │   │   └── config.py            # Pydantic Settings (env-driven)
 │   ├── models/                  # SQLAlchemy ORM models (one file per domain)
 │   ├── schemas/                 # Pydantic request/response schemas
@@ -130,7 +149,7 @@ GaiaPulse/
 │   │   ├── scorer.py            # Behavior signal scoring + diversity penalty
 │   │   └── generators/          # meal_generator, activity_generator, pantry_generator
 │   ├── jobs/
-│   │   ├── scheduler.py         # APScheduler setup
+│   │   ├── scheduler.py         # APScheduler cron schedule (local times)
 │   │   ├── notification_jobs.py
 │   │   └── suggestion_jobs.py
 │   ├── templates/               # Jinja2 HTML templates
@@ -239,10 +258,10 @@ All variables can be set in `.env` (see `.env.example`) or passed directly to th
 | `OPENAI_API_KEY` | No | _(empty)_ | Enables NLP Layer 2 and voice input. Without it, only the rule-based Layer 1 parser runs |
 | `STT_PROVIDER` | No | `none` | Set to `whisper` to enable speech-to-text |
 | `STT_API_KEY` | No | _(empty)_ | STT API key; falls back to `OPENAI_API_KEY` if not set |
-| `ENABLE_BACKGROUND_JOBS` | No | `true` | Enables APScheduler notification and suggestion jobs |
-| `NOTIFICATION_JOB_INTERVAL_MINUTES` | No | `60` | How often notification jobs run |
-| `SUGGESTION_JOB_INTERVAL_MINUTES` | No | `360` | How often suggestion generation runs |
-| `TIMEZONE` | No | `America/Argentina/Buenos_Aires` | Household timezone for job scheduling |
+| `ENABLE_BACKGROUND_JOBS` | No | `true` | Registers the four APScheduler jobs (see [Background job schedule](#background-job-schedule)) |
+| `QUIET_HOURS_START` | No | `22` | Whole local hour (0–23) the quiet window opens. Notification jobs scheduled inside it skip their run entirely — they are not deferred |
+| `QUIET_HOURS_END` | No | `8` | Whole local hour (0–23) the window closes. The window wraps midnight when start > end (the default 22 → 8); set it equal to `QUIET_HOURS_START` to disable quiet hours. A value outside 0–23 fails startup |
+| `TIMEZONE` | No | `America/Argentina/Buenos_Aires` | Household timezone. Defines job run times, quiet hours, and every "today" the app shows (Home counters, `/meals` and `/workouts` day filters, dashboard calendar). An unknown name falls back to UTC with a logged warning |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | Model used by the OpenAI adapter |
 
 ---
