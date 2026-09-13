@@ -130,71 +130,93 @@
 
 {% block extra_scripts %}
 <script>
-const weightData = {{ chart_data.weight_trend | tojson }};
-const workoutData = {{ chart_data.workout_frequency | tojson }};
-const muscleData = {{ chart_data.muscle_groups | tojson }};
-const mealData = {{ chart_data.meal_types | tojson }};
+// `DOMContentLoaded`, y no código al tope del script: este bloque es un <script>
+// inline, y los inline corren **en tiempo de parseo**, o sea antes de todos los
+// `defer` — incluido `chart.umd.min.js`. Sin el envoltorio, `new Chart(...)` tiraba
+// `ReferenceError: Chart is not defined` y los cuatro gráficos del dashboard no se
+// dibujaban (y `applyChartTheme()` de `app.js` no encontraba ningún chart montado,
+// así que el re-tintado por tema tampoco corría nunca).
+document.addEventListener('DOMContentLoaded', function () {
+  const weightData = {{ chart_data.weight_trend | tojson }};
+  const workoutData = {{ chart_data.workout_frequency | tojson }};
+  const muscleData = {{ chart_data.muscle_groups | tojson }};
+  const mealData = {{ chart_data.meal_types | tojson }};
 
-const chartDefaults = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false } },
-  scales: {
-    x: { grid: { display: false }, ticks: { font: { size: 11 } } },
-    y: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 } } }
+  // Los colores salen de los tokens de `app.css`, no de hex pegados acá. La serie
+  // usa solo tokens `-solid` y `brand-500`, que valen lo mismo en los dos temas:
+  // así los datasets no necesitan re-tintarse al cambiar de tema (`applyChartTheme`
+  // solo repinta grillas y ticks, que sí dependen del tema).
+  const c = window.GP.tokenColor;
+  const SERIES = [
+    c('--brand-500'), c('--move-solid'), c('--food-solid'), c('--stock-solid'),
+    c('--info-solid'), c('--danger-solid'), c('--brand-400'), c('--ok-solid'),
+  ];
+
+  const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+      y: { grid: { color: c('--line') }, ticks: { font: { size: 11 } } }
+    }
+  };
+
+  const donutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } },
+  };
+
+  if (weightData.labels?.length) {
+    new Chart(document.getElementById('weightChart'), {
+      type: 'line',
+      data: {
+        labels: weightData.labels,
+        datasets: [{
+          data: weightData.data,
+          borderColor: c('--brand-500'),
+          backgroundColor: c('--brand-500', 0.12),
+          tension: 0.3,
+          fill: true,
+          pointRadius: 3,
+          spanGaps: true,
+        }]
+      },
+      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: undefined } } }
+    });
   }
-};
 
-if (weightData.labels?.length) {
-  new Chart(document.getElementById('weightChart'), {
-    type: 'line',
-    data: {
-      labels: weightData.labels,
-      datasets: [{
-        data: weightData.data,
-        borderColor: '#6366f1',
-        backgroundColor: 'rgba(99,102,241,0.1)',
-        tension: 0.3,
-        fill: true,
-        pointRadius: 3,
-        spanGaps: true,
-      }]
-    },
-    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: undefined } } }
-  });
-}
+  if (workoutData.labels?.length) {
+    new Chart(document.getElementById('workoutFreqChart'), {
+      type: 'bar',
+      data: {
+        labels: workoutData.labels,
+        datasets: [{ data: workoutData.data, backgroundColor: c('--brand-500'), borderRadius: 6 }]
+      },
+      options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0 } } }
+    });
+  }
 
-if (workoutData.labels?.length) {
-  new Chart(document.getElementById('workoutFreqChart'), {
-    type: 'bar',
-    data: {
-      labels: workoutData.labels,
-      datasets: [{ data: workoutData.data, backgroundColor: '#6366f1', borderRadius: 6 }]
-    },
-    options: { ...chartDefaults, scales: { ...chartDefaults.scales, y: { ...chartDefaults.scales.y, min: 0 } } }
-  });
-}
+  if (muscleData.labels?.length) {
+    new Chart(document.getElementById('muscleChart'), {
+      type: 'doughnut',
+      data: { labels: muscleData.labels, datasets: [{ data: muscleData.data, backgroundColor: SERIES }] },
+      options: donutOptions
+    });
+  }
 
-if (muscleData.labels?.length) {
-  new Chart(document.getElementById('muscleChart'), {
-    type: 'doughnut',
-    data: {
-      labels: muscleData.labels,
-      datasets: [{ data: muscleData.data, backgroundColor: ['#6366f1','#8b5cf6','#a78bfa','#c4b5fd','#ddd6fe','#ede9fe','#10b981','#34d399'] }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
-  });
-}
+  if (mealData.labels?.length) {
+    new Chart(document.getElementById('mealTypesChart'), {
+      type: 'doughnut',
+      data: { labels: mealData.labels, datasets: [{ data: mealData.data, backgroundColor: SERIES }] },
+      options: donutOptions
+    });
+  }
 
-if (mealData.labels?.length) {
-  new Chart(document.getElementById('mealTypesChart'), {
-    type: 'doughnut',
-    data: {
-      labels: mealData.labels,
-      datasets: [{ data: mealData.data, backgroundColor: ['#10b981','#6366f1','#f59e0b','#ef4444','#3b82f6','#8b5cf6'] }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
-  });
-}
+  // `app.js` fija los defaults de Chart.js al cargar, cuando todavía no había
+  // ningún chart montado. Una pasada más ahora los aplica a estos cuatro.
+  window.GP.applyChartTheme();
+});
 </script>
 {% endblock %}
