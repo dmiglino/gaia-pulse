@@ -3,6 +3,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.i18n import _
 from app.models.body_metric import BodyMetricLog
 from app.models.user import User
 
@@ -92,6 +93,93 @@ def test_completing_the_wizard_saves_the_profile_and_lifts_the_gate(
     # And the app is reachable again.
     r = authenticated_client.get("/", follow_redirects=False)
     assert r.status_code == 200
+
+
+def test_a_number_it_cannot_read_is_named_instead_of_dropped(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """Las cuatro respuestas numéricas se descartaban en silencio.
+
+    Cada una tenía su `except ValueError: pass` y su rango sin rama `else`, así que
+    escribir "1,70" en la altura terminaba igual que no escribir nada: el wizard
+    decía que estaba todo listo y el dato no existía. A diferencia del perfil acá no
+    se descarta todo el envío — el wizard se ve una sola vez y levanta el gate, y
+    negarse a terminarlo por un decimal mal escrito deja a la persona trabada —, así
+    que se guarda lo que se entiende y se nombra lo que no.
+    """
+    _needs_onboarding(db, diego)
+
+    resp = authenticated_client.post(
+        "/onboarding/complete",
+        data={
+            "birth_year": "1990",
+            "height_cm": "1,70",  # coma decimal: `float()` no lo lee
+            "weight_kg": "8000",  # fuera de rango
+            "target_weight_kg": "75",
+            "baseline_activity_level": "active",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/"
+
+    landing = authenticated_client.get("/", follow_redirects=False)
+    assert landing.status_code == 200
+    #: El mensaje entero, no un `in` sobre "Peso": los dos campos con el mismo rótulo
+    #: que el paso 2 les puso, en el orden en que se leen, y dónde arreglarlos. Sin
+    #: esto la persona no tiene forma de saber qué se perdió.
+    assert (
+        _(
+            "All set! I could not read these, so I left them out: %(fields)s."
+            " You can add them from your profile.",
+            fields=", ".join([_("Height"), _("Weight")]),
+        )
+        in landing.text
+    )
+    assert _("All set. Welcome to GaiaPulse.") not in landing.text
+
+    db.refresh(diego)
+    #: Lo que no se pudo leer no se inventó...
+    assert diego.height_cm is None
+    assert db.query(BodyMetricLog).filter(BodyMetricLog.user_id == diego.id).all() == []
+    #: ...y lo que sí, se guardó: el envío no se descarta entero.
+    assert diego.birth_date is not None and diego.birth_date.year == 1990
+    assert float(diego.target_weight_kg) == 75.0
+    assert diego.baseline_activity_level == "active"
+    #: Y el gate queda levantado igual: el wizard no atrapa a nadie.
+    assert diego.onboarding_completed is True
+
+
+def test_a_year_of_birth_with_decimals_is_not_silently_truncated(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """El año se parsea con `int()` exacto, no con un `float()` redondeado.
+
+    Es el mismo campo que los otros tres pero no comparte su ayudante: leer "1990.5"
+    como 1990 sería adivinar una fecha de nacimiento, y una fecha de nacimiento
+    inventada alimenta después el cálculo de gasto energético.
+    """
+    _needs_onboarding(db, diego)
+
+    resp = authenticated_client.post(
+        "/onboarding/complete",
+        data={"birth_year": "19.5"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+
+    db.refresh(diego)
+    assert diego.birth_date is None
+
+    landing = authenticated_client.get("/", follow_redirects=False)
+    assert (
+        _(
+            "All set! I could not read these, so I left them out: %(fields)s."
+            " You can add them from your profile.",
+            fields=_("Year of birth"),
+        )
+        in landing.text
+    )
 
 
 def test_skipping_only_marks_onboarding_done(

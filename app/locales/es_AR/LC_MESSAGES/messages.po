@@ -1590,3 +1590,117 @@ msgstr "Separalas con comas. Estas nunca se van a sugerir."
 
 msgid "Profile saved."
 msgstr "Perfil guardado."
+
+# ── Onboarding: el wizard de 4 pasos y lo que contesta al terminar ──
+# La pantalla se escribió en la Fase 1 y nunca entró al catálogo, así que se veía
+# entera en inglés. "Height", "Weight", "Weight goal", "Back", "Add", "Remove",
+# "Other", "Dairy", "Activity" y "Food" ya estaban más arriba: los comparte con
+# el perfil.
+
+msgid "Welcome"
+msgstr "Bienvenida"
+
+msgid "Step"
+msgstr "Paso"
+
+msgid "Hi %(name)s!"
+msgstr "¡Hola %(name)s!"
+
+msgid "Welcome!"
+msgstr "¡Hola!"
+
+msgid "A few quick answers let GaiaPulse tailor its suggestions to you. You can change any of this later from your profile."
+msgstr "Con unas pocas respuestas GaiaPulse puede adaptar sus sugerencias a vos. Podés cambiar todo esto más adelante desde tu perfil."
+
+msgid "Year of birth"
+msgstr "Año de nacimiento"
+
+msgid "Used to estimate your energy needs."
+msgstr "Se usa para estimar tu gasto de energía."
+
+msgid "Sex"
+msgstr "Sexo"
+
+msgid "Female"
+msgstr "Femenino"
+
+msgid "Male"
+msgstr "Masculino"
+
+msgid "Prefer not to say"
+msgstr "Prefiero no decirlo"
+
+msgid "Your measurements"
+msgstr "Tus medidas"
+
+msgid "Today's weight becomes your first entry, so the trend starts right away."
+msgstr "El peso de hoy queda como tu primer registro, así la tendencia arranca desde ya."
+
+msgid "How active are you?"
+msgstr "¿Cuánta actividad hacés?"
+
+msgid "This sets the baseline GaiaPulse compares your week against."
+msgstr "Esto define la base con la que GaiaPulse compara tu semana."
+
+msgid "Baseline activity level"
+msgstr "Nivel de actividad base"
+
+msgid "Anything you don't eat?"
+msgstr "¿Hay algo que no comés?"
+
+msgid "Meal suggestions containing these are filtered out, never just ranked lower."
+msgstr "Las sugerencias de comida que los incluyan se descartan, no bajan de puesto."
+
+msgid "Common ones"
+msgstr "Las más comunes"
+
+msgid "Gluten"
+msgstr "Gluten"
+
+msgid "Lactose"
+msgstr "Lactosa"
+
+msgid "Pork"
+msgstr "Cerdo"
+
+msgid "Beef"
+msgstr "Carne de vaca"
+
+msgid "Shellfish"
+msgstr "Mariscos"
+
+msgid "Peanuts"
+msgstr "Maní"
+
+msgid "Eggs"
+msgstr "Huevos"
+
+msgid "Alcohol"
+msgstr "Alcohol"
+
+msgid "e.g. cilantro"
+msgstr "por ejemplo, cilantro"
+
+msgid "Your list"
+msgstr "Tu lista"
+
+msgid "Continue"
+msgstr "Continuar"
+
+msgid "Finish setup"
+msgstr "Terminar"
+
+msgid "Skip for now"
+msgstr "Saltear por ahora"
+
+msgid "About you"
+msgstr "Sobre vos"
+
+msgid "Measurements"
+msgstr "Medidas"
+
+msgid "All set! I could not read these, so I left them out: %(fields)s. You can add them from your profile."
+msgstr "¡Listo! Estos no los pude leer, así que los dejé afuera: %(fields)s. Los podés agregar desde tu perfil."
+
+msgid "All set. Welcome to GaiaPulse."
+msgstr "Listo. Te damos la bienvenida a GaiaPulse."

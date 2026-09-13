@@ -5,7 +5,13 @@
 {#
   The wizard owns the whole viewport: no sidebar, no bottom nav, no content
   offset. Everything else (head, fonts, flash area) comes from base.html.
+
+  `TOTAL` es la única fuente del número de pasos: alimenta el indicador de
+  progreso, su `aria-valuemax` y el `total` del componente de Alpine, que antes
+  estaban escritos por separado y podían divergir.
 #}
+{% set TOTAL = 4 %}
+
 {% block nav %}{% endblock %}
 {% block mobile_nav %}{% endblock %}
 {% block main_offset %}{% endblock %}
@@ -15,65 +21,78 @@
 <div class="min-h-full flex flex-col items-center px-4 py-8 md:py-14"
      x-data="onboardingWizard()">
 
-  <!-- Brand -->
+  {#- El mismo lockup que /login: es la otra pantalla que se ve sin la app
+      alrededor, y las dos eran la primera impresión con dos identidades. -#}
   <div class="flex items-center gap-2.5 mb-8">
-    <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shadow-sm">
-      <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-      </svg>
-    </div>
-    <span class="text-xl font-bold text-slate-800 tracking-tight">GaiaPulse</span>
+    <span class="w-10 h-10 rounded-card bg-brand-500 text-white flex items-center justify-center shadow-lg shadow-brand-500/30">
+      {{ ic.icon('heart', 'w-5 h-5', stroke=2) }}
+    </span>
+    <span class="text-xl font-bold text-ink tracking-tight">GaiaPulse</span>
   </div>
 
   <div class="w-full max-w-lg">
 
-    <!-- Progress -->
+    <!-- Progreso -->
     <div class="mb-6">
-      <div class="flex items-center justify-between mb-2">
-        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          {{ _('Step') }} <span x-text="step"></span>/<span x-text="total"></span>
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <p class="text-xs font-semibold text-ink-subtle uppercase tracking-wider">
+          {{ _('Step') }} <span x-text="step"></span>/{{ TOTAL }}
         </p>
-        <p class="text-xs font-medium text-slate-400" x-text="stepTitle()"></p>
+        <p class="text-xs font-medium text-ink-muted" x-text="stepTitle()"></p>
       </div>
-      <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden"
-           role="progressbar" aria-valuemin="1" aria-valuemax="4"
+      {#- Cuatro segmentos en vez de una barra continua: en un wizard de cuatro
+          pasos el segmento dice "faltan dos", que es la pregunta que la persona
+          se hace, y un porcentaje no. -#}
+      <div class="flex items-center gap-1.5" role="progressbar"
+           aria-valuemin="1" aria-valuemax="{{ TOTAL }}"
            :aria-valuenow="step" :aria-valuetext="stepTitle()">
-        <div class="h-full bg-brand-500 rounded-full transition-all duration-300"
-             :style="`width: ${(step / total) * 100}%`"></div>
+        {%- for n in range(1, TOTAL + 1) %}
+        <span class="h-1.5 flex-1 rounded-pill transition-colors duration-300"
+              :class="step >= {{ n }} ? 'bg-brand-500' : 'bg-card-alt'"></span>
+        {%- endfor %}
       </div>
     </div>
 
     <form method="post" action="/onboarding/complete"
-          class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          class="bg-card border border-line rounded-card shadow-sm overflow-hidden">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
 
-      <!-- ===== STEP 1 — who you are ===== -->
+      {#- Cada paso abre con `<h1>`, no uno con `<h1>` y tres con `<h2>`: `x-show`
+          rinde `display:none`, que saca al elemento del árbol de accesibilidad,
+          así que en todo momento hay exactamente un encabezado de nivel 1 — el
+          del paso visible. Con la numeración anterior, los pasos 2 a 4 eran
+          páginas sin `<h1>`. -#}
+
+      <!-- ===== PASO 1 — quién sos ===== -->
       <div x-show="step === 1" x-cloak class="px-5 py-6 sm:px-7">
-        <h1 class="text-2xl font-bold text-slate-800">
-          {% if current_user is defined and current_user %}
-          {{ _('Hi %(name)s!', name=current_user.display_name) }}
-          {% else %}
-          {{ _('Welcome!') }}
-          {% endif %}
-        </h1>
-        <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-          {{ _('A few quick answers let GaiaPulse tailor its suggestions to you. You can change any of this later from your profile.') }}
-        </p>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-10 h-10 rounded-control bg-brand-50 text-brand-700 flex items-center justify-center">
+            {{ ic.icon('user', 'w-5 h-5') }}
+          </span>
+          <div class="min-w-0">
+            <h1 class="text-xl font-bold text-ink leading-tight">
+              {% if current_user is defined and current_user %}
+              {{ _('Hi %(name)s!', name=current_user.display_name) }}
+              {% else %}
+              {{ _('Welcome!') }}
+              {% endif %}
+            </h1>
+            <p class="text-sm text-ink-muted mt-1 leading-relaxed">
+              {{ _('A few quick answers let GaiaPulse tailor its suggestions to you. You can change any of this later from your profile.') }}
+            </p>
+          </div>
+        </div>
 
         <div class="mt-6 space-y-5">
-          <div>
-            <label for="birth_year" class="block text-sm font-semibold text-slate-700 mb-2">
-              {{ _('Year of birth') }}
-            </label>
-            <input type="number" id="birth_year" name="birth_year"
-                   inputmode="numeric" min="1900" max="{{ current_year }}" step="1"
-                   placeholder="1990"
-                   class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors" />
-            <p class="text-xs text-slate-400 mt-1.5">{{ _('Used to estimate your energy needs.') }}</p>
-          </div>
+          {#- `current_year` lo calcula la ruta con `date.today().year`: es un
+              entero del servidor, el único caso que `attrs` admite además de un
+              literal. -#}
+          {{ ui.field(_('Year of birth'), 'birth_year', type='number', placeholder='1990',
+                      hint=_('Used to estimate your energy needs.'),
+                      attrs='inputmode="numeric" step="1" min="1900" max="' ~ current_year ~ '"') }}
 
           <fieldset>
-            <legend class="block text-sm font-semibold text-slate-700 mb-2">{{ _('Sex') }}</legend>
+            <legend class="block text-sm font-medium text-ink mb-1.5">{{ _('Sex') }}</legend>
             <div class="grid grid-cols-2 gap-2">
               {% for value, label in [
                 ('female', _('Female')),
@@ -81,7 +100,7 @@
                 ('other', _('Other')),
                 ('prefer_not_to_say', _('Prefer not to say')),
               ] %}
-              <label class="relative flex items-center justify-center text-center px-3 py-2.5 rounded-xl border text-sm font-medium cursor-pointer transition-colors border-slate-200 text-slate-600 hover:bg-slate-50 has-[:checked]:border-brand-400 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-700">
+              <label class="relative flex items-center justify-center text-center px-3 py-2.5 rounded-control border border-line text-sm font-medium text-ink-muted cursor-pointer transition-colors hover:bg-card-alt has-[:checked]:border-brand-400 has-[:checked]:bg-brand-50 has-[:checked]:text-brand-700">
                 <input type="radio" name="sex" value="{{ value }}" class="sr-only" />
                 {{ label }}
               </label>
@@ -91,83 +110,84 @@
         </div>
       </div>
 
-      <!-- ===== STEP 2 — body ===== -->
+      <!-- ===== PASO 2 — cuerpo ===== -->
       <div x-show="step === 2" x-cloak class="px-5 py-6 sm:px-7">
-        <h2 class="text-xl font-bold text-slate-800">{{ _('Your measurements') }}</h2>
-        <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-          {{ _('Today\'s weight becomes your first entry, so the trend starts right away.') }}
-        </p>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-10 h-10 rounded-control bg-body-soft text-body-ink flex items-center justify-center">
+            {{ ic.icon('chart-bar', 'w-5 h-5') }}
+          </span>
+          <div class="min-w-0">
+            <h1 class="text-xl font-bold text-ink leading-tight">{{ _('Your measurements') }}</h1>
+            <p class="text-sm text-ink-muted mt-1 leading-relaxed">
+              {{ _('Today\'s weight becomes your first entry, so the trend starts right away.') }}
+            </p>
+          </div>
+        </div>
 
         <div class="mt-6 space-y-5">
-          <div>
-            <label for="height_cm" class="block text-sm font-semibold text-slate-700 mb-2">
-              {{ _('Height (cm)') }}
-            </label>
-            <input type="number" id="height_cm" name="height_cm"
-                   inputmode="decimal" min="50" max="280" step="0.5" placeholder="170"
-                   class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors" />
-          </div>
+          {{ ui.field(_('Height'), 'height_cm', type='number', placeholder='170', unit='cm',
+                      attrs='inputmode="decimal" min="50" max="280" step="0.5"') }}
 
           <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label for="weight_kg" class="block text-sm font-semibold text-slate-700 mb-2">
-                {{ _('Weight (kg)') }}
-              </label>
-              <input type="number" id="weight_kg" name="weight_kg"
-                     inputmode="decimal" min="20" max="500" step="0.1" placeholder="70"
-                     class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors" />
-            </div>
-            <div>
-              <label for="target_weight_kg" class="block text-sm font-semibold text-slate-700 mb-2">
-                {{ _('Target (kg)') }}
-              </label>
-              <input type="number" id="target_weight_kg" name="target_weight_kg"
-                     inputmode="decimal" min="20" max="500" step="0.1" placeholder="68"
-                     class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors" />
-            </div>
+            {{ ui.field(_('Weight'), 'weight_kg', type='number', placeholder='70', unit='kg',
+                        attrs='inputmode="decimal" min="20" max="500" step="0.1"') }}
+            {{ ui.field(_('Weight goal'), 'target_weight_kg', type='number', placeholder='68', unit='kg',
+                        attrs='inputmode="decimal" min="20" max="500" step="0.1"') }}
           </div>
-          <p class="text-xs text-slate-400">{{ _('Leave the target empty if you just want to keep track.') }}</p>
+          <p class="text-xs text-ink-subtle">{{ _('Leave the target empty if you just want to keep track.') }}</p>
         </div>
       </div>
 
-      <!-- ===== STEP 3 — activity ===== -->
+      <!-- ===== PASO 3 — actividad ===== -->
       <div x-show="step === 3" x-cloak class="px-5 py-6 sm:px-7">
-        <h2 class="text-xl font-bold text-slate-800">{{ _('How active are you?') }}</h2>
-        <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-          {{ _('This sets the baseline GaiaPulse compares your week against.') }}
-        </p>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-10 h-10 rounded-control bg-move-soft text-move-ink flex items-center justify-center">
+            {{ ic.icon('bolt', 'w-5 h-5') }}
+          </span>
+          <div class="min-w-0">
+            <h1 class="text-xl font-bold text-ink leading-tight">{{ _('How active are you?') }}</h1>
+            <p class="text-sm text-ink-muted mt-1 leading-relaxed">
+              {{ _('This sets the baseline GaiaPulse compares your week against.') }}
+            </p>
+          </div>
+        </div>
 
+        {#- Los cinco niveles y sus glosas salen de `dm`, igual que el perfil y la
+            lista del hogar: estaban escritos acá como literales, así que el mismo
+            nivel se leía distinto según la pantalla — y en el perfil se veía la
+            clave cruda de la columna (`very_active`). -#}
         <fieldset class="mt-6 space-y-2">
           <legend class="sr-only">{{ _('Baseline activity level') }}</legend>
-          {% for value, label, hint in [
-            ('sedentary', _('Sedentary'), _('Desk job, little walking')),
-            ('light', _('Light'), _('Some walking, 1 workout a week')),
-            ('moderate', _('Moderate'), _('2 to 3 workouts a week')),
-            ('active', _('Active'), _('4 to 5 workouts a week')),
-            ('very_active', _('Very active'), _('Daily training or physical job')),
-          ] %}
-          <label class="flex items-start gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors border-slate-200 hover:bg-slate-50 has-[:checked]:border-brand-400 has-[:checked]:bg-brand-50">
-            <input type="radio" name="baseline_activity_level" value="{{ value }}"
-                   class="mt-0.5 h-4 w-4 text-brand-600 border-slate-300 focus:ring-brand-500"
-                   {% if value == 'moderate' %}checked{% endif %} />
+          {% for level in dm.ACTIVITY_LEVELS %}
+          <label class="flex items-start gap-3 px-4 py-3 rounded-control border border-line cursor-pointer transition-colors hover:bg-card-alt has-[:checked]:border-brand-400 has-[:checked]:bg-brand-50">
+            <input type="radio" name="baseline_activity_level" value="{{ level }}"
+                   class="mt-0.5 h-4 w-4 text-brand-600 border-line focus:ring-brand-500"
+                   {% if level == 'moderate' %}checked{% endif %} />
             <span class="min-w-0">
-              <span class="block text-sm font-semibold text-slate-800">{{ label }}</span>
-              <span class="block text-xs text-slate-500">{{ hint }}</span>
+              <span class="block text-sm font-semibold text-ink">{{ dm.activity_level_label(level) }}</span>
+              <span class="block text-xs text-ink-muted">{{ dm.activity_level_hint(level) }}</span>
             </span>
           </label>
           {% endfor %}
         </fieldset>
       </div>
 
-      <!-- ===== STEP 4 — food ===== -->
+      <!-- ===== PASO 4 — comida ===== -->
       <div x-show="step === 4" x-cloak class="px-5 py-6 sm:px-7">
-        <h2 class="text-xl font-bold text-slate-800">{{ _('Anything you don\'t eat?') }}</h2>
-        <p class="text-sm text-slate-500 mt-1 leading-relaxed">
-          {{ _('Meal suggestions containing these are filtered out, never just ranked lower.') }}
-        </p>
+        <div class="flex items-start gap-3">
+          <span class="flex-shrink-0 w-10 h-10 rounded-control bg-food-soft text-food-ink flex items-center justify-center">
+            {{ ic.icon('meal', 'w-5 h-5') }}
+          </span>
+          <div class="min-w-0">
+            <h1 class="text-xl font-bold text-ink leading-tight">{{ _('Anything you don\'t eat?') }}</h1>
+            <p class="text-sm text-ink-muted mt-1 leading-relaxed">
+              {{ _('Meal suggestions containing these are filtered out, never just ranked lower.') }}
+            </p>
+          </div>
+        </div>
 
         <div class="mt-6">
-          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">{{ _('Common ones') }}</p>
+          <p class="text-xs font-semibold text-ink-subtle uppercase tracking-wider mb-2.5">{{ _('Common ones') }}</p>
           <div class="flex flex-wrap gap-2">
             {% for value, label in [
               ('gluten', _('Gluten')),
@@ -182,88 +202,72 @@
             ] %}
             <button type="button" @click="toggle('{{ value }}')"
                     :aria-pressed="has('{{ value }}') ? 'true' : 'false'"
-                    class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors"
+                    class="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-chip border transition-colors"
                     :class="has('{{ value }}')
                       ? 'bg-brand-50 border-brand-300 text-brand-700'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'">
-              <span x-show="has('{{ value }}')" x-cloak aria-hidden="true">✓</span>
+                      : 'bg-card border-line text-ink-muted hover:bg-card-alt'">
+              <span x-show="has('{{ value }}')" x-cloak>{{ ic.icon('check', 'w-3.5 h-3.5') }}</span>
               {{ label }}
             </button>
             {% endfor %}
           </div>
 
           <div class="mt-5">
-            <label for="custom-restriction" class="block text-sm font-semibold text-slate-700 mb-2">
-              {{ _('Something else') }}
-            </label>
-            <div class="flex gap-2">
-              <input type="text" id="custom-restriction" x-model="custom"
-                     @keydown.enter.prevent="addCustom()"
-                     maxlength="100" placeholder="{{ _('e.g. cilantro') }}"
-                     class="flex-1 min-w-0 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 placeholder-slate-400 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors" />
-              <button type="button" @click="addCustom()"
-                      class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold transition-colors">
-                {{ _('Add') }}
-              </button>
-            </div>
+            {% call ui.field_wrap(_('Something else'), 'custom-restriction') %}
+              <div class="flex gap-2">
+                <input type="text" id="custom-restriction" x-model="custom"
+                       @keydown.enter.prevent="addCustom()"
+                       maxlength="100" placeholder="{{ _('e.g. cilantro') }}"
+                       class="{{ ui.INPUT_CLASS }} flex-1 min-w-0" />
+                {{ ui.btn(_('Add'), tone='secondary', type='button', attrs='@click="addCustom()"') }}
+              </div>
+            {% endcall %}
           </div>
 
           <div class="mt-4" x-show="restrictions.length" x-cloak>
-            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">{{ _('Your list') }}</p>
+            <p class="text-xs font-semibold text-ink-subtle uppercase tracking-wider mb-2.5">{{ _('Your list') }}</p>
             <div class="flex flex-wrap gap-2">
               <template x-for="item in restrictions" :key="item">
-                <span class="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                <span class="inline-flex items-center gap-1.5 bg-card-alt text-ink text-xs font-semibold px-3 py-1.5 rounded-chip">
                   <span x-text="item"></span>
+                  {#- El rótulo sale del componente y no interpolado en la
+                      expresión: `:aria-label="`{{ _('Remove') }} ${item}`"` metía
+                      una traducción adentro de un template literal de JS, y un
+                      apóstrofo o un backtick en el idioma rompía el atributo
+                      entero. -#}
                   <button type="button" @click="toggle(item)"
-                          class="text-slate-400 hover:text-rose-600 transition-colors"
-                          :aria-label="`{{ _('Remove') }} ${item}`">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
+                          class="text-ink-subtle hover:text-danger-ink transition-colors"
+                          :aria-label="removeLabel + ' ' + item">
+                    {{ ic.icon('x', 'w-3 h-3', stroke=2.5) }}
                   </button>
                 </span>
               </template>
             </div>
           </div>
 
-          <!-- What the backend actually reads: a comma-separated list. -->
+          <!-- Lo que el backend lee de verdad: una lista separada por comas. -->
           <input type="hidden" name="dietary_restrictions" :value="restrictions.join(', ')" />
         </div>
       </div>
 
-      <!-- ===== FOOTER ===== -->
-      <div class="flex items-center justify-between gap-3 px-5 py-4 sm:px-7 bg-slate-50 border-t border-slate-100">
-        <button type="button" @click="back()" x-show="step > 1" x-cloak
-                class="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-200 transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/>
-          </svg>
-          {{ _('Back') }}
-        </button>
+      <!-- ===== PIE ===== -->
+      <div class="flex items-center justify-between gap-3 px-5 py-4 sm:px-7 bg-card-alt border-t border-line">
+        {{ ui.btn(_('Back'), tone='ghost', icon='chevron-left', type='button',
+                  attrs='@click="back()" x-show="step > 1" x-cloak') }}
         <span x-show="step === 1" x-cloak></span>
 
-        <button type="button" @click="next()" x-show="step < total" x-cloak
-                class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold shadow-sm transition-colors">
-          {{ _('Continue') }}
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
-          </svg>
-        </button>
+        {{ ui.btn(_('Continue'), icon_right='chevron-right', type='button',
+                  attrs='@click="next()" x-show="step < total" x-cloak') }}
 
-        <button type="submit" x-show="step === total" x-cloak
-                class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold shadow-sm transition-colors">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
-          </svg>
-          {{ _('Finish setup') }}
-        </button>
+        {{ ui.btn(_('Finish setup'), icon='check', type='submit',
+                  attrs='x-show="step === total" x-cloak') }}
       </div>
     </form>
 
-    <!-- Skip: marks onboarding done without saving anything. -->
+    <!-- Saltear: marca el onboarding como hecho sin guardar nada. -->
     <form method="post" action="/onboarding/complete" class="mt-5 text-center">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
-      <button type="submit" class="text-xs font-medium text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors">
+      <button type="submit" class="text-xs font-medium text-ink-subtle hover:text-ink underline underline-offset-2 transition-colors">
         {{ _('Skip for now') }}
       </button>
     </form>
@@ -276,7 +280,7 @@
   function onboardingWizard() {
     return {
       step: 1,
-      total: 4,
+      total: {{ TOTAL }},
       restrictions: [],
       custom: '',
       titles: [
@@ -285,6 +289,7 @@
         {{ _('Activity') | tojson }},
         {{ _('Food') | tojson }},
       ],
+      removeLabel: {{ _('Remove') | tojson }},
       stepTitle() { return this.titles[this.step - 1]; },
       next() { if (this.step < this.total) { this.step++; window.scrollTo({ top: 0, behavior: 'smooth' }); } },
       back() { if (this.step > 1) { this.step--; window.scrollTo({ top: 0, behavior: 'smooth' }); } },
