@@ -473,10 +473,28 @@ que lo afirma — y la config ahora vive donde las páginas standalone también 
 ### Fase 3 — Barrido visual + rediseño de IA
 
 - [ ] Las 29 plantillas pasan a macros y tokens (patrón repetido; las que no se rediseñan
-      conservan su layout).
-- [ ] **Home** — rediseño de arquitectura de información: de "lista de tarjetas" a una
+      conservan su layout). El barrido va por área, un commit por área:
+  - [x] `dashboard`
+  - [x] `home`
+  - [x] `meals` (index + detalle + tarjeta + parcial de lista)
+  - [ ] `workouts`, `pantry`, `health` + `body_metrics`, `history`, `notifications`,
+        `suggestions`, `onboarding`, `profile`
+- [x] **Home** — rediseño de arquitectura de información: de "lista de tarjetas" a una
       jerarquía con un **estado de hoy** arriba, la acción primaria dominante, y las
       sugerencias accionables en un toque.
+- [ ] **Los enums de la base se muestran desde un solo lugar**, `components/domain.html`
+      (`dm`, tercer global de Jinja junto a `ui` e `ic`). `{{ _(x|title) }}` le pide al
+      catálogo un msgid que `pybabel extract` no puede encontrar, así que los valores
+      salían siempre en inglés, y cada pantalla repetía su propio mapa de tonos. Hecho para
+      `meal_type` y `context`; faltan `workout_type`, `movement_type`, `intent_type`,
+      `status` y `category`.
+- [ ] **Cada filtro de pantalla es un `<form method="get">` real**, no un espejo del estado
+      en Alpine: funciona sin JS, HTMX intercambia solo la lista, `hx-push-url` mantiene la
+      URL compartible y el chip activo se pinta con `peer-checked` desde el valor de la
+      query. Los parámetros vacíos que manda un formulario (`?user_id=`) se parsean con
+      `query_int`/`query_date` de `app/web/helpers.py`, porque con `int | None` FastAPI
+      responde 422 a su propia URL. Hecho en `meals`; falta en `workouts` (que además tiene
+      el filtro de fecha sin label) y en `pantry`.
 - [ ] **Capture** — el flujo core:
   - entrada más prominente,
   - chips de ejemplo con lenguaje natural real (hoy son plantillas con `[placeholders]`),
@@ -514,6 +532,16 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       hora deje de depender de cuándo arrancó el proceso.
 - [ ] Gate de horario de silencio antes de crear cualquier notificación.
 - [ ] Unificar naive/aware en repositorios y servicios.
+- [ ] **"Un día" todavía es un día UTC, y ahora se ve en pantalla.** Detectado durante el
+      rediseño de las comidas (Fase 3): `MealService.get_today_meals` pasa `date.today()`,
+      que es la fecha del *reloj del proceso*, y `MealRepository.get_household_meals` arma
+      los límites del día con `datetime.combine(...)` **naive** para compararlos contra una
+      columna `timestamptz`. Con el proceso en UTC, una comida de las 22:00 de acá cae en el
+      "hoy" de mañana: el contador del Home la pierde y el filtro por día de `/meals` —
+      que hereda esos mismos límites vía `on_date` — la muestra en el día equivocado.
+      Se arregla acá y no en la Fase 3 porque el arreglo es el reloj (`local_today()` +
+      límites aware convertidos a UTC), no la plantilla. Alcanza también a
+      `get_today_workouts` y al resto de los `get_today_*`.
 - [ ] Conectar `notification_job_interval_minutes` o eliminarlo del config, del README y de
       `.env.example`.
 
