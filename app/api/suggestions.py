@@ -29,7 +29,9 @@ def respond_to_suggestion(
     db: DB,
 ) -> SuggestionRead:
     svc = SuggestionService(db)
-    suggestion = svc.respond_to_suggestion(suggestion_id, feedback, current_user.id)
+    suggestion = svc.respond_to_suggestion(
+        suggestion_id, feedback, current_user.id, current_user.household_id
+    )
     if not suggestion:
         raise HTTPException(status_code=404, detail="Suggestion not found")
     return SuggestionRead.model_validate(suggestion)

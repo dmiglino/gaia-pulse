@@ -173,6 +173,117 @@
 {%- endmacro %}
 
 
+{#- ── Sugerencias ─────────────────────────────────────────────────────────────
+    Las claves son las ocho que enumera el comentario de `Suggestion.category`. Los
+    generadores de hoy escriben cuatro: `meal`, `activity`, `shopping` y `habit`.
+
+    Los dos diccionarios estaban escritos a mano **dos veces**: acá no existían, y
+    `home.html` los tenía inline como `suggestion_tone`/`suggestion_icon` — con una
+    clave `health` que ningún generador escribe y sin `variety`/`recovery`/`reminder`,
+    que sí están declaradas. Dos copias de un mapa de tonos divergen siempre. -#}
+{%- set SUGGESTION_ICONS = {
+  'meal': 'meal', 'activity': 'bolt', 'habit': 'sparkles', 'pantry': 'pantry',
+  'shopping': 'cart', 'variety': 'refresh', 'recovery': 'heart', 'reminder': 'clock',
+} -%}
+{%- set SUGGESTION_TONES = {
+  'meal': 'food', 'activity': 'move', 'habit': 'brand', 'pantry': 'stock',
+  'shopping': 'stock', 'variety': 'food', 'recovery': 'body', 'reminder': 'warn',
+} -%}
+
+
+{% macro suggestion_category_label(category) -%}
+{%- set labels = {
+  'meal': _('Meal'), 'activity': _('Activity'), 'habit': _('Habit'),
+  'pantry': _('Pantry'), 'shopping': _('Shopping'), 'variety': _('Variety'),
+  'recovery': _('Recovery'), 'reminder': _('Reminder'),
+} -%}
+{{- labels.get(category | lower if category else '', category | replace('_', ' ') | title) -}}
+{%- endmacro %}
+
+
+{% macro suggestion_icon(category, class='w-5 h-5') -%}
+{%- set key = category | lower if category else '' -%}
+{%- set tone = SUGGESTION_TONES.get(key, 'brand') -%}
+<span class="flex-shrink-0 w-9 h-9 rounded-control flex items-center justify-center
+             bg-{{ tone }}-soft text-{{ tone }}-ink" aria-hidden="true">
+  {{ ic.icon(SUGGESTION_ICONS.get(key, 'bulb'), class) }}
+</span>
+{%- endmacro %}
+
+
+{% macro suggestion_category_badge(category, size='sm') -%}
+{{ ui.badge(suggestion_category_label(category),
+            tone=SUGGESTION_TONES.get(category | lower if category else '', 'brand'),
+            size=size) }}
+{%- endmacro %}
+
+
+{#- `Suggestion.source_type` se imprimía crudo en la tarjeta, en gris de 12px:
+    `rule`, `stock`, `preference`, `blood_analysis`. Son nombres internos del motor,
+    en inglés, y no le dicen nada a quien lee. Traducidos a "de dónde salió esto"
+    pasan a ser justamente la mitad de la explicación que la pantalla promete. -#}
+{% macro suggestion_source_label(source_type) -%}
+{%- set labels = {
+  'rule': _('A general guideline'),
+  'trend': _('A trend in your data'),
+  'preference': _('What you usually choose'),
+  'stock': _("What's in the pantry"),
+  'blood_analysis': _('Your blood panel'),
+  'explicit': _('Something you told us'),
+  'hybrid': _('Several signals at once'),
+} -%}
+{{- labels.get(source_type | lower if source_type else '', source_type | replace('_', ' ') | title) -}}
+{%- endmacro %}
+
+
+{#- La v1 dibujaba una barra de color por `priority` (rosa ≥8, ámbar ≥6, marca el
+    resto) que además nunca se veía: era un `w-2 h-full` dentro de un contenedor
+    `items-start` de altura automática, así que el `height: 100%` resolvía a 0.
+
+    Y si se hubiera visto habría mentido: `priority` es `round(confidence * 10)`
+    (`engine.py:_confidence_to_priority`), o sea *cuánta confianza* tiene el motor, no
+    *cuánto apura*. Pintarlo de rojo de alerta afirmaba urgencia sobre un número que
+    no habla de urgencia. Acá va en palabras, en tono neutro, y adentro del panel de
+    "¿por qué esta sugerencia?", que es donde corresponde la metadata del motor. -#}
+{% macro suggestion_confidence_label(confidence) -%}
+{%- set value = (confidence | float) if confidence is not none else 0.0 -%}
+{%- if value >= 0.8 -%}{{ _('Strong match') }}
+{%- elif value >= 0.6 -%}{{ _('Probably a fit') }}
+{%- else -%}{{ _('Worth a try') }}
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- ── Preferencias aprendidas ─────────────────────────────────────────────────
+    `RecommendationPreference.item_type` y `.preference_signal` se mostraban crudos
+    en la tabla del perfil de sugerencias (`food`, `possible_sometimes`), que son
+    claves de base en inglés. Las señales están en primera persona porque la tabla
+    es la lista de la persona que la está mirando, no la del hogar. -#}
+{% macro preference_type_label(item_type) -%}
+{%- set labels = {
+  'food': _('Food'), 'recipe': _('Recipe'), 'exercise': _('Exercise'),
+  'cuisine': _('Cuisine'), 'meal_type': _('Meal type'), 'ingredient': _('Ingredient'),
+} -%}
+{{- labels.get(item_type | lower if item_type else '', item_type | replace('_', ' ') | title) -}}
+{%- endmacro %}
+
+
+{% macro preference_signal_badge(signal, size='sm') -%}
+{%- set labels = {
+  'likes': _('I like it'), 'preferred': _('Favourite'),
+  'possible_sometimes': _('Sometimes'), 'dislikes': _("I don't like it"),
+  'avoid': _('Avoid'), 'impossible': _('Never'),
+} -%}
+{%- set tones = {
+  'likes': 'ok', 'preferred': 'ok', 'possible_sometimes': 'neutral',
+  'dislikes': 'danger', 'avoid': 'warn', 'impossible': 'danger',
+} -%}
+{%- set key = signal | lower if signal else '' -%}
+{{ ui.badge(labels.get(key, signal | replace('_', ' ') | title),
+            tone=tones.get(key, 'neutral'), size=size) }}
+{%- endmacro %}
+
+
 {#- ── Análisis de sangre ──────────────────────────────────────────────────────
     `BloodAnalysis.status` es pending/analyzed/error y se mostraba crudo, en
     inglés y en minúscula (`{{ a.status }}`), con tres paletas inline. -#}

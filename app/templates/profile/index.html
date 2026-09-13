@@ -107,14 +107,16 @@
     </div>
     <div class="divide-y divide-slate-50">
       {% for p in preferences %}
+      {#- Esta pantalla tenía su propio mapa de colores a mano, y había divergido del de
+          `/suggestions/`: `avoid` era rose acá y `warn` allá, `possible_sometimes`
+          emerald acá y neutro allá — la misma preferencia se veía distinta en dos
+          pantallas. Y las dos claves se imprimían crudas (`possible_sometimes`,
+          `food`). Van por `dm`, que es el único mapa. El resto del layout de profile se
+          rediseña en su propia unidad de la fase 3. -#}
       <div class="px-5 py-3 flex items-center gap-3">
-        <span class="rounded-full px-2 py-0.5 text-xs font-medium
-          {% if p.preference_signal in ['dislikes','impossible','avoid'] %}bg-rose-100 text-rose-700
-          {% else %}bg-emerald-100 text-emerald-700{% endif %}">
-          {{ p.preference_signal }}
-        </span>
+        {{ dm.preference_signal_badge(p.preference_signal) }}
         <span class="text-sm text-slate-800 flex-1">{{ p.item_name }}</span>
-        <span class="text-xs text-slate-400">{{ p.item_type }}</span>
+        <span class="text-xs text-slate-400">{{ dm.preference_type_label(p.item_type) }}</span>
       </div>
       {% endfor %}
     </div>

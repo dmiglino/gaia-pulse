@@ -1,11 +1,36 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference, Suggestion
 from app.repositories.base import BaseRepository
+
+
+def _visible_to(user_id: int, household_id: int) -> ColumnElement[bool]:
+    """Las sugerencias que *esta* persona puede ver.
+
+    El filtro era ``or_(scope_user_id == user_id, household_id == household_id)``, y
+    `engine._make_user_suggestion` escribe **las dos** columnas en una sugerencia
+    personal (`household_id=user.household_id`, `scope_user_id=user.id`). O sea que la
+    cláusula de hogar matcheaba las sugerencias personales del otro integrante: Diego
+    abría `/suggestions/` y leía las de Rocío, con su análisis de sangre y sus hábitos
+    adentro del texto.
+
+    Una sugerencia es de todo el hogar cuando **no** nombra a nadie
+    (`scope_user_id IS NULL`, que es lo que escribe `_make_household_suggestion`). Con
+    eso la regla 4 de `AGENTS.md` vuelve a cumplirse: todo dato personal se filtra por
+    el usuario que pregunta, incluso entre dos personas de la misma casa.
+    """
+    return or_(
+        Suggestion.scope_user_id == user_id,
+        and_(
+            Suggestion.household_id == household_id,
+            Suggestion.scope_user_id.is_(None),
+        ),
+    )
 
 
 class SuggestionRepository(BaseRepository[Suggestion]):
@@ -17,32 +42,47 @@ class SuggestionRepository(BaseRepository[Suggestion]):
             select(Suggestion)
             .where(
                 Suggestion.status == "pending",
-                or_(
-                    Suggestion.scope_user_id == user_id,
-                    Suggestion.household_id == household_id,
-                ),
+                _visible_to(user_id, household_id),
             )
             .order_by(Suggestion.priority.desc(), Suggestion.created_at.desc())
             .limit(20)
         )
         return list(self.db.scalars(stmt).all())
 
-    def get_recent_suggestions(
-        self, user_id: int, household_id: int, days: int = 7
-    ) -> list[Suggestion]:
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        stmt = (
-            select(Suggestion)
-            .where(
-                Suggestion.created_at >= cutoff,
-                or_(
-                    Suggestion.scope_user_id == user_id,
-                    Suggestion.household_id == household_id,
-                ),
-            )
-            .order_by(Suggestion.created_at.desc())
+    def get_owned(
+        self, suggestion_id: int, user_id: int, household_id: int
+    ) -> Suggestion | None:
+        """Una sugerencia, solo si es de quien pregunta.
+
+        `respond_to_suggestion` hacía `self.repo.get(suggestion_id)` y nada más: con
+        cualquier sesión válida se podía aceptar, descartar o rechazar **cualquier**
+        fila de la tabla, incluida la de otro hogar. Y peor que cambiarle el estado a
+        alguien ajeno: la señal de comportamiento se grababa contra quien apretaba el
+        botón, así que el título de una sugerencia de otra persona entraba a su modelo
+        de aprendizaje.
+
+        Devuelve `None` tanto si no existe como si no le corresponde — a propósito: la
+        respuesta no tiene que dejar distinguir un id inexistente de uno ajeno.
+
+        Y solo si sigue pendiente. Sin eso, dos clics rápidos en "Buena idea" entraban
+        los dos al servicio y grababan **dos** `BehaviorSignal` sobre la misma entidad,
+        con lo que un doble clic pesaba el doble en el scorer. El primer swap reemplaza
+        la tarjeta, pero la segunda request ya salió. Como responder algo ya respondido
+        es justo lo que "esa sugerencia ya no está disponible" describe, el filtro va
+        acá y la ruta no necesita una rama nueva.
+        """
+        stmt = select(Suggestion).where(
+            Suggestion.id == suggestion_id,
+            Suggestion.status == "pending",
+            _visible_to(user_id, household_id),
         )
-        return list(self.db.scalars(stmt).all())
+        return self.db.scalar(stmt)
+
+    #: Acá había un `get_recent_suggestions` sin ningún llamador, con la misma fuga que
+    #: `get_pending_for_user`: el motor tiene su propia copia de esa pregunta en
+    #: `engine._get_recent_suggestions_for_user`. Dos implementaciones de la misma
+    #: consulta, una sin usar, es exactamente cómo se filtró la primera vez, así que se
+    #: borró en lugar de arreglarse por duplicado.
 
     def get_user_preferences(self, user_id: int) -> list[RecommendationPreference]:
         stmt = select(RecommendationPreference).where(

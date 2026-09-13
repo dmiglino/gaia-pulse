@@ -2,60 +2,65 @@
 {% block title %}{{ _('Suggestions') }}{% endblock %}
 
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-6">
+<div class="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
 
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-900">{{ _('Suggestions') }}</h1>
-      <p class="text-sm text-slate-500 mt-0.5">{{ _('Personalized recommendations based on your habits') }}</p>
-    </div>
+  {% call ui.page_header(
+      _('Suggestions'),
+      subtitle=_('What GaiaPulse would try next, and why'),
+      icon='sparkles') %}
+    {#- Sigue siendo un `<form>` de verdad: sin JS el POST navega y la ruta contesta
+        con un redirect a `/suggestions/` con el flash puesto. -#}
     <form method="post" action="/suggestions/generate">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
-      <button type="submit"
-              hx-post="/suggestions/generate"
-              hx-target="#suggestions-list"
-              hx-swap="outerHTML"
-              hx-indicator="#htmx-indicator"
-              class="text-xs px-3 py-1.5 rounded-lg border border-brand-200 text-brand-600 hover:bg-brand-50 transition-colors">
-        {{ _('Refresh') }}
-      </button>
+      {{ ui.btn(_('Refresh'), tone='secondary', size='sm', icon='refresh',
+                attrs='hx-post="/suggestions/generate"
+                       hx-target="#suggestions-list" hx-swap="outerHTML"
+                       hx-indicator="#htmx-indicator"') }}
     </form>
+  {% endcall %}
+
+  {#- La región viva envuelve al fragmento y **no** se intercambia: el swap
+      reemplaza `#suggestions-list`, que está adentro. Al revés —el atributo sobre
+      el propio target, como estaba en la v1— el lector de pantalla no anuncia
+      nada, porque el contenido inicial de una región viva recién insertada no se
+      considera un cambio. -#}
+  <div aria-live="polite">
+    {% include 'suggestions/partials/list.html' %}
   </div>
 
-  {% include 'suggestions/partials/list.html' %}
-
-  <!-- Learned Preferences section -->
   {% if preferences %}
-  <div class="mt-8">
-    <h2 class="text-base font-semibold text-slate-700 mb-3">{{ _('Learned Preferences') }}</h2>
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-      <table class="w-full text-sm">
-        <thead class="bg-slate-50">
-          <tr>
-            <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">{{ _('Item') }}</th>
-            <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">{{ _('Type') }}</th>
-            <th class="text-left px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">{{ _('Signal') }}</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          {% for p in preferences %}
-          <tr class="hover:bg-slate-50">
-            <td class="px-4 py-2.5 font-medium text-slate-800">{{ p.item_name }}</td>
-            <td class="px-4 py-2.5 text-slate-500">{{ p.item_type }}</td>
-            <td class="px-4 py-2.5">
-              <span class="rounded-full px-2 py-0.5 text-xs font-medium
-                {% if p.preference_signal in ['dislikes', 'impossible', 'avoid'] %}bg-rose-100 text-rose-700
-                {% elif p.preference_signal in ['likes', 'preferred'] %}bg-emerald-100 text-emerald-700
-                {% else %}bg-slate-100 text-slate-600{% endif %}">
-                {{ p.preference_signal }}
-              </span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+  {#- Lo que el motor ya aprendió, visible. `item_type` y `preference_signal` son
+      claves de base en inglés (`food`, `possible_sometimes`) y se imprimían crudas;
+      ahora pasan por `dm`. Las señales están en primera persona porque la tabla es
+      la de quien la mira: `get_user_preferences` filtra por su `user_id`. -#}
+  <section class="mt-8">
+    {{ ui.section_title(_('What we learned about you'),
+                        subtitle=_('Comes from your answers and from what you log'),
+                        icon='bulb') }}
+    {% call ui.card(padding='', class='overflow-hidden') %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <caption class="sr-only">{{ _('Your recorded food and activity preferences') }}</caption>
+          <thead class="bg-card-alt">
+            <tr>
+              <th scope="col" class="text-left px-4 py-2.5 text-xs font-semibold text-ink-subtle uppercase tracking-wide">{{ _('Item') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 text-xs font-semibold text-ink-subtle uppercase tracking-wide">{{ _('Type') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 text-xs font-semibold text-ink-subtle uppercase tracking-wide">{{ _('Signal') }}</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line">
+            {% for p in preferences %}
+            <tr>
+              <td class="px-4 py-2.5 font-medium text-ink">{{ p.item_name }}</td>
+              <td class="px-4 py-2.5 text-ink-muted">{{ dm.preference_type_label(p.item_type) }}</td>
+              <td class="px-4 py-2.5">{{ dm.preference_signal_badge(p.preference_signal) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endcall %}
+  </section>
   {% endif %}
 
 </div>

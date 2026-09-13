@@ -24,9 +24,19 @@ class SuggestionService:
         return RecommendationEngine().generate_for_user(self.db, user, limit=limit)
 
     def respond_to_suggestion(
-        self, suggestion_id: int, feedback: SuggestionFeedback, user_id: int
+        self,
+        suggestion_id: int,
+        feedback: SuggestionFeedback,
+        user_id: int,
+        household_id: int,
     ) -> Suggestion | None:
-        suggestion = self.repo.get(suggestion_id)
+        """Guardar la respuesta a una sugerencia propia.
+
+        `household_id` no está de adorno: sin él esto era `repo.get(suggestion_id)`, o
+        sea que cualquier sesión válida podía responder por cualquier fila de la tabla.
+        Ver `SuggestionRepository.get_owned`.
+        """
+        suggestion = self.repo.get_owned(suggestion_id, user_id, household_id)
         if not suggestion:
             return None
 

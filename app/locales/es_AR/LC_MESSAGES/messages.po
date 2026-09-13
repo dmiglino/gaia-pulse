@@ -1179,3 +1179,135 @@ msgstr "Procesando"
 
 msgid "Failed"
 msgstr "Falló"
+
+# ── Sugerencias y preferencias aprendidas (v3, fase 3) ──────────────────────────
+# Las claves de `Suggestion.category` y `Suggestion.source_type`, y las de
+# `RecommendationPreference`, se imprimían crudas en pantalla (`Meal`, `rule`,
+# `possible_sometimes`). Los rótulos de origen contestan "de dónde salió esto" en
+# lugar de nombrar el motor por dentro.
+
+msgid "Meal"
+msgstr "Comida"
+
+msgid "Habit"
+msgstr "Hábito"
+
+msgid "Shopping"
+msgstr "Compras"
+
+msgid "Variety"
+msgstr "Variedad"
+
+msgid "Recovery"
+msgstr "Recuperación"
+
+msgid "A general guideline"
+msgstr "Una recomendación general"
+
+msgid "A trend in your data"
+msgstr "Una tendencia en tus datos"
+
+msgid "What you usually choose"
+msgstr "Lo que solés elegir"
+
+msgid "What's in the pantry"
+msgstr "Lo que hay en la despensa"
+
+msgid "Your blood panel"
+msgstr "Tu análisis de sangre"
+
+msgid "Something you told us"
+msgstr "Algo que nos contaste"
+
+msgid "Several signals at once"
+msgstr "Varias señales a la vez"
+
+msgid "Strong match"
+msgstr "Encaja bastante"
+
+msgid "Probably a fit"
+msgstr "Probablemente encaje"
+
+msgid "Worth a try"
+msgstr "Vale la pena probar"
+
+msgid "Food"
+msgstr "Alimento"
+
+msgid "Recipe"
+msgstr "Receta"
+
+msgid "Exercise"
+msgstr "Ejercicio"
+
+msgid "Cuisine"
+msgstr "Tipo de cocina"
+
+msgid "Ingredient"
+msgstr "Ingrediente"
+
+msgid "I like it"
+msgstr "Me gusta"
+
+msgid "Favourite"
+msgstr "Preferido"
+
+msgid "Sometimes"
+msgstr "A veces"
+
+msgid "I don't like it"
+msgstr "No me gusta"
+
+msgid "Avoid"
+msgstr "Evitar"
+
+msgid "Never"
+msgstr "Nunca"
+
+msgid "Based on"
+msgstr "Sale de"
+
+msgid "How sure"
+msgstr "Qué tan seguro"
+
+msgid "Sounds good"
+msgstr "Buena idea"
+
+msgid "Not now"
+msgstr "Ahora no"
+
+msgid "No suggestions right now"
+msgstr "Por ahora no hay sugerencias"
+
+msgid "Log a few meals, workouts or weigh-ins and GaiaPulse will start proposing things."
+msgstr "Registrá algunas comidas, entrenamientos o pesajes y GaiaPulse va a empezar a proponer cosas."
+
+msgid "Look for suggestions"
+msgstr "Buscar sugerencias"
+
+msgid "What GaiaPulse would try next, and why"
+msgstr "Qué probaría GaiaPulse ahora, y por qué"
+
+msgid "What we learned about you"
+msgstr "Lo que aprendimos de vos"
+
+msgid "Comes from your answers and from what you log"
+msgstr "Sale de tus respuestas y de lo que vas registrando"
+
+msgid "Your recorded food and activity preferences"
+msgstr "Tus preferencias registradas de alimentos y actividades"
+
+# ── Respuestas de las rutas de sugerencias (v3, fase 3) ──
+# Estaban en el código con `_()` y sin entrada en el catálogo, así que salían en inglés.
+
+msgid "That suggestion is no longer available."
+msgstr "Esa sugerencia ya no está disponible."
+
+msgid "Suggestions refreshed."
+msgstr "Sugerencias actualizadas."
+
+msgid "Response saved."
+msgstr "Respuesta guardada."
+
+msgid "For the household"
+msgstr "Para la casa"

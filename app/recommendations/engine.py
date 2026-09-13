@@ -9,7 +9,6 @@ Usage::
     engine = RecommendationEngine()
     suggestions = engine.generate_for_user(db, user, limit=10)
     household_suggestions = engine.generate_for_household(db, household, limit=5)
-    engine.record_feedback(db, suggestion_id=3, status="accepted", notes=None, user_id=1)
 """
 
 from __future__ import annotations
@@ -37,7 +36,12 @@ logger = logging.getLogger(__name__)
 _RECENT_SUGGESTION_DAYS = 7
 _RECENT_SIGNAL_DAYS = 30
 
-_VALID_STATUSES = {"pending", "accepted", "rejected", "snoozed", "dismissed"}
+#: `record_feedback` vivía acá: una segunda implementación completa del camino de
+#: escritura de feedback, con `db.get(Suggestion, id)` sin chequeo de pertenencia y la
+#: señal de aprendizaje grabada contra quien apretaba el botón. Cero llamadores — el
+#: único camino real es `SuggestionService.respond_to_suggestion`, que ahora sí filtra.
+#: Se borró en vez de arreglarse: dos implementaciones de la misma escritura es cómo se
+#: filtró la primera vez, y esta además tocaba modelos desde fuera de `repositories/`.
 
 
 class RecommendationEngine:
@@ -156,65 +160,6 @@ class RecommendationEngine:
         )
         return created
 
-    def record_feedback(
-        self,
-        db: Session,
-        suggestion_id: int,
-        status: str,
-        notes: str | None,
-        user_id: int,
-    ) -> None:
-        """Record user feedback on a suggestion and emit a BehaviorSignal.
-
-        Args:
-            db: Active SQLAlchemy session.
-            suggestion_id: Primary key of the Suggestion.
-            status: New status string (accepted/rejected/snoozed/dismissed).
-            notes: Optional free-text feedback from the user.
-            user_id: ID of the user giving feedback.
-
-        Raises:
-            ValueError: If suggestion not found or status is invalid.
-        """
-        if status not in _VALID_STATUSES:
-            raise ValueError(
-                f"Invalid status {status!r}. Must be one of {_VALID_STATUSES}."
-            )
-
-        suggestion: Suggestion | None = db.get(Suggestion, suggestion_id)
-        if suggestion is None:
-            raise ValueError(f"Suggestion id={suggestion_id} not found.")
-
-        suggestion.status = status
-        suggestion.feedback_notes = notes
-        suggestion.responded_at = datetime.now(tz=timezone.utc)
-
-        # ── Emit a BehaviorSignal ──────────────────────────────────────
-        signal = self._make_feedback_signal(
-            suggestion=suggestion,
-            status=status,
-            notes=notes,
-            user_id=user_id,
-        )
-        if signal is not None:
-            db.add(signal)
-
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception(
-                "Failed to record feedback for suggestion_id=%d", suggestion_id
-            )
-            raise
-
-        logger.info(
-            "Recorded feedback status=%r for suggestion_id=%d by user_id=%d.",
-            status,
-            suggestion_id,
-            user_id,
-        )
-
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -296,52 +241,3 @@ class RecommendationEngine:
     def _confidence_to_priority(confidence: float) -> int:
         """Map confidence 0–1 to priority 1–10."""
         return max(1, min(10, round(confidence * 10)))
-
-    @staticmethod
-    def _make_feedback_signal(
-        suggestion: Suggestion,
-        status: str,
-        notes: str | None,
-        user_id: int,
-    ) -> BehaviorSignal | None:
-        """Create a BehaviorSignal from suggestion feedback.
-
-        Returns None for neutral statuses (snoozed/dismissed) where no
-        learning signal should be emitted.
-        """
-        signal_type_map: dict[str, str] = {
-            "accepted": "accepted_suggestion",
-            "rejected": "rejected_suggestion",
-        }
-        signal_type = signal_type_map.get(status)
-        if signal_type is None:
-            return None  # snoozed / dismissed — no learning signal
-
-        # Value: +1 for accepted, -1 for rejected
-        value = 1.0 if status == "accepted" else -1.0
-
-        # Entity type inferred from suggestion category
-        category_entity_map: dict[str, str] = {
-            "meal": "food",
-            "activity": "exercise",
-            "shopping": "food",
-            "pantry": "food",
-            "habit": "habit",
-            "recovery": "exercise",
-            "variety": "food",
-            "reminder": "habit",
-        }
-        entity_type = category_entity_map.get(suggestion.category, "other")
-
-        return BehaviorSignal(
-            user_id=user_id,
-            signal_type=signal_type,
-            entity_type=entity_type,
-            entity_name=suggestion.title,
-            entity_id=suggestion.id,
-            value=value,
-            source_type="explicit",
-            source_entity_type="suggestion",
-            source_entity_id=suggestion.id,
-            notes=notes,
-        )

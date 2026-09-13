@@ -21,12 +21,47 @@ def _redirect_with_flash(url: str, message: str, category: str) -> RedirectRespo
     return response
 
 
+#: Con la barra final. Sin ella cada redirect cobraba un 307 de `redirect_slashes`
+#: antes de llegar a la ruta real, en el camino de vuelta de cada respuesta a una
+#: sugerencia y de cada preferencia guardada sin JS.
 def _back_to_suggestions(message: str, category: str) -> RedirectResponse:
-    return _redirect_with_flash("/suggestions", message, category)
+    return _redirect_with_flash("/suggestions/", message, category)
 
 
 def _back_to_profile(message: str, category: str) -> RedirectResponse:
-    return _redirect_with_flash("/profile", message, category)
+    return _redirect_with_flash("/profile/", message, category)
+
+
+def _invalid(
+    request: Request,
+    message: str,
+    status_code: int = 422,
+    back: str = "/suggestions/",
+) -> Response:
+    """Contestar una request que no se puede atender, sin devolver una página entera.
+
+    Para HTMX, un fragmento con el motivo y el 4xx correspondiente: HTMX no intercambia
+    respuestas 4xx, así que la tarjeta queda como estaba en vez de desaparecer
+    reemplazada por un error. Sin JS, el redirect de siempre con el mensaje en el flash
+    — que además es mejor que una página de error para una tarjeta que ya no está.
+
+    Lo usan las tres salidas de fallo del módulo (status inválido, sugerencia que no
+    existe o no es tuya, señal de preferencia inválida) para que ninguna mande un
+    documento entero hacia un target que es una tarjeta.
+
+    Que la tarjeta no desaparezca lo sigue sosteniendo el default de HTMX de no
+    intercambiar 4xx — esto no lo cambia. Lo que cambia es qué se manda: un cuerpo
+    proporcional al fallo en lugar de `suggestions/index.html` o `errors/404.html`
+    enteras, que es lo que antes viajaba por el cable y quedaba a un `hx-swap="none"`
+    de distancia de aparecer anidado adentro del `<body>`.
+    """
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            "components/flash_messages.html",
+            {"request": request, "messages": [{"type": "error", "text": message}]},
+            status_code=status_code,
+        )
+    return _redirect_with_flash(back, message, "error")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -62,17 +97,30 @@ def suggestion_feedback(
     feedback_notes: str = Form(default=""),
 ) -> Response:
     if status not in _VALID_FEEDBACK_STATUSES:
-        ctx = get_template_context(request, db, current_user)
-        ctx["error"] = _("Invalid feedback status: %(status)s.", status=status)
-        ctx["suggestions"] = SuggestionService(db).get_pending(current_user.id, current_user.household_id)
-        return templates.TemplateResponse("suggestions/index.html", ctx)
+        # Antes esto devolvía `suggestions/index.html` entera — un documento con
+        # `<html><head>` — y la plantilla apunta el swap a `#suggestion-{id}`, o sea
+        # una tarjeta: el documento completo terminaba anidado adentro del `<body>`
+        # abierto. `status` sale de un hidden propio, así que un valor inválido es una
+        # request mal formada y le corresponde un 4xx, no una página.
+        return _invalid(request, _("Invalid feedback status: %(status)s.", status=status))
 
     svc = SuggestionService(db)
-    svc.respond_to_suggestion(
+    suggestion = svc.respond_to_suggestion(
         suggestion_id,
         SuggestionFeedback(status=status, feedback_notes=feedback_notes or None),
         current_user.id,
+        current_user.household_id,
     )
+    # Un id que no existe —o que es de otra persona— devolvía igual "listo, gracias":
+    # el resultado del servicio se descartaba. Ver `SuggestionRepository.get_owned`.
+    #
+    # El mismo mensaje para los dos casos, a propósito: la respuesta no tiene que dejar
+    # distinguir un id inexistente de uno ajeno. La ruta `/api/v1` contesta el 404 en
+    # JSON, que es lo que le corresponde; acá la respuesta es SSR.
+    if suggestion is None:
+        return _invalid(
+            request, _("That suggestion is no longer available."), status_code=404
+        )
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(
             "suggestions/partials/dismissed.html",
@@ -90,14 +138,14 @@ def save_preference(
     item_name: str = Form(...),
     preference_signal: str = Form(...),
 ) -> Response:
+    # Misma clase de request mal formada que un `status` inválido, así que mismo
+    # contrato: 4xx con HTMX, redirect con flash sin JS. Antes esta rama contestaba 200
+    # con el fragmento de error adentro, o sea "salió bien" con un error en el cuerpo.
     if preference_signal not in _VALID_PREFERENCE_SIGNALS:
-        if request.headers.get("HX-Request"):
-            return templates.TemplateResponse(
-                "components/flash_messages.html",
-                {"request": request, "messages": [{"type": "error", "text": _("Invalid signal: %(signal)s.", signal=preference_signal)}]},
-            )
-        return _back_to_profile(
-            _("Invalid signal: %(signal)s.", signal=preference_signal), "error"
+        return _invalid(
+            request,
+            _("Invalid signal: %(signal)s.", signal=preference_signal),
+            back="/profile/",
         )
 
     item_name = item_name.strip()[:200]

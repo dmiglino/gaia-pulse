@@ -87,6 +87,9 @@ def test_suggestions_index_and_generate(authenticated_client: TestClient) -> Non
     r = authenticated_client.post("/suggestions/generate", headers={"HX-Request": "true"})
     assert r.status_code == 200, r.text
     assert 'id="suggestions-list"' in r.text
+    #: El swap reemplaza `#suggestions-list`, o sea que la respuesta es un fragmento:
+    #: un documento entero quedaría anidado adentro del `<body>` abierto.
+    assert "<html" not in r.text
 
 
 def test_pantry_adjust(

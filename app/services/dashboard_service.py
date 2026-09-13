@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.repositories.body_metric_repo import BodyMetricRepository
 from app.repositories.meal_repo import MealRepository
 from app.repositories.pantry_repo import PantryStockRepository
-from app.repositories.suggestion_repo import SuggestionRepository
 from app.repositories.workout_repo import WorkoutRepository
 
 
@@ -17,7 +16,6 @@ class DashboardService:
         self.meal_repo = MealRepository(db)
         self.workout_repo = WorkoutRepository(db)
         self.pantry_repo = PantryStockRepository(db)
-        self.suggestion_repo = SuggestionRepository(db)
 
     def get_user_dashboard_data(
         self, user_id: int, household_id: int

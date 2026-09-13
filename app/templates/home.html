@@ -180,20 +180,29 @@
       El `x-data="{ dismissed: false }"` de la v1 desaparece: la tarjeta se reemplaza
       por la respuesta del servidor (`hx-swap="outerHTML"`), así que el estado no
       necesita vivir además en el cliente. -#}
+  {#- El mapa de tonos y de íconos por categoría vivía acá, inline, y otra copia a
+      mano en `suggestions/partials/list.html`. Las dos habían divergido: esta tenía
+      una clave `health` que ningún generador escribe y le faltaban `variety`,
+      `recovery` y `reminder`, que sí están declaradas en `Suggestion.category`. Ahora
+      hay un solo mapa, en `dm.SUGGESTION_TONES` / `dm.SUGGESTION_ICONS`. -#}
   {% if pending_suggestions %}
-  {% set suggestion_tone = {'meal': 'food', 'activity': 'move', 'habit': 'brand',
-                            'pantry': 'stock', 'shopping': 'stock', 'health': 'body'} %}
-  {% set suggestion_icon = {'meal': 'meal', 'activity': 'bolt', 'habit': 'sparkles',
-                            'pantry': 'pantry', 'shopping': 'cart', 'health': 'heart'} %}
   <section class="space-y-3">
     <div class="flex items-end justify-between gap-3">
       <h2 class="text-base font-semibold text-ink">{{ _('Suggestions for you') }}</h2>
-      <a href="/suggestions" class="text-sm font-medium text-brand-600 hover:text-brand-700 whitespace-nowrap">
+      {#- Con la barra final: sin ella el enlace se comía un 307 de `redirect_slashes`. -#}
+      <a href="/suggestions/" class="text-sm font-medium text-brand-600 hover:text-brand-700 whitespace-nowrap">
         {{ _('View all') }}
       </a>
     </div>
+    {#- El mismo encuadre no diagnóstico que en `/suggestions/`: si el análisis de
+        sangre llega hasta el Home convertido en un consejo, el consejo viene con el
+        aviso. Solo cuando hay una sugerencia de esa fuente — un aviso permanente en la
+        primera pantalla se vuelve mueble y deja de leerse. -#}
+    {%- if pending_suggestions | selectattr('source_type', 'equalto', 'blood_analysis') | first %}
+    {{ ui.notice(_('These readings are informational, not a diagnosis. A marker out of range needs your doctor, not a change of diet on its own.'),
+                 tone='info') }}
+    {%- endif %}
     {% for suggestion in pending_suggestions %}
-    {% set tone = suggestion_tone.get(suggestion.category, 'brand') %}
     {#- Los `attrs` se arman como bloque `{% set %}`: lo único interpolado es
         `suggestion.id`, un entero de la base, que es el caso permitido por la regla
         de `components/ui.html`. -#}
@@ -201,9 +210,7 @@
     {% set dismiss_attrs %}hx-post="/suggestions/{{ suggestion.id }}/feedback" hx-vals='{"status": "dismissed"}' hx-target="#suggestion-{{ suggestion.id }}" hx-swap="outerHTML"{% endset %}
     {% call ui.card(attrs='id="suggestion-' ~ suggestion.id ~ '"') %}
       <div class="flex items-start gap-3">
-        <span class="flex-shrink-0 w-9 h-9 rounded-control bg-{{ tone }}-soft text-{{ tone }}-ink flex items-center justify-center">
-          {{ ic.icon(suggestion_icon.get(suggestion.category, 'bulb'), 'w-5 h-5') }}
-        </span>
+        {{ dm.suggestion_icon(suggestion.category) }}
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-ink leading-snug">{{ suggestion.title }}</p>
           <p class="text-sm text-ink-muted mt-0.5">{{ suggestion.text }}</p>

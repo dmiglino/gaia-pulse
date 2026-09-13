@@ -632,3 +632,312 @@ def test_mark_all_read_never_swaps_a_whole_document(
         assert "<html" not in resp.text
 
     assert "0 sin leer" not in authenticated_client.get("/notifications/").text
+
+
+# ── Sugerencias ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def rocios_suggestion(db: Session, household: Household, rocio: User) -> Suggestion:
+    """Una sugerencia **personal** de Rocío, con el texto que la delata.
+
+    Lo importante es que lleve las dos columnas puestas, que es exactamente lo que
+    escribe `engine._make_user_suggestion`: `household_id` **y** `scope_user_id`.
+    """
+    s = Suggestion(
+        scope_type="user",
+        household_id=household.id,
+        scope_user_id=rocio.id,
+        category="habit",
+        title="Bajá el sodio esta semana",
+        text="Tu último análisis de sangre trae la presión en el límite.",
+        rationale="Marcador de sodio elevado en el panel del 3 de marzo.",
+        confidence=0.9,
+        source_type="blood_analysis",
+        status="pending",
+    )
+    db.add(s)
+    db.flush()
+    return s
+
+
+def test_suggestions_do_not_leak_the_other_members_personal_ones(
+    authenticated_client: TestClient,
+    seeded: dict[str, int],
+    rocios_suggestion: Suggestion,
+) -> None:
+    """El filtro era `or_(scope_user_id == user, household_id == household)`.
+
+    Y como una sugerencia personal escribe **las dos** columnas, la rama de hogar
+    matcheaba las personales del otro integrante: Diego abría `/suggestions/` y leía
+    las de Rocío, con su análisis de sangre adentro del texto.
+    """
+    for path in ("/suggestions/", "/"):
+        body = authenticated_client.get(path).text
+        assert rocios_suggestion.title not in body, path
+        assert "análisis de sangre trae la presión" not in body, path
+
+
+def test_a_household_suggestion_is_visible_to_everyone(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """Una sugerencia del hogar no nombra a nadie: `scope_user_id IS NULL`.
+
+    Es la contracara del test anterior — cerrar la fuga no puede haber cerrado
+    también lo que `_make_household_suggestion` escribe para las dos personas.
+    """
+    db.add(
+        Suggestion(
+            scope_type="household",
+            household_id=diego.household_id,
+            scope_user_id=None,
+            category="shopping",
+            title="Reponer banana",
+            text="Queda una y el umbral son tres.",
+            rationale="Stock por debajo del umbral.",
+            confidence=0.8,
+            source_type="stock",
+            status="pending",
+        )
+    )
+    db.flush()
+
+    body = authenticated_client.get("/suggestions/").text
+    assert "Reponer banana" in body
+    #: Y se distingue de una personal. Antes acá iba un avatar que, con el filtro
+    #: arreglado, siempre era el de quien mira: no decía nada.
+    assert "Para la casa" in body
+
+
+def test_feedback_on_another_members_suggestion_is_rejected(
+    authenticated_client: TestClient,
+    seeded: dict[str, int],
+    db: Session,
+    rocios_suggestion: Suggestion,
+) -> None:
+    """`respond_to_suggestion` hacía `repo.get(id)` sin chequear de quién era.
+
+    Con cualquier sesión válida se podía aceptar o rechazar cualquier fila de la
+    tabla — y la señal de comportamiento se grababa contra quien apretaba el botón,
+    así que el título de la sugerencia ajena entraba a *su* modelo de aprendizaje.
+    """
+    from app.models.signal import BehaviorSignal
+
+    hx = authenticated_client.post(
+        f"/suggestions/{rocios_suggestion.id}/feedback",
+        data={"status": "accepted"},
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert hx.status_code == 404, hx.status_code
+    assert "<html" not in hx.text, "un documento entero hacia un target de tarjeta"
+
+    plain = authenticated_client.post(
+        f"/suggestions/{rocios_suggestion.id}/feedback",
+        data={"status": "accepted"},
+        follow_redirects=False,
+    )
+    assert plain.status_code == 302, plain.status_code
+
+    db.refresh(rocios_suggestion)
+    assert rocios_suggestion.status == "pending"
+    assert rocios_suggestion.responded_at is None
+    assert db.query(BehaviorSignal).count() == 0, "se grabó una señal ajena"
+
+
+def test_the_api_also_refuses_another_members_suggestion(
+    authenticated_client: TestClient,
+    seeded: dict[str, int],
+    db: Session,
+    rocios_suggestion: Suggestion,
+) -> None:
+    """El mismo arreglo de aislamiento, en la otra superficie.
+
+    `respond_to_suggestion` es compartido, así que la fuga estaba en las dos rutas; el
+    contrato de `/api/v1` es un 404 en JSON, no un redirect. La regla 4 de `AGENTS.md`
+    no distingue entre superficies.
+    """
+    from app.models.signal import BehaviorSignal
+
+    resp = authenticated_client.post(
+        f"/api/v1/suggestions/{rocios_suggestion.id}/feedback",
+        json={"status": "accepted"},
+    )
+    assert resp.status_code == 404, resp.text
+    assert resp.headers["content-type"].startswith("application/json")
+
+    db.refresh(rocios_suggestion)
+    assert rocios_suggestion.status == "pending"
+    assert db.query(BehaviorSignal).count() == 0
+
+
+def test_feedback_on_a_suggestion_that_does_not_exist_is_a_404(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """La ruta descartaba el resultado del servicio y contestaba "listo, gracias"."""
+    resp = authenticated_client.post(
+        "/suggestions/999999/feedback",
+        data={"status": "dismissed"},
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 404, resp.status_code
+    assert "<html" not in resp.text
+
+
+def test_responding_twice_only_records_one_signal(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """Un doble clic entraba dos veces y pesaba el doble en el scorer.
+
+    `get_owned` no filtraba por `status`, y el swap que saca la tarjeta llega después
+    de que la segunda request ya salió. La segunda respuesta ahora es la misma que
+    para una sugerencia que no existe.
+    """
+    from app.models.signal import BehaviorSignal
+
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+    for expected in (200, 404):
+        resp = authenticated_client.post(
+            f"/suggestions/{pending.id}/feedback",
+            data={"status": "accepted"},
+            headers={"HX-Request": "true"},
+        )
+        assert resp.status_code == expected, (expected, resp.status_code)
+
+    assert db.query(BehaviorSignal).count() == 1
+
+
+def test_an_invalid_feedback_status_never_returns_a_whole_document(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """Devolvía `suggestions/index.html` entera dentro de un target de tarjeta.
+
+    Con HTMX la respuesta es un 4xx —que HTMX no intercambia, así que la tarjeta
+    queda como estaba—, y sin JS un redirect con el motivo en el flash.
+    """
+    #: El id de una sugerencia que **sí** existe: si fuera uno inventado, el test
+    #: pasaría por la rama de 404 y no probaría la validación de `status`.
+    suggestion_id = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one().id
+    hx = authenticated_client.post(
+        f"/suggestions/{suggestion_id}/feedback",
+        data={"status": "banana"},
+        headers={"HX-Request": "true"},
+        follow_redirects=False,
+    )
+    assert hx.status_code == 422, hx.status_code
+    assert "<html" not in hx.text
+
+    plain = authenticated_client.post(
+        f"/suggestions/{suggestion_id}/feedback",
+        data={"status": "banana"},
+        follow_redirects=False,
+    )
+    assert plain.status_code == 302, plain.status_code
+    assert "<html" not in plain.text
+
+
+def test_suggestion_redirects_land_without_bouncing(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """Los helpers apuntaban a `/suggestions` y `/profile`, sin la barra final.
+
+    Cada respuesta a una sugerencia y cada preferencia guardada sin JS se comía un
+    307 de `redirect_slashes` antes de llegar a la ruta real.
+    """
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+    resp = authenticated_client.post(
+        f"/suggestions/{pending.id}/feedback",
+        data={"status": "accepted"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302, resp.status_code
+    landing = authenticated_client.get(resp.headers["location"], follow_redirects=False)
+    assert landing.status_code == 200, resp.headers["location"]
+
+    #: Y el de vuelta al perfil, que es el otro helper con el mismo defecto.
+    pref = authenticated_client.post(
+        "/suggestions/preferences",
+        data={"item_type": "food", "item_name": "palta", "preference_signal": "likes"},
+        follow_redirects=False,
+    )
+    assert pref.status_code == 302, pref.status_code
+    landing = authenticated_client.get(pref.headers["location"], follow_redirects=False)
+    assert landing.status_code == 200, pref.headers["location"]
+
+
+def test_blood_driven_suggestions_carry_the_non_diagnostic_notice(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """`blood_generator` emite consejo directivo y el evidence imprime el marcador.
+
+    `health/detail.html` ya llevaba el encuadre no diagnóstico; esta pantalla es donde
+    el análisis se vuelve una instrucción ("bajá el sodio"), así que es justamente la
+    que no puede quedarse sin él. Va adentro del fragmento que se intercambia, no
+    afuera, para que siga estando después de un "Refrescar".
+    """
+    notice = "no un diagnóstico"
+    assert (
+        notice not in authenticated_client.get("/suggestions/").text
+    ), "el aviso aparece sin que haya ninguna sugerencia de análisis de sangre"
+
+    db.add(
+        Suggestion(
+            scope_type="user",
+            household_id=diego.household_id,
+            scope_user_id=diego.id,
+            category="habit",
+            title="Bajá el sodio esta semana",
+            text="Evitá los suplementos y la comida en lata.",
+            rationale="Sodio en 148 mEq/L en el panel del 3 de marzo.",
+            evidence_summary="Sodio: 148 mEq/L (rango 135–145).",
+            confidence=0.9,
+            source_type="blood_analysis",
+            status="pending",
+        )
+    )
+    db.flush()
+
+    for path in ("/suggestions/", "/"):
+        assert notice in authenticated_client.get(path).text, path
+
+
+def test_suggestion_card_explains_itself_in_spanish(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """`category|title` y `source_type` crudos: `Activity`, `rule`, en inglés.
+
+    Y `priority` se pintaba como una barra de urgencia cuando en realidad es
+    `round(confidence * 10)`, o sea confianza. Ahora la confianza va en palabras,
+    adentro del panel de "¿por qué esta sugerencia?".
+    """
+    body = authenticated_client.get("/suggestions/").text
+    assert "Actividad" in body
+    assert "Una recomendación general" in body, "no se explica de dónde salió"
+    assert "Probablemente encaje" in body, "no se explica la confianza"
+    for raw in (">Activity<", ">rule<", ">Rule<"):
+        assert raw not in body, raw
+
+
+def test_learned_preferences_are_not_raw_database_keys(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """La tabla del perfil de sugerencias imprimía `food` y `possible_sometimes`."""
+    from app.models.suggestion import RecommendationPreference
+
+    db.add(
+        RecommendationPreference(
+            user_id=diego.id,
+            item_type="food",
+            item_name="palta",
+            preference_signal="possible_sometimes",
+            strength=0.5,
+        )
+    )
+    db.flush()
+
+    body = authenticated_client.get("/suggestions/").text
+    assert "A veces" in body
+    assert "Alimento" in body
+    for raw in (">food<", ">possible_sometimes<", "possible_sometimes"):
+        assert raw not in body, raw

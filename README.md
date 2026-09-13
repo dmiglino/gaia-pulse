@@ -324,7 +324,7 @@ Final scores are clamped to `[0.0, 1.0]`.
 
 ### Stage 4 — Ranking and persistence
 
-Candidates are sorted by score descending. The top-N are written as `Suggestion` rows with `status="pending"`. When the user responds (accepts/rejects), `RecommendationEngine.record_feedback()` updates the suggestion status and emits a new `BehaviorSignal` — closing the learning loop.
+Candidates are sorted by score descending. The top-N are written as `Suggestion` rows with `status="pending"`. When the user responds (accepts/rejects), `SuggestionService.respond_to_suggestion()` updates the suggestion status and emits a new `BehaviorSignal` — closing the learning loop. It only accepts a suggestion that is still pending and that belongs to the person responding.
 
 Household-scoped suggestions (pantry/shopping) skip user-level filtering and are stored with `scope_type="household"`.
 
