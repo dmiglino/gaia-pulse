@@ -37,11 +37,12 @@
     {% endfor %}
   </div>
   {% else %}
-  <div class="text-center py-16">
-    <div class="text-4xl mb-3">🔔</div>
-    <p class="text-slate-500">{% if filter_category %}{{ _('No notifications in this category.') }}{% else %}{{ _('No notifications.') }}{% endif %}</p>
-    <p class="text-sm text-slate-400 mt-1">{{ _("We'll let you know when something needs attention.") }}</p>
-  </div>
+  {#- El emoji 🔔 como iconografía se va: el resto de la app usa Heroicons y un
+      emoji cambia de forma en cada sistema operativo. -#}
+  {{ ui.empty_state(
+      _('No notifications in this category.') if filter_category else _('No notifications.'),
+      text=_("We'll let you know when something needs attention."),
+      icon='bell') }}
   {% endif %}
 
 </div>

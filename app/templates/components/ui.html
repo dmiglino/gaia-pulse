@@ -358,9 +358,10 @@
 
 
 {#- ── Estado vacío ─────────────────────────────────────────────────────────────
-    Versión macro del `components/empty_state.html` que hoy se incluye en 3 de
-    los 9 lugares que lo necesitan. Un estado vacío sin acción es un cartel de
-    "no hay nada"; con acción es el primer paso. -#}
+    Reemplaza al `components/empty_state.html` de la v1, que se incluía pasándole
+    variables por `{% set %}` y que solo cubría 5 de los 9 lugares con estado
+    vacío. Un estado vacío sin acción es un cartel de "no hay nada"; con acción es
+    el primer paso, así que casi todos los llamadores pasan `action_*`. -#}
 {% macro empty_state(title, text=None, icon='sparkles', action_label=None, action_href=None, tone='brand') -%}
 <div class="flex flex-col items-center justify-center text-center py-12 px-6">
   <span class="w-14 h-14 rounded-card bg-{{ tone }}-soft text-{{ tone }}-ink flex items-center justify-center mb-4">

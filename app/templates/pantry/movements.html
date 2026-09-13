@@ -26,7 +26,11 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="text-center text-slate-400 py-12">{{ _('No pantry movements yet.') }}</p>
+  {{ ui.empty_state(
+      _('No pantry movements yet.'),
+      text=_('Every purchase and every consumption shows up here, newest first.'),
+      icon='cart', tone='stock',
+      action_label=_('Log a purchase'), action_href='/capture?prefill=pantry') }}
   {% endif %}
 </div>
 {% endblock %}

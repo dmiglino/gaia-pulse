@@ -110,14 +110,13 @@
       </div>
       {% endif %}
     {% else %}
-      <div class="bg-white rounded-2xl border border-slate-200">
-        {% set icon = 'meals' %}
-        {% set title = _('No meals logged yet') %}
-        {% set description = _('Use the Capture screen to quickly log what Diego or Rocío ate.') %}
-        {% set action_label = _('Log first meal') %}
-        {% set action_url = '/capture?prefill=meal' %}
-        {% include 'components/empty_state.html' %}
-      </div>
+      {% call ui.card(padding='') %}
+        {{ ui.empty_state(
+            _('No meals logged yet'),
+            text=_('Use the Capture screen to quickly log what Diego or Rocío ate.'),
+            icon='meal', tone='food',
+            action_label=_('Log first meal'), action_href='/capture?prefill=meal') }}
+      {% endcall %}
     {% endif %}
   </div>
 

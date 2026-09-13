@@ -1,10 +1,22 @@
-{# One flash message.
+{# Un flash message.
    Variables:
-     category: 'success' | 'error' | 'warning' | 'info'  (default 'info')
-     message:  the text to show
-   For a list of messages use 'components/flash_messages.html' instead. #}
+     category: 'success' | 'error' | 'danger' | 'warning' | 'info'  (default 'info')
+     message:  el texto a mostrar
+   Para una lista usar 'components/flash_messages.html'.
+
+   Los cuatro SVG inline y las cuatro paletas paralelas (`emerald`/`rose`/`amber`/
+   `brand`) pasaron a un mapa de tono → familia de tokens. `notice()` de `ui.html`
+   rinde casi exactamente esto, pero no sirve acá: el flash necesita el `x-data` de
+   Alpine y el botón de descartar, y meter eso en el macro lo volvería un macro con
+   dos modos. #}
 {% set _cat = category | default('info', true) %}
 {% set _msg = message | default('', true) %}
+{% set _tone, _icon = {
+  'success': ('ok', 'check-circle'),
+  'error':   ('danger', 'alert-circle'),
+  'danger':  ('danger', 'alert-circle'),
+  'warning': ('warn', 'warning'),
+}.get(_cat, ('info', 'info')) %}
 
 <div
   x-data="{ visible: true }"
@@ -15,43 +27,22 @@
   x-transition:leave="transition ease-in duration-150"
   x-transition:leave-start="opacity-100"
   x-transition:leave-end="opacity-0"
-  class="flex items-start gap-3 rounded-xl px-4 py-3 text-sm border
-    {% if _cat == 'success' %}bg-emerald-50 border-emerald-200 text-emerald-800
-    {% elif _cat == 'error' or _cat == 'danger' %}bg-rose-50 border-rose-200 text-rose-800
-    {% elif _cat == 'warning' %}bg-amber-50 border-amber-200 text-amber-800
-    {% else %}bg-brand-50 border-brand-200 text-brand-800{% endif %}"
-  role="alert"
+  {#- Sin `role="alert"` acá: el único que incluye este parcial es
+      `flash_messages.html`, que ya es la live region (`role="status"`). Un `alert`
+      adentro de un `status` hace que el lector de pantalla anuncie el mensaje dos
+      veces. -#}
+  class="flex items-start gap-3 rounded-card px-4 py-3 text-sm border bg-{{ _tone }}-soft border-{{ _tone }}-ink/20 text-{{ _tone }}-ink"
 >
-  <!-- Icon -->
-  <div class="flex-shrink-0 mt-0.5">
-    {% if _cat == 'success' %}
-    <svg class="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-    </svg>
-    {% elif _cat == 'error' or _cat == 'danger' %}
-    <svg class="w-4 h-4 text-rose-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-    </svg>
-    {% elif _cat == 'warning' %}
-    <svg class="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
-    </svg>
-    {% else %}
-    <svg class="w-4 h-4 text-brand-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
-    </svg>
-    {% endif %}
-  </div>
+  <span class="flex-shrink-0 mt-0.5">{{ ic.icon(_icon, 'w-4 h-4') }}</span>
 
-  <!-- Message -->
   <p class="flex-1 leading-snug">{{ _msg }}</p>
 
-  <!-- Dismiss -->
+  {#- `-mr-1 -mt-0.5` para que el ícono quede alineado con el texto sin agrandar
+      el área táctil: `p-1` la lleva a 24px, todavía chica, así que el `-m` la
+      compensa hacia afuera del padding de la tarjeta. -#}
   <button type="button" @click="visible = false"
           aria-label="{{ _('Dismiss message') }}"
-          class="flex-shrink-0 opacity-50 hover:opacity-80 transition-opacity -mr-1 -mt-0.5">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
-    </svg>
+          class="flex-shrink-0 -mr-1 -mt-0.5 p-1 rounded-chip opacity-60 hover:opacity-100 hover:bg-{{ _tone }}-ink/10 transition">
+    {{ ic.icon('x', 'w-4 h-4') }}
   </button>
 </div>

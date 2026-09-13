@@ -57,7 +57,13 @@
         {% endfor %}
       </div>
     {% else %}
-      <p class="text-sm text-slate-500">{{ _('No blood analyses yet.') }}</p>
+      {#- Sin acción: el formulario de subida está en esta misma pantalla, unos
+          centímetros más arriba. Un botón que solo scrollea sería ruido, y
+          `/health/upload` es POST — un `href` ahí daría 405. -#}
+      {{ ui.empty_state(
+          _('No blood analyses yet.'),
+          text=_('Upload a lab panel with the form above and GaiaPulse will read its markers into your suggestions.'),
+          icon='analysis', tone='body') }}
     {% endif %}
   </div>
 </div>

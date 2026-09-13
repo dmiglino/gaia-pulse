@@ -169,14 +169,13 @@
       </div>
     </div>
     {% else %}
-    <div class="bg-white rounded-2xl border border-slate-200">
-      {% set icon = 'metrics' %}
-      {% set title = _('No metrics logged yet for %(name)s', name=user.display_name) %}
-      {% set description = _('Start tracking weight, body fat, waist measurements, and sleep.') %}
-      {% set action_label = _('Log first metric') %}
-      {% set action_url = '/capture?prefill=weight' %}
-      {% include 'components/empty_state.html' %}
-    </div>
+    {% call ui.card(padding='') %}
+      {{ ui.empty_state(
+          _('No metrics logged yet for %(name)s', name=user.display_name),
+          text=_('Start tracking weight, body fat, waist measurements, and sleep.'),
+          icon='chart-bar', tone='body',
+          action_label=_('Log first metric'), action_href='/capture?prefill=weight') }}
+    {% endcall %}
     {% endif %}
 
   </div>
