@@ -145,6 +145,12 @@ def generate(
                     #: rechaza cuando toca el botón. Ver `recommendations/learning.py`.
                     "subject_type": "food",
                     "subject_name": featured[0],
+                    #: La franja para la que se ofrece. La declara el generador —que ya la
+                    #: tiene, y que además admite el override— en vez de que el scorer la
+                    #: vuelva a derivar del reloj: dos copias de las ventanas horarias
+                    #: discreparían justo cuando alguien pasa `meal_type` a mano. Es lo que
+                    #: le permite al scorer distinguir el café del desayuno del de la cena.
+                    "meal_type": meal_type,
                     "title": title,
                     "text": text,
                     "rationale": "Items available in pantry that should be used.",
@@ -167,6 +173,7 @@ def generate(
                 "category": "meal",
                 "subject_type": "food",
                 "subject_name": pick,
+                "meal_type": meal_type,
                 "title": f"Try {pick.title()} for variety",
                 "text": (
                     f"You haven't had {pick} recently. "
@@ -198,6 +205,7 @@ def generate(
                 "category": "meal",
                 "subject_type": "food",
                 "subject_name": pref.item_name,
+                "meal_type": meal_type,
                 "title": f"Have {pref.item_name} today",
                 "text": (
                     f"Based on your preferences, {pref.item_name} is a great option "
@@ -228,6 +236,7 @@ def generate(
                 "category": "meal",
                 "subject_type": "food",
                 "subject_name": food.canonical_name,
+                "meal_type": meal_type,
                 "title": f"Use your last {food.canonical_name}",
                 "text": (
                     f"Your {food.canonical_name} stock is running low "

@@ -28,6 +28,12 @@ Lo que este módulo define es ese vocabulario:
   que la persona nunca vio en una sugerencia. El nivel atributo pide más evidencia, pesa
   menos que la evidencia directa, no se cuenta a sí mismo y **no filtra** nada: generalizar
   para ordenar es útil, generalizar para vetar es ponerle en la boca un "no" que no dijo.
+- **Y en un tercer eje, que no es un nivel más sino una franja: *cuándo*.** Un gusto tiene
+  hora. El café del desayuno y el café de la cena son el mismo sujeto con dos respuestas
+  distintas, y hasta acá la app las promediaba en una sola. Lo que se compara es el sujeto
+  **en** la franja contra el mismo sujeto **fuera** de ella, así que lo que se aprende es
+  la diferencia entre horas y no la popularidad del sujeto, que ya la cobra el nivel
+  puntual. Es un refinamiento, no una generalización: no pesa menos, solo sabe menos.
 
 No hay LLM acá ni modelo entrenado: es aritmética determinista sobre una tabla, que es lo
 que la 4.4 se propuso y todo lo que hace falta para dos personas.
@@ -108,6 +114,18 @@ ATTRIBUTE_SUBJECT_TYPES: frozenset[str] = frozenset(
         "food_category",  # `FoodItem.category`: vegetable/fruit/protein/grain/dairy/…
     }
 )
+
+#: Las franjas horarias que una señal puede declarar en su `context_json["meal_type"]`.
+#: Es una lista explícita y no "cualquier string" por un valor en particular: `"other"`,
+#: que es el default de `MealEvent.meal_type` y por lo tanto lo que queda cuando la captura
+#: no dijo la hora. Tratarlo como una franja más haría que cada comida sin hora argumentara
+#: contra todas las franjas reales, que es lo contrario de lo que significa. Una señal sin
+#: franja no dice nada sobre el reloj y no entra en el cómputo por ningún lado.
+#:
+#: `"brunch"` sí está, aunque ningún generador lo sugiera: lo produce `app/nlp/rules.py` al
+#: leer una captura, y es una hora real del día. Que no se sugiera no lo hace mudo — sirve
+#: como evidencia de *otra* franja cuando se evalúa el desayuno.
+MEAL_SLOTS: frozenset[str] = frozenset({"breakfast", "brunch", "lunch", "snack", "dinner"})
 
 
 #: Cuántos días tarda una señal en pesar la mitad, según de dónde salió. Sin esto una
@@ -221,6 +239,39 @@ def candidate_subject(candidate: dict[str, Any]) -> tuple[str, str] | None:
     if not subject_type or not subject_name:
         return None
     return subject_key(str(subject_type), str(subject_name))
+
+
+def _slot(value: Any) -> str | None:
+    """*value* como franja horaria conocida, o `None`. Ver `MEAL_SLOTS`."""
+    slot = str(value or "").strip().lower()
+    return slot if slot in MEAL_SLOTS else None
+
+
+def signal_slot(signal: BehaviorSignal) -> str | None:
+    """La franja horaria en la que ocurrió *signal*, o `None` si no la declaró.
+
+    Sale de `context_json["meal_type"]`, que `MealService.log_meal` viene escribiendo desde
+    la 4.4.1 en cada `repeated_meal_choice`. Es el único escritor de una hora, así que el
+    eje temporal aprende de lo implícito —lo que se comió y cuándo— y no del feedback
+    explícito: `Suggestion` no tiene columna de contexto, y agregarla es una migración que
+    la v3 no tiene disponible. No es un lector sin escritor: el escritor ya existe.
+    """
+    context = signal.context_json
+    if not isinstance(context, dict):
+        return None
+    return _slot(context.get("meal_type"))
+
+
+def candidate_slot(candidate: dict[str, Any]) -> str | None:
+    """La franja para la que se está ofreciendo un candidato, o `None`.
+
+    La declara el generador, que ya la calculó (`meal_generator._current_meal_type`) y
+    además admite que se la pasen por parámetro. Re-derivarla acá desde el reloj sería
+    duplicar la lógica de ventanas, acoplar el scorer a la hora del sistema, y discrepar
+    con el generador justo cuando alguien usa el override. Los candidatos que no son de
+    comida no declaran franja, y por eso este eje se limita solo.
+    """
+    return _slot(candidate.get("meal_type"))
 
 
 def record_signal(
@@ -476,6 +527,81 @@ def generalized_affinity(
         return None
     own = points.get(subject)
     return group if own is None else group.without(own)
+
+
+def slot_affinities(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> dict[tuple[str, str], dict[str, SubjectAffinity]]:
+    """Qué aprendió la app de cada sujeto **en cada franja horaria**: sujeto → franja → lo
+    aprendido.
+
+    La misma aritmética de `subject_affinities`, partida por hora. Las señales sin franja
+    quedan afuera del todo: no dicen nada sobre el reloj, y meterlas en un grupo "sin hora"
+    sería inventar una franja que después argumentaría contra las reales.
+    """
+    reference = now or datetime.now(tz=timezone.utc)
+    nets: dict[tuple[tuple[str, str], str], float] = {}
+    evidences: dict[tuple[tuple[str, str], str], float] = {}
+    for signal in signals:
+        if signal.signal_type not in POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES:
+            continue
+        slot = signal_slot(signal)
+        if slot is None:
+            continue
+        key = subject_key(signal.entity_type, signal.entity_name)
+        if not key[1]:
+            continue
+        weight = signal_weight(signal, now=reference)
+        nets[(key, slot)] = nets.get((key, slot), 0.0) + weight
+        evidences[(key, slot)] = evidences.get((key, slot), 0.0) + abs(weight)
+
+    by_subject: dict[tuple[str, str], dict[str, SubjectAffinity]] = {}
+    for (subject, slot), net in nets.items():
+        by_subject.setdefault(subject, {})[slot] = SubjectAffinity(
+            net=net, evidence=evidences[(subject, slot)]
+        )
+    return by_subject
+
+
+def slot_contrast(
+    subject: tuple[str, str],
+    slot: str,
+    *,
+    slots: Mapping[tuple[str, str], Mapping[str, SubjectAffinity]],
+) -> float:
+    """Cuánto mejor —o peor— le cae *subject* en *slot* que en el resto de las horas.
+
+    Es una **diferencia**, no un promedio, y ahí está todo el punto: el nivel puntual ya
+    cobra que el café guste, así que si esto midiera otra vez cuánto gusta el café en el
+    desayuno estaría cobrando dos veces el mismo dato. Lo que agrega es la comparación
+    contra las demás franjas — veinte cafés al desayuno y ninguno a la cena dan `+0.91` al
+    desayuno y `−0.91` a la cena, mientras que diez almuerzos y diez cenas del mismo plato
+    dan `0` en las dos: un plato indiferente a la hora no debería moverse por la hora.
+
+    La formulación alternativa —dirección en la franja menos dirección global— no servía:
+    con los datos que la app tiene hoy toda señal de comida es positiva, así que las dos
+    direcciones valen `+1` y la resta da `0` siempre. La ausencia como señal (que la cena
+    *no* tenga café) es lo que la 4.4.3 dejó postergado junto con el umbral mínimo de
+    evidencia para filtrar; comparar franja contra franja no la necesita.
+
+    El recorte a `[-1, 1]` no es decorativo: la resta de dos fuerzas vive en `[-2, 2]`, y
+    sin el tope este eje podría mover el score el doble de su perilla, que es justo la
+    invariante que sostiene que una perilla acote un eje.
+    """
+    by_slot = slots.get(subject)
+    if not by_slot:
+        return 0.0
+    inside = by_slot.get(slot)
+    net = 0.0
+    evidence = 0.0
+    for other, affinity in by_slot.items():
+        if other == slot:
+            continue
+        net += affinity.net
+        evidence += affinity.evidence
+    outside = SubjectAffinity(net=net, evidence=evidence)
+    in_strength = inside.strength if inside is not None else 0.0
+    return max(-1.0, min(1.0, in_strength - outside.strength))
 
 
 def rejected_subjects(

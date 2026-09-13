@@ -1187,11 +1187,54 @@ ejercicios esperan la 4.5)
       ejercicio de gimnasio es el grupo muscular—, porque el seed le pone
       `muscle_group="full_body"` a casi todo el cardio.
 
-**4.4.5 — Gusto con contexto horario**
+**4.4.5 — Gusto con contexto horario** ✅ hecho
 
-- [ ] `MealEvent.timestamp` y `meal_type` ya se guardan: aprender *cuándo* les gusta algo
+- [x] `MealEvent.timestamp` y `meal_type` ya se guardan: aprender *cuándo* les gusta algo
       (café en el desayuno, no en la cena) usando el `meal_type` que 4.4.1 mete en
       `context_json`. Es lo que hace que las sugerencias se sientan propias y no genéricas.
+      → Hecho como **una diferencia entre franjas**, no como un promedio dentro de una:
+      `slot_contrast` compara la fuerza del sujeto **en** la franja contra la del mismo
+      sujeto **fuera** de ella (`in_slot.strength − off_slot.strength`, recortado a
+      `[-1, 1]`). Medido con el ejemplo del plan: veinte cafés al desayuno dan `+0.109` al
+      desayuno y `−0.136` a la cena, mientras que un plato comido diez veces al almuerzo y
+      diez a la cena da exactamente `0` en las dos — un plato indiferente a la hora no se
+      mueve por la hora. Ese último caso es lo que obliga a que sea una diferencia: medir
+      "cuánto gusta el café al desayuno" cobraría por segunda vez lo que el nivel puntual ya
+      cobró.
+      El recorte no es decorativo: la resta de dos fuerzas vive en `[-2, 2]`, y sin tope
+      este eje podría mover el score el doble de su perilla, que es la invariante que
+      sostiene que una perilla acote un eje.
+- [x] **Sin perilla de escala propia**, a diferencia del nivel atributo. Una categoría pesa
+      la mitad porque es una *generalización* y tiene que quedar por debajo de la evidencia
+      directa; una franja es un *recorte más específico*, así que no hay razón para creerle
+      sistemáticamente menos. Lo que sabe de menos ya se lo descuenta su propia confianza,
+      que con menos observaciones es más baja: una sola observación al desayuno mueve `+0.04`
+      y veinte mueven `+0.109`.
+- [x] **La franja la declara el generador, no la re-deriva el scorer.** `meal_generator` ya
+      calcula el `meal_type` (y acepta que se lo pasen por parámetro), así que lo pone en
+      cada candidato. Re-derivarlo en el scorer duplicaría las ventanas horarias de
+      `_current_meal_type`, acoplaría el scorer al reloj del sistema y discreparía con el
+      generador justo cuando alguien usa el override. Los candidatos que no son de comida no
+      declaran franja, y por eso el eje se limita solo.
+- [x] `"other"` **no es una franja**: es el default de `MealEvent.meal_type`, o sea lo que
+      queda cuando la captura no dijo la hora. Contarlo como una franja más haría que cada
+      comida sin hora argumentara contra todas las franjas reales — un plato bajaría de score
+      a todas las horas por el solo hecho de estar registrado. `"brunch"` sí está, aunque
+      ningún generador lo sugiera: lo produce `app/nlp/rules.py` y es una hora real del día.
+- [x] La franja **no filtra**, por la razón del nivel atributo y una más fuerte: lo que hay
+      del otro lado es una **ausencia**, y que nunca se haya registrado un café a la cena no
+      es un "no". Usar la ausencia como señal es lo que la 4.4.3 dejó postergado a propósito,
+      junto con el umbral mínimo de evidencia para filtrar.
+- [x] Siete tests nuevos (`TestTimeOfDayLearning`): el ejemplo del plan tal cual, el plato
+      indiferente a la hora, que una observación es una pista y veinte son una regla, que una
+      comida sin hora (y una con `"other"`) no dice nada del reloj, que el contraste nunca
+      excede una perilla, que una hora nunca es un veto, y que el generador declara la franja
+      que está ofreciendo —incluido el override—.
+- [x] Este eje aprende **solo de lo implícito**, y es una corrección al plan que conviene
+      dejar escrita: el único escritor de una hora es `MealService.log_meal`. El feedback
+      explícito no puede cargar una franja porque **`Suggestion` no tiene columna de
+      contexto** ni de `meal_type`, y agregarla es una migración — la v3 gastó la única que
+      tenía en la `0003`. No es un lector sin escritor: el escritor existe desde la 4.4.1.
 
 **4.4.6 — Separar "me gusta" de "lo comí ayer"**
 

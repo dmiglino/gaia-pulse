@@ -88,6 +88,7 @@ def _signal(
     *,
     source_type: str = "explicit",
     age_days: float | None = None,
+    context: dict[str, Any] | None = None,
 ) -> Any:
     """Una señal en memoria, con el sujeto en las columnas que el lector mira.
 
@@ -111,6 +112,7 @@ def _signal(
         value=value,
         source_type=source_type,
         created_at=created_at,
+        context_json=context,
     )
 
 
@@ -584,6 +586,156 @@ class TestAttributeLevelLearning:
                 value=-1.0,
                 source_type="explicit",
             )
+
+
+class TestTimeOfDayLearning:
+    """Aprender *cuándo* le gusta algo, no solo qué (4.4.5).
+
+    El café del desayuno y el café de la cena son el mismo sujeto con dos respuestas
+    distintas, y hasta acá la app las promediaba en un solo número. La franja sale del
+    `meal_type` que `MealService.log_meal` mete en `context_json` desde la 4.4.1, así que
+    este eje aprende de lo implícito: `Suggestion` no tiene columna de contexto y agregarla
+    sería una migración que la v3 no tiene disponible.
+    """
+
+    @staticmethod
+    def _ate(diego: User, name: str, slot: str, times: int) -> list[Any]:
+        return [
+            _signal(
+                diego,
+                "repeated_meal_choice",
+                "food",
+                name,
+                1.0,
+                source_type="implicit",
+                context={"meal_type": slot},
+            )
+        ] * times
+
+    def test_coffee_at_breakfast_not_at_dinner(self, diego: User) -> None:
+        """El ejemplo del plan, palabra por palabra."""
+        history = self._ate(diego, "cafe", "breakfast", 20)
+        morning = _candidate("Café", "food", "cafe", category="meal", meal_type="breakfast")
+        evening = _candidate("Café", "food", "cafe", category="meal", meal_type="dinner")
+
+        (at_breakfast,) = score_candidates([morning], diego, history, [])
+        (at_dinner,) = score_candidates([evening], diego, history, [])
+        assert at_dinner["_score"] < 0.5 < at_breakfast["_score"]
+
+    def test_a_food_eaten_at_every_hour_is_indifferent_to_the_hour(self, diego: User) -> None:
+        """Un plato que se come a cualquier hora no debería moverse por la hora.
+
+        Es lo que obliga a que esto sea una **diferencia** entre franjas y no el promedio
+        dentro de una: la milanesa gusta —y eso ya lo cobra el nivel puntual—, pero no
+        gusta *más al almuerzo*.
+        """
+        history = self._ate(diego, "milanesa", "lunch", 10) + self._ate(
+            diego, "milanesa", "dinner", 10
+        )
+        at_lunch = _candidate("Milanesas", "food", "milanesa", category="meal", meal_type="lunch")
+        no_slot = _candidate("Milanesas", "food", "milanesa", category="meal")
+
+        (with_slot,) = score_candidates([at_lunch], diego, history, [])
+        (without_slot,) = score_candidates([no_slot], diego, history, [])
+        assert with_slot["_score"] == without_slot["_score"]
+
+    def test_one_observation_is_a_hint_and_twenty_are_a_rule(self, diego: User) -> None:
+        """La confianza por evidencia de la 4.4.3 vale igual acá: una vez no es un hábito."""
+        candidate = _candidate("Café", "food", "cafe", category="meal", meal_type="breakfast")
+
+        (once,) = score_candidates([candidate], diego, self._ate(diego, "cafe", "breakfast", 1), [])
+        (often,) = score_candidates(
+            [candidate], diego, self._ate(diego, "cafe", "breakfast", 20), []
+        )
+        assert 0.5 < once["_score"] < often["_score"]
+
+    def test_a_meal_without_an_hour_says_nothing_about_the_hour(self, diego: User) -> None:
+        """`"other"` es el default de la columna, no una franja.
+
+        Contarlo como una franja más haría que cada comida sin hora argumentara contra todas
+        las franjas reales — un plato registrado sin hora bajaría de score a todas las horas
+        por el solo hecho de estar registrado.
+        """
+        untagged = [
+            _signal(diego, "repeated_meal_choice", "food", "pollo", 1.0, source_type="implicit")
+        ] * 8
+        as_other = self._ate(diego, "pollo", "other", 8)
+        candidate = _candidate(
+            "Pollo al horno", "food", "pollo", category="meal", meal_type="lunch"
+        )
+
+        (without_context,) = score_candidates([candidate], diego, untagged, [])
+        (with_other,) = score_candidates([candidate], diego, as_other, [])
+        assert with_other["_score"] == without_context["_score"]
+        assert learning.slot_affinities(as_other) == {}
+
+    def test_the_contrast_never_exceeds_one_knob(self, diego: User) -> None:
+        """La resta de dos fuerzas vive en `[-2, 2]`; sin el recorte, un eje movería el doble.
+
+        Con evidencia grande a los dos lados —café al desayuno, rechazos de café a la cena—
+        `in_slot` tiende a `+1` y `off_slot` a `−1`, así que la resta se va a `+2`.
+        """
+        history = (
+            self._ate(diego, "cafe", "breakfast", 40)
+            + [
+                _signal(
+                    diego,
+                    "rejected_suggestion",
+                    "food",
+                    "cafe",
+                    -1.0,
+                    context={"meal_type": "dinner"},
+                )
+            ]
+            * 40
+        )
+        contrast = learning.slot_contrast(
+            ("food", "cafe"), "breakfast", slots=learning.slot_affinities(history)
+        )
+        assert contrast == pytest.approx(1.0)
+
+    def test_an_hour_is_never_a_veto(self, diego: User) -> None:
+        """Que nunca se haya registrado un café a la cena no es un "no".
+
+        Es la misma razón por la que el nivel atributo no filtra, más una más fuerte: acá
+        lo que hay es una **ausencia**, y usar la ausencia como señal es lo que la 4.4.3
+        dejó postergado a propósito, junto con el umbral mínimo de evidencia para filtrar.
+        """
+        history = self._ate(diego, "cafe", "breakfast", 40)
+        candidate = _candidate("Café", "food", "cafe", category="meal", meal_type="dinner")
+
+        assert apply_signal_constraints([candidate], history) == [candidate]
+        (scored,) = score_candidates([candidate], diego, history, [])
+        assert scored["_score"] > 0.0
+
+    def test_the_generator_declares_the_slot_it_is_offering(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """El scorer no re-deriva la hora: la lee del candidato.
+
+        Re-derivarla sería duplicar las ventanas horarias de `_current_meal_type` y
+        discrepar con el generador justo cuando alguien pasa `meal_type` a mano — que es
+        exactamente lo que hace este test.
+        """
+        from app.recommendations.generators import meal_generator
+
+        food = FoodItem(canonical_name="avena", base_unit="g", category="grain")
+        db.add(food)
+        db.flush()
+        db.add(
+            PantryStock(
+                household_id=household.id,
+                food_item_id=food.id,
+                current_quantity=100,
+                unit="g",
+                low_stock_threshold=500,
+            )
+        )
+        db.flush()
+
+        candidates = meal_generator.generate(db, diego, [], meal_type="breakfast")
+        assert candidates, "el generador no produjo candidatos con stock cargado"
+        assert {learning.candidate_slot(c) for c in candidates} == {"breakfast"}
 
 
 class TestSignalConstraints:

@@ -8,6 +8,9 @@ Scoring model (additive):
 - Y lo mismo con el **atributo** del sujeto —la categoría del alimento—, descontando lo
   que el sujeto mismo aportó y valiendo la mitad: es lo que permite acertar con algo que
   la persona nunca vio, sin que una categoría pese como una opinión sobre el plato
+- Y si el candidato declara la **franja horaria** para la que se ofrece, cuánto mejor le
+  cae ese sujeto a esa hora que al resto de las horas: es lo que separa el café del
+  desayuno del café de la cena, que hasta acá eran el mismo número
 - A subject already suggested in the last few days receives a diversity penalty
 - Scores are clamped to [0.0, 1.0]
 
@@ -113,6 +116,13 @@ def score_candidates(
     attributes = subject_attributes or {}
     by_attribute = learning.attribute_affinities(relevant_signals, attributes)
 
+    #: Y las mismas señales partidas por hora, para el eje temporal. No lleva perilla de
+    #: escala propia —a diferencia del atributo— porque una franja no es una
+    #: generalización sino un recorte más específico: no hay razón para creerle
+    #: sistemáticamente menos, y lo que sabe de menos ya se lo descuenta su propia
+    #: confianza, que con menos observaciones es más baja.
+    by_slot = learning.slot_affinities(relevant_signals)
+
     #: Los sujetos ya sugeridos hace poco, para no repetirlos. Antes esto era un conjunto
     #: de títulos, y las dos comparaciones —exacta y por solape de tokens— fallaban del
     #: mismo modo: "Use your milk today" y "Use your last milk" son la misma sugerencia
@@ -175,6 +185,24 @@ def score_candidates(
                     generalized.direction,
                     generalized.evidence,
                 )
+
+            #: El tercer eje: la hora. Solo participan los candidatos que declaran para
+            #: qué franja se ofrecen —hoy los de comida—, y solo mueve el score si el
+            #: sujeto se comporta distinto a esa hora que al resto. Como los otros dos, no
+            #: filtra: que nunca se haya registrado un café a la cena no es un "no".
+            slot = learning.candidate_slot(candidate)
+            if slot is not None:
+                contrast = learning.slot_contrast(subject, slot, slots=by_slot)
+                if contrast:
+                    delta = _learned_delta(contrast)
+                    adjustment += delta
+                    logger.debug(
+                        "Candidate %r: %+.3f from slot %s (contraste=%+.2f)",
+                        candidate.get("title"),
+                        delta,
+                        slot,
+                        contrast,
+                    )
 
             if subject in recent_subjects:
                 adjustment -= _DIVERSITY_PENALTY
