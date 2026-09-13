@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_now
 from app.core.config import get_settings
 from app.i18n import setup_jinja2_i18n
 from app.models.user import User
@@ -56,6 +57,11 @@ templates.env.globals["csrf_token"] = lambda request: hashlib.sha256(
     f"{request.url.path}:{request.client.host if request.client else 'local'}".encode()
 ).hexdigest()
 templates.env.globals["locale"] = _settings.default_locale
+# `home.html` ya llamaba a `now()` detrás de un `{% if now is defined %}`, y el
+# global nunca había existido: el saludo quedaba clavado en "buenas tardes" y la
+# fecha decía "Hoy". Es una función, no un valor, para que cada render lea la hora
+# del momento y no la del arranque del proceso.
+templates.env.globals["now"] = local_now
 setup_jinja2_i18n(templates.env, _settings.default_locale)
 
 

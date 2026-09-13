@@ -27,6 +27,11 @@ dependencies = [
     "pillow>=10.4.0",
     "aiofiles>=24.1.0",
     "babel>=2.14.0",
+    # `zoneinfo` lee la base de datos de timezones del sistema, y la imagen
+    # `python:3.12-slim` no trae `tzdata`. Sin esto, `ZoneInfo(settings.timezone)`
+    # falla en producción y el reloj de `app/core/clock.py` cae a UTC — es decir,
+    # tres horas corridas en cada hora que ve el usuario.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

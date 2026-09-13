@@ -1,8 +1,7 @@
-from datetime import date
-
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 
+from app.core.clock import local_today
 from app.core.dependencies import DB, CurrentUser
 from app.services.body_metric_service import BodyMetricService
 from app.services.meal_service import MealService
@@ -36,6 +35,8 @@ def home(request: Request, current_user: CurrentUser, db: DB) -> HTMLResponse:
         current_user.id, current_user.household_id
     )
     ctx["low_stock_items"] = pantry_svc.get_low_stock(current_user.household_id)[:5]
-    ctx["today"] = date.today()
+    # `date.today()` usa la timezone del proceso (UTC en el contenedor), así que
+    # entre las 21:00 y la medianoche local el "hoy" del Home era el día siguiente.
+    ctx["today"] = local_today()
 
     return templates.TemplateResponse("home.html", ctx)
