@@ -1001,3 +1001,38 @@ msgstr "Señal inválida: %(signal)s."
 
 msgid "Preference saved."
 msgstr "Preferencia guardada."
+
+# ─── Fase 2: chrome, tema y páginas standalone ───────────────────────────────
+
+msgid "Main navigation"
+msgstr "Navegación principal"
+
+msgid "Appearance"
+msgstr "Apariencia"
+
+msgid "Dark mode"
+msgstr "Modo oscuro"
+
+msgid "Light mode"
+msgstr "Modo claro"
+
+msgid "Activity Level"
+msgstr "Nivel de actividad"
+
+msgid "Show password"
+msgstr "Mostrar contraseña"
+
+msgid "Hide password"
+msgstr "Ocultar contraseña"
+
+msgid "Back to Home"
+msgstr "Volver al inicio"
+
+msgid "Capture something"
+msgstr "Registrar algo"
+
+msgid "The page you are looking for does not exist or was moved."
+msgstr "La página que buscás no existe o se movió."
+
+msgid "If this keeps happening, the data you were saving may not have been recorded."
+msgstr "Si esto sigue pasando, puede que lo que estabas guardando no se haya registrado."

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import 'components/ui.html' as ui %}
 {% block title %}{{ _('Profile') }}{% endblock %}
 
 {% block content %}
@@ -14,6 +15,17 @@
       <h1 class="text-2xl font-bold text-slate-900">{{ current_user.name }}</h1>
       <p class="text-sm text-slate-500">{{ current_user.email }}</p>
     </div>
+  </div>
+
+  {#- Apariencia. El toggle de la sidebar no existe en mobile (no hay sidebar, y
+      los seis huecos de la barra inferior están ocupados), así que sin esta fila
+      el modo oscuro sería inaccesible desde el teléfono.
+      El resto de esta pantalla sigue en `slate`: el barrido a tokens es la fase 3. -#}
+  <div class="bg-card rounded-card border border-line shadow-sm p-3">
+    <p class="px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+      {{ _('Appearance') }}
+    </p>
+    {{ ui.theme_toggle() }}
   </div>
 
   <!-- Profile form -->

@@ -1,179 +1,126 @@
-<!DOCTYPE html>
-<html lang="{{ locale | replace('_', '-') }}" class="h-full">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#6366f1" />
-  <title>{{ _('Sign in') }} — GaiaPulse</title>
+{#
+  Login. Ya no es un documento suelto con su propia `tailwind.config`: esa copia
+  no incluía la escala `brand` aunque la página usara clases `brand-*`, así que
+  los colores de marca del login **nunca se aplicaban**. Ahora hereda la misma
+  config que el resto de la app desde `layouts/shell.html`.
+#}
+{% extends 'layouts/shell.html' %}
+{% import 'components/icons.html' as ic %}
+{% import 'components/ui.html' as ui %}
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    // Same brand scale as base.html — this page cannot extend it because the
-    // error/auth pages are standalone documents. Phase 2 folds all of these
-    // <head>s into a single layouts/shell.html.
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50:  '#eef2ff',
-              100: '#e0e7ff',
-              200: '#c7d2fe',
-              300: '#a5b4fc',
-              400: '#818cf8',
-              500: '#6366f1',
-              600: '#4f46e5',
-              700: '#4338ca',
-              800: '#3730a3',
-              900: '#312e81',
-            }
-          },
-          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
-        }
-      }
-    }
-  </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-  <link rel="stylesheet" href="/static/css/app.css" />
-</head>
-<body class="h-full bg-gradient-to-br from-slate-50 via-brand-50/30 to-violet-50 font-sans antialiased" x-data>
+{% block title %}{{ _('Sign in') }}{% endblock %}
 
-  <!-- Decorative background blobs -->
-  <div class="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-    <div class="absolute -top-40 -right-32 w-96 h-96 rounded-full bg-brand-200/25 blur-3xl"></div>
-    <div class="absolute -bottom-32 -left-20 w-80 h-80 rounded-full bg-violet-200/30 blur-3xl"></div>
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-emerald-100/20 blur-3xl"></div>
-  </div>
+{#- Sin sesión no hay nada que pedir por HTMX ni nada que graficar: de los tres
+    scripts del shell queda solo Alpine, con la misma versión fija y el mismo
+    `integrity` que allá (ver el comentario de `shell.html`). -#}
+{% block head_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.2/dist/cdn.min.js" defer
+        integrity="sha384-lcaMFHdvRVsEXVuhit4fTnbxq6eTLm5HPdNzO7vXNZjr8HOCMouPmv4hSGF3PCJV"
+        crossorigin="anonymous"></script>
+{% endblock %}
 
-  <div class="relative min-h-full flex flex-col items-center justify-center px-4 py-12">
+{% block body_class %}bg-gradient-to-br from-surface via-brand-50/40 to-move-soft/60{% endblock %}
 
-    <!-- Card -->
-    <div class="w-full max-w-md">
+{% block body %}
+<div class="fixed inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+  <div class="absolute -top-40 -right-32 w-96 h-96 rounded-pill bg-brand-300/20 blur-3xl"></div>
+  <div class="absolute -bottom-32 -left-20 w-80 h-80 rounded-pill bg-move-solid/15 blur-3xl"></div>
+  <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-pill bg-food-solid/10 blur-3xl"></div>
+</div>
 
-      <!-- Logo + brand -->
-      <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 shadow-lg shadow-brand-300/50 mb-4">
-          <svg class="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-          </svg>
-        </div>
-        <h1 class="text-3xl font-bold text-slate-800 tracking-tight">GaiaPulse</h1>
-        <p class="mt-1.5 text-slate-500 text-sm">{{ _('Your household wellness companion') }}</p>
-      </div>
+<div class="relative min-h-full flex flex-col items-center justify-center px-4 py-12">
+  <div class="w-full max-w-md">
 
-      <!-- Welcome text -->
-      <div class="bg-gradient-to-r from-brand-500/10 to-violet-500/10 rounded-2xl px-5 py-4 mb-6 border border-brand-100">
-        <p class="text-sm text-slate-700 text-center leading-relaxed">
-          {{ _('Sign in to track your meals, workouts, and wellness together.') }}
-        </p>
-        <div class="flex items-center justify-center gap-4 mt-3">
-          <div class="flex items-center gap-1.5">
-            <div class="w-6 h-6 rounded-full bg-brand-500 flex items-center justify-center text-white text-xs font-bold">D</div>
-            <span class="text-xs text-slate-600 font-medium">Diego</span>
-          </div>
-          <div class="w-px h-4 bg-slate-200"></div>
-          <div class="flex items-center gap-1.5">
-            <div class="w-6 h-6 rounded-full bg-pink-500 flex items-center justify-center text-white text-xs font-bold">R</div>
-            <span class="text-xs text-slate-600 font-medium">Rocío</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Login form card -->
-      <div class="bg-white rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-100 overflow-hidden">
-        <div class="px-8 py-8">
-          <h2 class="text-xl font-semibold text-slate-800 mb-6">{{ _('Sign in to your account') }}</h2>
-
-          <!-- Error display -->
-          {% if error %}
-          <div class="mb-5 flex items-start gap-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm">
-            <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/>
-            </svg>
-            <p>{{ error }}</p>
-          </div>
-          {% endif %}
-
-          <form method="POST" action="/login" x-data="{ showPass: false, loading: false }" @submit="loading = true" class="space-y-5">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
-
-            <!-- Email -->
-            <div>
-              <label for="email" class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Email address') }}</label>
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/>
-                  </svg>
-                </div>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autocomplete="email"
-                  required
-                  value="{{ email_value | default('') }}"
-                  class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors bg-slate-50 focus:bg-white"
-                  placeholder="{{ _('you@example.com') }}"
-                />
-              </div>
-            </div>
-
-            <!-- Password -->
-            <div>
-              <label for="password" class="block text-sm font-medium text-slate-700 mb-1.5">{{ _('Password') }}</label>
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/>
-                  </svg>
-                </div>
-                <input
-                  id="password"
-                  name="password"
-                  :type="showPass ? 'text' : 'password'"
-                  autocomplete="current-password"
-                  required
-                  class="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-xl text-slate-800 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors bg-slate-50 focus:bg-white"
-                  placeholder="{{ _('Your password') }}"
-                />
-                <button type="button" @click="showPass = !showPass"
-                  class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 transition-colors">
-                  <svg x-show="!showPass" x-cloak class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                  </svg>
-                  <svg x-show="showPass" x-cloak class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- Submit -->
-            <button
-              type="submit"
-              :disabled="loading"
-              class="w-full flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-300 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-md shadow-brand-200/50 hover:shadow-lg hover:shadow-brand-300/40 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 text-sm"
-            >
-              <svg x-show="loading" x-cloak class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <span x-text="loading ? '{{ _('Signing in…') }}' : '{{ _('Sign in') }}'">{{ _('Sign in') }}</span>
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <p class="text-center text-xs text-slate-400 mt-6">
-        {{ _("GaiaPulse — A private wellness companion for Diego & Rocío's household.") }}
-      </p>
+    <div class="text-center mb-8">
+      <span class="inline-flex items-center justify-center w-16 h-16 rounded-card bg-brand-500 text-white shadow-lg shadow-brand-500/30 mb-4">
+        {{ ic.icon('heart', 'w-8 h-8', stroke=2) }}
+      </span>
+      <h1 class="text-3xl font-bold text-ink tracking-tight">GaiaPulse</h1>
+      <p class="mt-1.5 text-sm text-ink-muted">{{ _('Your household wellness companion') }}</p>
     </div>
-  </div>
 
-</body>
-</html>
+    <div class="bg-brand-500/5 rounded-card px-5 py-4 mb-6 border border-brand-200/60">
+      <p class="text-sm text-ink text-center leading-relaxed">
+        {{ _('Sign in to track your meals, workouts, and wellness together.') }}
+      </p>
+      <div class="flex items-center justify-center gap-4 mt-3">
+        <span class="flex items-center gap-1.5">
+          <span class="w-6 h-6 rounded-pill bg-brand-500 flex items-center justify-center text-white text-xs font-bold">D</span>
+          <span class="text-xs font-medium text-ink-muted">Diego</span>
+        </span>
+        <span class="w-px h-4 bg-line" aria-hidden="true"></span>
+        <span class="flex items-center gap-1.5">
+          <span class="w-6 h-6 rounded-pill bg-danger-solid flex items-center justify-center text-white text-xs font-bold">R</span>
+          <span class="text-xs font-medium text-ink-muted">Rocío</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="bg-card rounded-card border border-line shadow-xl shadow-ink/5 px-8 py-8">
+      <h2 class="text-xl font-semibold text-ink mb-6">{{ _('Sign in to your account') }}</h2>
+
+      {% if error %}
+      <div class="mb-5">{{ ui.notice(error, tone='danger') }}</div>
+      {% endif %}
+
+      <form method="POST" action="/login" x-data="{ showPass: false, loading: false }"
+            @submit="loading = true" class="space-y-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+
+        <div>
+          <label for="email" class="block text-sm font-medium text-ink mb-1.5">{{ _('Email address') }}</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-ink-subtle pointer-events-none">
+              {{ ic.icon('envelope', 'w-4 h-4') }}
+            </span>
+            <input id="email" name="email" type="email" autocomplete="email" required
+                   value="{{ email_value | default('') }}"
+                   placeholder="{{ _('you@example.com') }}"
+                   class="{{ ui.INPUT_CLASS }} pl-10" />
+          </div>
+        </div>
+
+        <div>
+          <label for="password" class="block text-sm font-medium text-ink mb-1.5">{{ _('Password') }}</label>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-ink-subtle pointer-events-none">
+              {{ ic.icon('lock', 'w-4 h-4') }}
+            </span>
+            {#- `type` estático **además** del `:type` de Alpine: Alpine llega con
+                `defer` desde un CDN, y entre el parseo del HTML y su arranque —o
+                para siempre, si el CDN está bloqueado o caído— un input sin `type`
+                vale `text`, así que la contraseña se escribiría a la vista. -#}
+            <input id="password" name="password" type="password" :type="showPass ? 'text' : 'password'"
+                   autocomplete="current-password" required
+                   placeholder="{{ _('Your password') }}"
+                   class="{{ ui.INPUT_CLASS }} pl-10 pr-10" />
+            {#- El `aria-label` estático es el que vale hasta que Alpine arranca (y
+                para siempre si el CDN está caído): sin él el único nombre accesible
+                del botón era el `:aria-label` de Alpine, o sea ninguno. Alpine lo
+                pisa al montar. El ícono del estado inicial tampoco lleva `x-cloak`,
+                porque `x-cloak` sobre algo que **sí** debe verse desde el principio
+                deja el botón visualmente vacío. -#}
+            <button type="button" @click="showPass = !showPass"
+                    aria-label="{{ _('Show password') }}"
+                    :aria-label="showPass ? '{{ _('Hide password') }}' : '{{ _('Show password') }}'"
+                    class="absolute inset-y-0 right-0 pr-3 flex items-center text-ink-subtle hover:text-ink transition-colors">
+              <span x-show="!showPass">{{ ic.icon('eye', 'w-4 h-4') }}</span>
+              <span x-show="showPass" x-cloak>{{ ic.icon('eye-off', 'w-4 h-4') }}</span>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" :disabled="loading"
+                class="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-control text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 shadow-md shadow-brand-500/25 transition-all disabled:opacity-60 disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <span x-show="loading" x-cloak>{{ ic.spinner() }}</span>
+          <span x-text="loading ? '{{ _('Signing in…') }}' : '{{ _('Sign in') }}'">{{ _('Sign in') }}</span>
+        </button>
+      </form>
+    </div>
+
+    <p class="text-center text-xs text-ink-subtle mt-6">
+      {{ _("GaiaPulse — A private wellness companion for Diego & Rocío's household.") }}
+    </p>
+  </div>
+</div>
+{% endblock %}

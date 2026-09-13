@@ -1,11 +1,39 @@
-<!DOCTYPE html>
-<html lang="{{ locale | replace('_', '-') | default('es-AR') }}"><head><meta charset="UTF-8"><title>{{ _('Something went wrong') }} — GaiaPulse</title>
-<script src="https://cdn.tailwindcss.com"></script></head>
-<body class="min-h-screen bg-slate-50 flex items-center justify-center">
-<div class="text-center space-y-3">
-  <p class="text-6xl">⚡</p>
-  <h1 class="text-2xl font-bold text-slate-900">{{ _('Something went wrong') }}</h1>
-  <p class="text-slate-500">{{ _('An unexpected error occurred. Please try again.') }}</p>
-  <a href="/" class="inline-block mt-4 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700">{{ _('Back to home') }}</a>
+{#
+  500. Misma historia que el 404, y además no tenía meta viewport — en el
+  teléfono se veía a escala de escritorio. Ahora la hereda de `shell.html`.
+
+  El botón de reintentar apunta a la misma URL: `request` es lo único que el
+  handler de `app/main.py` pasa al contexto, y alcanza.
+#}
+{% extends 'layouts/shell.html' %}
+{% import 'components/icons.html' as ic %}
+{% import 'components/ui.html' as ui %}
+
+{% block title %}{{ _('Something went wrong') }}{% endblock %}
+
+{% block head_scripts %}{% endblock %}
+
+{% block body %}
+<div class="min-h-full flex flex-col items-center justify-center px-4 py-12 text-center">
+  <span class="inline-flex items-center justify-center w-16 h-16 rounded-card bg-danger-soft text-danger-ink mb-6">
+    {{ ic.icon('alert-circle', 'w-8 h-8') }}
+  </span>
+
+  <p class="text-sm font-semibold tracking-widest text-ink-subtle uppercase">500</p>
+  <h1 class="mt-2 text-3xl font-bold text-ink tracking-tight">{{ _('Something went wrong') }}</h1>
+  <p class="mt-3 max-w-sm text-sm text-ink-muted leading-relaxed">
+    {{ _('An unexpected error occurred. Please try again.') }}
+  </p>
+
+  <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+    {#- `request.url`, no `.path`: con `.path` un 500 en `/history?tab=meals` mandaba
+        el "reintentar" a `/history`, o sea a otra pantalla. -#}
+    {{ ui.btn(_('Try again'), href=request.url, icon='refresh') }}
+    {{ ui.btn(_('Back to Home'), href='/', tone='secondary', icon='home') }}
+  </div>
+
+  <p class="mt-6 text-xs text-ink-subtle">
+    {{ _('If this keeps happening, the data you were saving may not have been recorded.') }}
+  </p>
 </div>
-</body></html>
+{% endblock %}

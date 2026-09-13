@@ -1,11 +1,36 @@
-<!DOCTYPE html>
-<html lang="{{ locale | replace('_', '-') | default('es-AR') }}"><head><meta charset="UTF-8"><title>{{ _('Page not found') }} — GaiaPulse</title>
-<script src="https://cdn.tailwindcss.com"></script></head>
-<body class="min-h-screen bg-slate-50 flex items-center justify-center">
-<div class="text-center space-y-3">
-  <p class="text-6xl">🌿</p>
-  <h1 class="text-2xl font-bold text-slate-900">{{ _('Page not found') }}</h1>
-  <p class="text-slate-500">{{ _("That page doesn't exist.") }}</p>
-  <a href="/" class="inline-block mt-4 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-700">{{ _('Back to home') }}</a>
+{#
+  404. Era un documento de 11 líneas con Tailwind CDN sin config, un emoji como
+  ilustración y un `bg-indigo-600` que no existía en ningún otro lado de la app.
+  Ahora comparte el `<head>`, la fuente y los tokens con el resto.
+
+  Los handlers de error de `app/main.py` pasan solo `{"request": request}`, así
+  que esta página no puede leer `current_user` ni el conteo de notificaciones:
+  por eso extiende `shell.html` y no `base.html`.
+#}
+{% extends 'layouts/shell.html' %}
+{% import 'components/icons.html' as ic %}
+{% import 'components/ui.html' as ui %}
+
+{% block title %}{{ _('Page not found') }}{% endblock %}
+
+{#- Sin HTMX, sin Alpine, sin Chart.js: acá no hay nada que pedir ni graficar. -#}
+{% block head_scripts %}{% endblock %}
+
+{% block body %}
+<div class="min-h-full flex flex-col items-center justify-center px-4 py-12 text-center">
+  <span class="inline-flex items-center justify-center w-16 h-16 rounded-card bg-brand-50 text-brand-700 mb-6">
+    {{ ic.icon('search', 'w-8 h-8') }}
+  </span>
+
+  <p class="text-sm font-semibold tracking-widest text-ink-subtle uppercase">404</p>
+  <h1 class="mt-2 text-3xl font-bold text-ink tracking-tight">{{ _('Page not found') }}</h1>
+  <p class="mt-3 max-w-sm text-sm text-ink-muted leading-relaxed">
+    {{ _('The page you are looking for does not exist or was moved.') }}
+  </p>
+
+  <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+    {{ ui.btn(_('Back to Home'), href='/', icon='home') }}
+    {{ ui.btn(_('Capture something'), href='/capture', tone='secondary', icon='microphone') }}
+  </div>
 </div>
-</body></html>
+{% endblock %}

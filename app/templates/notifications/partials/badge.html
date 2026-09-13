@@ -1,14 +1,26 @@
-{# Unread-notification badge. Polls itself every 60s and is replaced in place
-   by GET /notifications/badge.
+{# Contador de notificaciones sin leer. Se auto-pollea cada 60s y se reemplaza en
+   el lugar con GET /notifications/badge.
+
+   Se incluye **dos veces** (sidebar de desktop y barra inferior de mobile), y un
+   `id` duplicado rompería el swap de HTMX, así que el id llega por `badge_id`:
+
+     {% with badge_id = 'notif-badge-mobile' %}{% include ... %}{% endwith %}
+
+   Antes la barra de mobile tenía su propia copia escrita a mano, sin id y sin
+   poll: el contador del teléfono nunca se actualizaba.
+
    Variables:
-     unread_notifications_count: int (injected by get_template_context) #}
+     unread_notifications_count: int (lo inyecta get_template_context)
+     badge_id: str (opcional, default 'notif-badge')
+#}
 {% set count = unread_notifications_count | default(0, true) %}
-<span id="notif-badge"
-      hx-get="/notifications/badge"
+{% set bid = badge_id | default('notif-badge', true) %}
+<span id="{{ bid }}"
+      hx-get="/notifications/badge?badge_id={{ bid }}"
       hx-trigger="every 60s"
       hx-swap="outerHTML"
       {% if count > 0 %}
       role="status"
       aria-label="{{ _('%(count)s unread notifications', count=count) }}"
-      class="absolute -top-1.5 -right-1.5 h-4 w-4 bg-rose-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none"
+      class="absolute -top-1.5 -right-1.5 min-w-[1.05rem] h-[1.05rem] px-1 bg-danger-solid text-white text-[0.6rem] font-bold rounded-pill flex items-center justify-center leading-none"
       {% endif %}>{% if count > 0 %}{{ count if count < 10 else '9+' }}{% endif %}</span>

@@ -7,6 +7,9 @@ from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
 
+# Los dos lugares donde `base.html` incluye el badge. Ver `notifications_badge`.
+_BADGE_IDS = frozenset({"notif-badge", "notif-badge-mobile"})
+
 
 @router.get("/", response_class=HTMLResponse)
 def notifications_index(
@@ -30,13 +33,25 @@ def notifications_index(
 
 
 @router.get("/badge", response_class=HTMLResponse)
-def notifications_badge(request: Request, current_user: CurrentUser, db: DB) -> HTMLResponse:
-    """Return just the unread badge, so the nav can refresh it without a reload."""
+def notifications_badge(
+    request: Request, current_user: CurrentUser, db: DB, badge_id: str = "notif-badge"
+) -> HTMLResponse:
+    """Return just the unread badge, so the nav can refresh it without a reload.
+
+    The badge is rendered twice — desktop sidebar and mobile bottom bar — and each
+    copy polls itself, so it has to come back carrying the same ``id`` it went out
+    with or the second swap would produce a duplicate ``id``. Whitelisted rather
+    than echoed: the value lands in an ``id`` attribute.
+    """
+    if badge_id not in _BADGE_IDS:
+        badge_id = "notif-badge"
+
     svc = NotificationService(db)
     return templates.TemplateResponse(
         "notifications/partials/badge.html",
         {
             "request": request,
+            "badge_id": badge_id,
             "unread_notifications_count": svc.get_unread_count(
                 current_user.id, current_user.household_id
             ),
