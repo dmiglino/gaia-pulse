@@ -100,6 +100,12 @@ def _signal(
     Sin `age_days` la señal queda sin `created_at` —como una recién grabada y todavía no
     volcada— y por lo tanto sin descuento por edad: los tests que no hablan del tiempo
     siguen midiendo lo que medían antes de la 4.4.2.
+
+    Con una excepción desde la 4.4.6: para la saciedad, una señal de consumo sin fecha es
+    consumo que está pasando **ahora**, o sea presión máxima. No es un accidente del
+    helper, es el caso correcto —un acto en curso llena—, pero significa que un test sobre
+    el gusto que use señales de consumo tiene que darles una edad, o va a medir las dos
+    cosas a la vez.
     """
     from app.models.signal import BehaviorSignal
 
@@ -260,6 +266,9 @@ class TestTemporalDecay:
                 source_type="implicit",
                 age_days=120,
             ),
+            #: Diez días y no uno: desde la 4.4.6 una comida de ayer también produce
+            #: saciedad, y este test habla del decaimiento del gusto, no de eso. A diez
+            #: días la saciedad ya se apagó y lo único que queda comparando es la edad.
             _signal(
                 diego,
                 "repeated_meal_choice",
@@ -267,7 +276,7 @@ class TestTemporalDecay:
                 "lentejas",
                 1.0,
                 source_type="implicit",
-                age_days=1,
+                age_days=10,
             ),
         ]
         candidates = [
@@ -325,7 +334,11 @@ class TestConfidenceByEvidence:
 
     def test_one_observation_moves_less_than_six(self, db: Session, diego: User) -> None:
         candidate = _candidate("Go biking", "exercise", "biking")
-        once = [_signal(diego, "repeated_activity", "exercise", "biking", 1.0)]
+        #: Con fecha, y no de este instante: seis salidas en bici pasan en varias semanas,
+        #: no en un segundo, y una señal sin fecha la lee la saciedad (4.4.6) como algo que
+        #: está pasando ahora mismo. Este test mide cuánto sabe la app, no cuánto hubo hace
+        #: un rato, así que las pone donde la vida las pone: en el pasado.
+        once = [_signal(diego, "repeated_activity", "exercise", "biking", 1.0, age_days=14)]
         six_times = once * 6
 
         (weak,) = score_candidates([candidate], diego, once, [])
@@ -338,24 +351,30 @@ class TestConfidenceByEvidence:
         Es lo que separa "aprender que le gusta" de "contar cuántas veces lo comió": sin
         saturación un alimento de todos los días se lleva el ajuste entero por delante de
         todo lo demás, para siempre, y el loop empuja a repetir en vez de a variar.
+
+        Se mide sobre la fuerza aprendida y no sobre el score, aunque el score es lo que
+        se ve. La razón: el ajuste es `knob * fuerza`, o sea lineal, así que la forma de la
+        curva es exactamente la misma en los dos lados — pero el score suma además el
+        decaimiento y, desde la 4.4.6, la saciedad, y las tres cosas juntas no dejan medir
+        ninguna. Poner una fecha para apagar la saciedad apaga también la mitad de la
+        evidencia, y la curva medida así ya no es la de la saturación.
         """
-        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
         ate_it = _signal(
             diego, "repeated_meal_choice", "food", "milanesa", 1.0, source_type="implicit"
         )
 
-        def score_after(times: int) -> float:
-            (one,) = score_candidates([candidate], diego, [ate_it] * times, [])
-            return float(one["_score"])
+        def strength_after(times: int) -> float:
+            (learned,) = learning.subject_affinities([ate_it] * times).values()
+            return learned.strength
 
-        once, six, many = score_after(1), score_after(6), score_after(24)
+        once, six, many = strength_after(1), strength_after(6), strength_after(24)
         #: La primera observación enseña; la vigésima ya no. Que el primer tramo mueva más
         #: que el cuarto —cuatro veces más señales— es la saturación misma.
         assert once < six < many
         assert (six - once) > 2 * (many - six)
         #: Y nunca más allá del knob: el ajuste está acotado por construcción, no por un
         #: `min()` puesto a mano en el scorer.
-        assert many <= 0.5 + scorer._POSITIVE_SIGNAL_BOOST
+        assert scorer._learned_delta(many) <= scorer._POSITIVE_SIGNAL_BOOST
 
     def test_what_is_learned_is_an_average_and_not_a_tally(self, diego: User) -> None:
         """Diez veces sí y una vez no sigue siendo "sí", y con más certeza que una sola vez.
@@ -736,6 +755,166 @@ class TestTimeOfDayLearning:
         candidates = meal_generator.generate(db, diego, [], meal_type="breakfast")
         assert candidates, "el generador no produjo candidatos con stock cargado"
         assert {learning.candidate_slot(c) for c in candidates} == {"breakfast"}
+
+
+class TestSatiety:
+    """Separar "me gusta" de "lo comí ayer" (4.4.6).
+
+    Los tres ejes anteriores responden todos la misma pregunta —¿le gusta?— con distinto
+    nivel de detalle. Este no: las mismas filas que dicen "esto le gusta" dicen también
+    "esto lo comió ayer", y hasta acá solo se leía la primera, así que el alimento de todos
+    los días acumulaba decenas de positivos y el bucle empujaba a repetir en vez de a
+    variar. Lo que separa las dos lecturas no es el dato: es el reloj —semivida de día y
+    medio contra veintiuno—.
+    """
+
+    @staticmethod
+    def _ate(user: User, name: str, times: int, *, age_days: float) -> list[Any]:
+        return [
+            _signal(
+                user,
+                "repeated_meal_choice",
+                "food",
+                name,
+                1.0,
+                source_type="implicit",
+                age_days=age_days,
+            )
+        ] * times
+
+    def test_a_favourite_eaten_yesterday_loses_to_one_that_was_not(
+        self, db: Session, diego: User
+    ) -> None:
+        """El caso que motiva todo el eje.
+
+        Dos alimentos igual de queridos, con la misma historia; a uno lo comió ayer. Sin
+        saciedad los dos salían con el mismo score y el orden lo decidía el generador.
+        """
+        history = self._ate(diego, "milanesa", 8, age_days=30) + self._ate(
+            diego, "guiso", 8, age_days=30
+        )
+        history += self._ate(diego, "milanesa", 1, age_days=1)
+        candidates = [
+            _candidate("Milanesas", "food", "milanesa", category="meal"),
+            _candidate("Guiso de lentejas", "food", "guiso", category="meal"),
+        ]
+
+        scored = score_candidates(candidates, diego, history, [])
+        assert scored[0]["title"] == "Guiso de lentejas"
+        #: Y sigue siendo un favorito: baja del primer puesto, no de la lista.
+        assert scored[1]["_score"] > 0.5
+
+    def test_a_favourite_not_eaten_lately_is_still_a_favourite(
+        self, db: Session, diego: User
+    ) -> None:
+        """La otra mitad del reparto, y la razón por la que la perilla no es más grande.
+
+        La saciedad tiene que poder cancelar el boost acumulado de hoy y nada más: en una
+        semana ya se apagó y lo que queda es el gusto entero.
+        """
+        history = self._ate(diego, "milanesa", 8, age_days=30)
+        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
+
+        (never,) = score_candidates([candidate], diego, history, [])
+        (yesterday,) = score_candidates(
+            [candidate], diego, history + self._ate(diego, "milanesa", 1, age_days=1), []
+        )
+        (last_week,) = score_candidates(
+            [candidate], diego, history + self._ate(diego, "milanesa", 1, age_days=7), []
+        )
+
+        assert yesterday["_score"] < never["_score"]
+        #: Una comida más hace una semana solo agrega gusto: a siete días son casi cinco
+        #: semividas de saciedad, y lo que queda de la presión es ruido.
+        assert last_week["_score"] > never["_score"]
+
+    def test_satiety_fades_in_days_and_a_taste_in_weeks(self, diego: User) -> None:
+        """Los dos relojes, medidos en la misma fila.
+
+        Es la afirmación central de la 4.4.6 y la única forma de que no se vuelva a fundir
+        en una sola suma: si estas dos semividas fueran la misma, el eje no existiría.
+        """
+        ate_it = self._ate(diego, "milanesa", 3, age_days=3)
+
+        (taste,) = learning.subject_affinities(ate_it).values()
+        pressure = learning.satiety_pressure(ate_it)[("food", "milanesa")]
+
+        #: A tres días el gusto perdió un 10% y la saciedad, el 75%.
+        assert taste.evidence == pytest.approx(3 * 0.5 ** (3 / 21), abs=1e-3)
+        assert pressure < 0.3
+        #: Y a dos semanas la presión no se apagó por un corte —no hay ninguno— sino porque
+        #: son casi diez semividas: lo que queda no llega a mover el score ni al redondeo.
+        stale = learning.satiety_pressure(self._ate(diego, "milanesa", 3, age_days=14))
+        assert stale[("food", "milanesa")] < 0.01
+
+    def test_saying_you_like_something_does_not_fill_you_up(self, diego: User) -> None:
+        """La distinción entre un acto y un dicho, que es lo que decide qué filas cuentan.
+
+        Marcar "me gusta el pescado" en el perfil, o aceptar la sugerencia de comerlo, no es
+        haberlo comido: sube el gusto y no produce nada de presión. Lo contrario haría que
+        contar una preferencia la suprimiera.
+        """
+        said = [
+            _signal(diego, "explicit_preference", "food", "pescado", 1.0),
+            _signal(diego, "accepted_suggestion", "food", "pescado", 1.0),
+        ]
+        assert learning.satiety_pressure(said) == {}
+        assert learning.CONSUMPTION_SIGNAL_TYPES <= learning.POSITIVE_SIGNAL_TYPES
+
+    def test_an_act_fills_you_up_whatever_the_act_was(self, diego: User) -> None:
+        """Comer, comprar y entrenar cuentan los tres.
+
+        Comprar leche ayer es una razón para no sugerir comprar leche hoy, y repetir el
+        mismo ejercicio tres días seguidos es el mismo error con otro cuerpo.
+        """
+        for signal_type, subject_type in (
+            ("repeated_meal_choice", "food"),
+            ("repeated_purchase", "food"),
+            ("repeated_activity", "exercise"),
+        ):
+            signal = _signal(diego, signal_type, subject_type, "algo", 1.0, age_days=0.5)
+            assert learning.satiety_pressure([signal]), signal_type
+
+    def test_satiety_is_never_a_veto(self, db: Session, diego: User) -> None:
+        """Haber comido milanesas ayer no es un "no" a las milanesas.
+
+        Es la misma razón que en el nivel atributo y en la franja horaria: lo que filtra es
+        el rechazo explícito, y nada más. Acá además la presión se apaga sola en un par de
+        días, así que un veto duraría más que su propia causa.
+        """
+        history = self._ate(diego, "milanesa", 30, age_days=0.5)
+        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
+
+        assert apply_signal_constraints([candidate], history) == [candidate]
+        (scored,) = score_candidates([candidate], diego, history, [])
+        assert scored["_score"] > 0.0
+
+    def test_pressure_saturates_instead_of_growing(self, diego: User) -> None:
+        """Treinta raciones no pueden restar diez veces lo que restan tres.
+
+        Misma curva `n/(n+k)` que la confianza del gusto, y por la misma razón: sin ella la
+        penalización se desbordaría y un alimento frecuente quedaría suprimido para siempre
+        —el problema original con el signo dado vuelta—.
+        """
+        three = learning.satiety_pressure(self._ate(diego, "milanesa", 3, age_days=0.5))
+        thirty = learning.satiety_pressure(self._ate(diego, "milanesa", 30, age_days=0.5))
+        key = ("food", "milanesa")
+
+        assert three[key] < thirty[key] < 1.0
+        assert thirty[key] < 2 * three[key]
+
+    def test_satiety_is_not_the_diversity_penalty(self, db: Session, diego: User) -> None:
+        """Dos cosas que se parecen y miden lo opuesto.
+
+        La penalización por diversidad mira lo que la **app sugirió** y es un escalón fijo
+        por siete días; la saciedad mira lo que la **persona hizo** y se apaga sola. Una
+        sugerencia que la app nunca hizo no lleva la primera, aunque la comida haya pasado.
+        """
+        history = self._ate(diego, "milanesa", 2, age_days=0.5)
+        candidate = _candidate("Milanesas", "food", "milanesa", category="meal")
+
+        (scored,) = score_candidates([candidate], diego, history, [])
+        assert scored["_score"] > 0.5 - scorer._DIVERSITY_PENALTY
 
 
 class TestSignalConstraints:

@@ -11,6 +11,9 @@ Scoring model (additive):
 - Y si el candidato declara la **franja horaria** para la que se ofrece, cuánto mejor le
   cae ese sujeto a esa hora que al resto de las horas: es lo que separa el café del
   desayuno del café de la cena, que hasta acá eran el mismo número
+- Y al final, lo único que no es un gusto: **cuánto de eso ya hubo hace muy poco**. Las
+  mismas señales leídas con un reloj catorce veces más corto, que siempre resta — es lo que
+  separa "me gusta" de "lo comí ayer", que hasta acá eran la misma suma
 - A subject already suggested in the last few days receives a diversity penalty
 - Scores are clamped to [0.0, 1.0]
 
@@ -61,6 +64,19 @@ _RECENT_SIGNAL_DAYS = learning.SIGNAL_HORIZON_DAYS
 #: su comida favorita. Una categoría es una de las razones por las que algo gusta, nunca
 #: la razón entera.
 _ATTRIBUTE_SIGNAL_SCALE = 0.5
+
+#: Cuánto puede bajar un candidato por haberse consumido hace poco. Es el mismo número que
+#: la penalización de un "no", y no por simetría estética: tiene que poder **cancelar** el
+#: boost acumulado de un favorito, cuyo techo es `_POSITIVE_SIGNAL_BOOST`, o el bucle sigue
+#: empujando a repetir. Y no más que eso: un favorito comido ayer queda debajo de una
+#: alternativa igual de querida y por encima de cero — deja de aparecer tres días seguidos,
+#: no deja de ser un favorito.
+#:
+#: La consecuencia que conviene tener a la vista: para señales del mismo día la saciedad y
+#: el boost puntual crecen con la misma curva, así que la resta queda en `-0.03 * presión`.
+#: Comer algo hoy lo hace, hoy, un poco menos sugerible — y en una semana la saciedad se
+#: apagó y queda solo la afinidad, que es exactamente el reparto que pedía la 4.4.6.
+_SATIETY_PENALTY = 0.15
 
 
 def _learned_delta(strength: float) -> float:
@@ -122,6 +138,11 @@ def score_candidates(
     #: sistemáticamente menos, y lo que sabe de menos ya se lo descuenta su propia
     #: confianza, que con menos observaciones es más baja.
     by_slot = learning.slot_affinities(relevant_signals)
+
+    #: Y las mismas señales una vez más, leídas como consumo reciente en vez de como gusto.
+    #: Es el único de los cuatro cómputos que no responde "¿le gusta?" sino "¿cuánto ya
+    #: hubo?", y el único que solo puede restar.
+    satiety = learning.satiety_pressure(relevant_signals)
 
     #: Los sujetos ya sugeridos hace poco, para no repetirlos. Antes esto era un conjunto
     #: de títulos, y las dos comparaciones —exacta y por solape de tokens— fallaban del
@@ -203,6 +224,22 @@ def score_candidates(
                         slot,
                         contrast,
                     )
+
+            #: Y lo que no es un gusto: cuánto de esto ya hubo hace muy poco. Nunca suma, y
+            #: no es lo mismo que la penalización por diversidad de abajo: esa mira lo que
+            #: la app **sugirió** —y es un escalón fijo por siete días—, esto mira lo que la
+            #: persona **hizo** y se apaga solo en un par de días. Tampoco filtra: haber
+            #: comido milanesas ayer no es un "no" a las milanesas.
+            pressure = satiety.get(subject, 0.0)
+            if pressure:
+                delta = -_SATIETY_PENALTY * pressure
+                adjustment += delta
+                logger.debug(
+                    "Candidate %r: %+.3f from satiety (presión=%.2f)",
+                    candidate.get("title"),
+                    delta,
+                    pressure,
+                )
 
             if subject in recent_subjects:
                 adjustment -= _DIVERSITY_PENALTY

@@ -335,6 +335,22 @@ class TestWhatAPurchaseTeaches:
         assert signal.entity_name == learning.normalize_subject("brocoli")
 
 
+def _backdate(db: Session, signals: list[BehaviorSignal], *, days: float) -> None:
+    """Corre *signals* al pasado, porque una fila recién escrita no es solo un gusto.
+
+    Hace falta desde la 4.4.6: la misma fila que dice "esto le gusta" dice también "esto lo
+    consumió hace tanto", y la saciedad la lee con un reloj catorce veces más corto. Una
+    señal escrita en esta transacción es, para ese lector, comida que está pasando ahora
+    mismo — el caso de saciedad máxima. Estos tests hablan del gusto, así que el acto tiene
+    que estar donde está siempre en la vida real: en el pasado. La sugerencia se calcula
+    cuando corre el job, no en la transacción que registra la cena.
+    """
+    when = datetime.now(timezone.utc) - timedelta(days=days)
+    for signal in signals:
+        signal.created_at = when
+    db.flush()
+
+
 class TestWhatIsLearnedChangesWhatIsSuggested:
     """El pago de todo lo anterior: si esto no pasa, escribir señales es decoración."""
 
@@ -355,6 +371,7 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
             diego.id,
             PurchaseRequest(items=[PurchaseItem(food_name="lentejas", quantity=1)]),
         )
+        _backdate(db, _signals(db, diego), days=7)
 
         candidates = [
             {
@@ -387,6 +404,7 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
             diego.id,
             PurchaseRequest(items=[PurchaseItem(food_name="quinoa", quantity=1)]),
         )
+        _backdate(db, _signals(db, diego), days=7)
 
         candidate = {
             "title": "Ensalada de quinoa",
@@ -420,8 +438,12 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
                 )
             ],
         )
-        old, recent = sorted(_signals(db, diego), key=lambda s: s.entity_name)
+        signals = sorted(_signals(db, diego), key=lambda s: s.entity_name)
+        old, recent = signals
         assert (old.entity_name, recent.entity_name) == ("noquis", "ravioles")
+        #: "Reciente" es una semana, no este segundo: lo que se compara acá son dos edades,
+        #: y una comida de hace un rato traería además su propia saciedad.
+        _backdate(db, signals, days=7)
         old.created_at = datetime.now(timezone.utc) - timedelta(days=200)
         db.flush()
 

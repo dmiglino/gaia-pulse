@@ -34,6 +34,13 @@ Lo que este módulo define es ese vocabulario:
   **en** la franja contra el mismo sujeto **fuera** de ella, así que lo que se aprende es
   la diferencia entre horas y no la popularidad del sujeto, que ya la cobra el nivel
   puntual. Es un refinamiento, no una generalización: no pesa menos, solo sabe menos.
+- **Y una última cosa que no es un gusto: la saciedad.** Las mismas filas que dicen "esto
+  le gusta" dicen también "esto lo comió ayer", y son dos cosas con dos relojes. Hasta acá
+  solo se leía la primera, así que el alimento de todos los días acumulaba decenas de
+  positivos y el bucle empujaba a repetir, no a variar. La saciedad se descuenta con
+  semivida de día y medio, la producen solo las señales de **acto** —lo que se comió, se
+  hizo o se compró— y nunca las de **dicho**, y como los otros ejes no filtra: haber comido
+  milanesas ayer no es un "no" a las milanesas, es un "hoy otra cosa".
 
 No hay LLM acá ni modelo entrenado: es aritmética determinista sobre una tabla, que es lo
 que la 4.4 se propuso y todo lo que hace falta para dos personas.
@@ -96,6 +103,24 @@ POSITIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
 #: segundo tipo que mantener sincronizado. Que no vuelva a aparecer un tipo que se lee y no
 #: se escribe lo cuida `test_every_signal_type_the_reader_knows_has_a_writer`.
 NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion"})
+
+#: Las señales que son un **acto** y no un dicho: lo que la persona comió, hizo o compró.
+#: No es un vocabulario nuevo —son las mismas filas que ya cuentan como positivas—, es una
+#: segunda lectura de las mismas: además de "le gusta" dicen "acabo de tener esto".
+#:
+#: `accepted_suggestion` y `explicit_preference` quedan afuera a propósito: decir que algo
+#: te gusta no te llena. Y las tres que están, están todas, aunque la que motivó la 4.4.6
+#: sea la comida: comprar leche ayer es una razón para no sugerir comprar leche hoy, y
+#: repetir el mismo ejercicio tres días seguidos es la misma clase de error con otro cuerpo.
+#: Que este conjunto no se despegue del otro lo cuida un test que verifica que sea un
+#: subconjunto de `POSITIVE_SIGNAL_TYPES`.
+CONSUMPTION_SIGNAL_TYPES: frozenset[str] = frozenset(
+    {
+        "repeated_meal_choice",
+        "repeated_purchase",
+        "repeated_activity",
+    }
+)
 
 #: Los tipos de sujeto que existen **solo como atributo**: son a lo que generaliza un
 #: sujeto puntual, y a propósito **no** están en `SUBJECT_TYPES`, así que `record_signal`
@@ -180,17 +205,38 @@ _EVIDENCE_HALF_SATURATION = 2.0
 #: categoría entera —y una categoría son treinta alimentos, no uno—.
 _ATTRIBUTE_EVIDENCE_HALF_SATURATION = 3 * _EVIDENCE_HALF_SATURATION
 
+#: Con qué semivida se olvida un "ya comí de esto": día y medio. Lo de ayer pesa dos
+#: tercios, lo de anteayer un tercio, lo de la semana pasada nada. Es catorce veces más
+#: corta que la semivida de una afinidad implícita (21 días) y ahí está toda la 4.4.6: la
+#: misma fila mide dos cosas, y lo que las separa no es el dato sino el reloj con el que se
+#: lo lee. Una comida es evidencia lenta de un gusto y evidencia rápida de que ya hubo
+#: suficiente de eso; hasta acá solo se leía la primera.
+_SATIETY_HALF_LIFE_DAYS = 1.5
+
+#: Cuánto consumo reciente es "a mitad de camino de estar lleno". La misma vara que la
+#: evidencia puntual, y no por comodidad: en una casa que come tres veces por día, dos
+#: raciones descontadas son más o menos un día de haber comido eso, que es justo donde la
+#: app debería empezar a ofrecer otra cosa.
+_SATIETY_HALF_SATURATION = _EVIDENCE_HALF_SATURATION
+
 
 def half_life_days(source_type: str) -> float:
     """La semivida que le corresponde a una señal según su `source_type`."""
     return _HALF_LIFE_DAYS.get(source_type, _DEFAULT_HALF_LIFE_DAYS)
 
 
-def decay_factor(signal: BehaviorSignal, *, now: datetime | None = None) -> float:
+def decay_factor(
+    signal: BehaviorSignal, *, now: datetime | None = None, half_life: float | None = None
+) -> float:
     """Qué fracción de su valor original conserva *signal* hoy: `0.5 ** (edad/semivida)`.
 
     `created_at` lo pone la base (`server_default=func.now()`), así que una señal recién
     grabada y todavía no volcada no tiene fecha: se la cuenta entera, que es lo que es.
+
+    *half_life* pisa la semivida que le tocaría por su `source_type`. Existe para un solo
+    lector —la saciedad—, que mira exactamente las mismas filas con otro reloj. Es un
+    parámetro y no una segunda función porque el decaimiento es el mismo: dos copias de
+    `0.5 ** (edad/vida)` es cómo empiezan a discrepar.
     """
     if signal.created_at is None:
         return 1.0
@@ -198,12 +244,15 @@ def decay_factor(signal: BehaviorSignal, *, now: datetime | None = None) -> floa
     age_days = (reference - as_utc(signal.created_at)).total_seconds() / 86400.0
     if age_days <= 0:
         return 1.0
-    return float(0.5 ** (age_days / half_life_days(signal.source_type)))
+    days = half_life if half_life is not None else half_life_days(signal.source_type)
+    return float(0.5 ** (age_days / days))
 
 
-def signal_weight(signal: BehaviorSignal, *, now: datetime | None = None) -> float:
+def signal_weight(
+    signal: BehaviorSignal, *, now: datetime | None = None, half_life: float | None = None
+) -> float:
     """El valor de *signal* descontado por su edad. Conserva el signo."""
-    return float(signal.value) * decay_factor(signal, now=now)
+    return float(signal.value) * decay_factor(signal, now=now, half_life=half_life)
 
 
 def normalize_subject(name: str) -> str:
@@ -602,6 +651,49 @@ def slot_contrast(
     outside = SubjectAffinity(net=net, evidence=evidence)
     in_strength = inside.strength if inside is not None else 0.0
     return max(-1.0, min(1.0, in_strength - outside.strength))
+
+
+def satiety_pressure(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> dict[tuple[str, str], float]:
+    """Cuánto de cada sujeto se consumió hace muy poco, en `[0, 1]`.
+
+    No es una opinión y por eso no devuelve un `SubjectAffinity`: no tiene dirección, no
+    hay un "para qué lado". Es una sola pregunta —*cuánto ya hubo de esto*— y siempre
+    resta. Un favorito sigue siendo un favorito; lo que deja de ser es una buena idea para
+    hoy.
+
+    Las mismas filas que `subject_affinities`, filtradas a las de **acto**
+    (`CONSUMPTION_SIGNAL_TYPES`) y descontadas con `_SATIETY_HALF_LIFE_DAYS` en lugar de la
+    semivida de su `source_type`. Que sean las mismas filas leídas dos veces —y no una
+    segunda escritura por comida— es la misma decisión que en el nivel atributo: un lector
+    nuevo no se puede olvidar de nada, y funciona retroactivamente sobre los meses de
+    señales que la app ya tiene.
+
+    Se suma en valor absoluto porque acá interesa el volumen y no el signo, y se satura con
+    la misma curva `n / (n + k)` de `SubjectAffinity.confidence`: la diferencia entre comer
+    algo tres veces y diez veces en dos días no debería seguir moviendo el score, del mismo
+    modo que no lo mueve la diferencia entre seis y veinte observaciones.
+
+    Una señal sin `created_at` —recién grabada y todavía no volcada— cuenta entera, igual
+    que en el resto del módulo: un acto que está pasando ahora es exactamente el caso de
+    saciedad máxima.
+    """
+    reference = now or datetime.now(tz=timezone.utc)
+    recent: dict[tuple[str, str], float] = {}
+    for signal in signals:
+        if signal.signal_type not in CONSUMPTION_SIGNAL_TYPES:
+            continue
+        key = subject_key(signal.entity_type, signal.entity_name)
+        if not key[1]:
+            continue
+        amount = abs(signal_weight(signal, now=reference, half_life=_SATIETY_HALF_LIFE_DAYS))
+        recent[key] = recent.get(key, 0.0) + amount
+    return {
+        key: amount / (amount + _SATIETY_HALF_SATURATION)
+        for key, amount in recent.items()
+        if amount > 0
+    }
 
 
 def rejected_subjects(
