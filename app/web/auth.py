@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.dependencies import DB, OptionalUserID, get_current_user_id
+from app.core.dependencies import OptionalUserID
 from app.core.security import create_session_token
 from app.db.session import get_db
 from app.i18n import _
@@ -37,7 +37,12 @@ async def login_submit(
     if not user:
         return templates.TemplateResponse(
             "auth/login.html",
-            {"request": request, "error": _("Invalid email or password.")},
+            {
+                "request": request,
+                "error": _("Invalid email or password."),
+                # Keep the email so only the password has to be retyped.
+                "email_value": email,
+            },
             status_code=401,
         )
 
