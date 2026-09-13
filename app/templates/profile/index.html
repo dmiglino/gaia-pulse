@@ -1,144 +1,120 @@
 {% extends "base.html" %}
-{% import 'components/ui.html' as ui %}
 {% block title %}{{ _('Profile') }}{% endblock %}
 
 {% block content %}
 <div class="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-6">
 
-  <!-- Header -->
-  <div class="flex items-center gap-4">
-    <span class="w-14 h-14 rounded-full flex items-center justify-center text-white text-xl font-bold"
-          style="background: {{ current_user.avatar_color }}">
-      {{ current_user.name[0] }}
-    </span>
-    <div>
-      <h1 class="text-2xl font-bold text-slate-900">{{ current_user.name }}</h1>
-      <p class="text-sm text-slate-500">{{ current_user.email }}</p>
+  {#- El encabezado no usa `ui.page_header` porque lo que identifica esta pantalla
+      es la cara, no un ícono de sección: el avatar *es* el título. -#}
+  <header class="flex items-center gap-4">
+    {{ ui.avatar(current_user, size='lg') }}
+    <div class="min-w-0">
+      <h1 class="text-2xl font-bold text-ink tracking-tight leading-tight truncate">{{ current_user.name }}</h1>
+      <p class="text-sm text-ink-muted truncate">{{ current_user.email }}</p>
     </div>
-  </div>
+  </header>
 
   {#- Apariencia. El toggle de la sidebar no existe en mobile (no hay sidebar, y
       los seis huecos de la barra inferior están ocupados), así que sin esta fila
-      el modo oscuro sería inaccesible desde el teléfono.
-      El resto de esta pantalla sigue en `slate`: el barrido a tokens es la fase 3. -#}
-  <div class="bg-card rounded-card border border-line shadow-sm p-3">
+      el modo oscuro sería inaccesible desde el teléfono. -#}
+  {% call ui.card(padding='p-3') %}
     <p class="px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">
       {{ _('Appearance') }}
     </p>
     {{ ui.theme_toggle() }}
-  </div>
+  {% endcall %}
 
-  <!-- Profile form -->
   <form method="post" action="/profile/update" class="space-y-6">
-    <!-- Personal Info -->
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-      <h2 class="text-base font-semibold text-slate-800">{{ _('Personal Info') }}</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+
+    {% call ui.card() %}
+      {{ ui.section_title(_('Personal Info'), icon='user') }}
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Name') }}</label>
-          <input type="text" name="name" value="{{ current_user.name }}"
-                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Height (cm)') }}</label>
-          <input type="number" step="0.1" name="height_cm" value="{{ current_user.height_cm or '' }}"
-                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="e.g. 175">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Weight Goal (kg)') }}</label>
-          <input type="number" step="0.1" name="target_weight_kg" value="{{ current_user.target_weight_kg or '' }}"
-                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="e.g. 75">
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Activity Level') }}</label>
-          <select name="baseline_activity_level"
-                  class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            {% for level in ['sedentary','light','moderate','active','very_active'] %}
-            <option value="{{ level }}" {% if current_user.baseline_activity_level == level %}selected{% endif %}>
-              {{ level|replace('_',' ')|title }}
+        {{ ui.field(_('Name'), 'name', value=current_user.name) }}
+        {#- La unidad va en el hueco de la unidad y no dentro del rótulo: el número
+            queda alineado con el "cm" a su derecha, como en el resto de la app. -#}
+        {{ ui.field(_('Height'), 'height_cm', type='number', unit=_('cm'),
+                    value=current_user.height_cm, placeholder='175',
+                    attrs='step="0.1" min="50" max="280" inputmode="decimal"') }}
+        {{ ui.field(_('Weight goal'), 'target_weight_kg', type='number', unit=_('kg'),
+                    value=current_user.target_weight_kg, placeholder='75',
+                    hint=_('Leave the target empty if you just want to keep track.'),
+                    attrs='step="0.1" min="20" max="500" inputmode="decimal"') }}
+        {#- El orden de los niveles y sus rótulos salen de `dm`: acá estaban escritos
+            a mano y el rótulo era `level|replace('_',' ')|title`, que se ve siempre
+            en inglés porque no es un literal que `pybabel` pueda extraer. -#}
+        {% call ui.field_wrap(_('Activity level'), 'f-activity',
+                              hint=dm.activity_level_hint(current_user.baseline_activity_level)) %}
+          <select id="f-activity" name="baseline_activity_level" class="{{ ui.INPUT_CLASS }}">
+            {% for level in dm.ACTIVITY_LEVELS %}
+            <option value="{{ level }}" {{ 'selected' if current_user.baseline_activity_level == level else '' }}>
+              {{ dm.activity_level_label(level) }}
             </option>
             {% endfor %}
           </select>
-        </div>
+        {% endcall %}
       </div>
-    </div>
+    {% endcall %}
 
-    <!-- Food Preferences -->
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-      <h2 class="text-base font-semibold text-slate-800">{{ _('Food Preferences') }}</h2>
-      <div class="space-y-3">
-        <div>
-          <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Dietary Restrictions (comma-separated)') }}</label>
-          <input type="text" name="dietary_restrictions"
-                 value="{{ (current_user.dietary_restrictions_json or [])|join(', ') }}"
-                 class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="{{ _('e.g. gluten-free, lactose intolerant') }}">
-        </div>
-      </div>
-    </div>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Food Preferences'), icon='meal', tone='food') }}
+      {{ ui.field(_('Dietary restrictions'), 'dietary_restrictions',
+                  value=(current_user.dietary_restrictions_json or []) | join(', '),
+                  placeholder=_('e.g. gluten-free, lactose intolerant'),
+                  hint=_('Separate with commas. Suggestions with these are filtered out, never just ranked lower.')) }}
+    {% endcall %}
 
-    <!-- Activity Preferences -->
-    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-      <h2 class="text-base font-semibold text-slate-800">{{ _('Activity Preferences') }}</h2>
-      <div>
-        <label class="block text-xs font-medium text-slate-600 mb-1">{{ _('Impossible Activities (comma-separated)') }}</label>
-        <input type="text" name="impossible_activities"
-               value="{{ (current_user.impossible_activities_json or [])|join(', ') }}"
-               class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-               placeholder="{{ _('e.g. swimming, rock climbing') }}">
-        <p class="text-xs text-slate-400 mt-1">{{ _('These will never be suggested.') }}</p>
-      </div>
-    </div>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Activity Preferences'), icon='bolt', tone='move') }}
+      {{ ui.field(_('Impossible activities'), 'impossible_activities',
+                  value=(current_user.impossible_activities_json or []) | join(', '),
+                  placeholder=_('e.g. swimming, rock climbing'),
+                  hint=_('Separate with commas. These will never be suggested.')) }}
+    {% endcall %}
 
-    <button type="submit"
-            class="w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
-      {{ _('Save Profile') }}
-    </button>
+    {{ ui.btn(_('Save Profile'), icon='check', block=true) }}
   </form>
 
-  <!-- Learned Preferences -->
   {% if preferences %}
-  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-    <div class="px-5 py-4 border-b border-slate-100">
-      <h2 class="text-base font-semibold text-slate-800">{{ _('Learned Preferences') }}</h2>
-      <p class="text-xs text-slate-500 mt-0.5">{{ _('Preferences learned from your feedback on suggestions') }}</p>
-    </div>
-    <div class="divide-y divide-slate-50">
-      {% for p in preferences %}
-      {#- Esta pantalla tenía su propio mapa de colores a mano, y había divergido del de
-          `/suggestions/`: `avoid` era rose acá y `warn` allá, `possible_sometimes`
-          emerald acá y neutro allá — la misma preferencia se veía distinta en dos
-          pantallas. Y las dos claves se imprimían crudas (`possible_sometimes`,
-          `food`). Van por `dm`, que es el único mapa. El resto del layout de profile se
-          rediseña en su propia unidad de la fase 3. -#}
-      <div class="px-5 py-3 flex items-center gap-3">
-        {{ dm.preference_signal_badge(p.preference_signal) }}
-        <span class="text-sm text-slate-800 flex-1">{{ p.item_name }}</span>
-        <span class="text-xs text-slate-400">{{ dm.preference_type_label(p.item_type) }}</span>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+  {#- Esta pantalla tenía su propio mapa de colores a mano, y había divergido del de
+      `/suggestions/`: `avoid` era rose acá y `warn` allá, `possible_sometimes`
+      emerald acá y neutro allá — la misma preferencia se veía distinta en dos
+      pantallas. Y las dos claves se imprimían crudas (`possible_sometimes`,
+      `food`). Van por `dm`, que es el único mapa. -#}
+  <section>
+    {{ ui.section_title(_('Learned Preferences'),
+                        subtitle=_('Preferences learned from your feedback on suggestions'),
+                        icon='bulb') }}
+    {% call ui.card(padding='', class='overflow-hidden') %}
+      <ul class="divide-y divide-line list-none m-0 p-0">
+        {% for p in preferences %}
+        <li class="px-5 py-3 flex items-center gap-3">
+          {{ dm.preference_signal_badge(p.preference_signal) }}
+          <span class="text-sm text-ink flex-1 min-w-0 truncate">{{ p.item_name }}</span>
+          <span class="text-xs text-ink-subtle flex-shrink-0">{{ dm.preference_type_label(p.item_type) }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endcall %}
+  </section>
   {% endif %}
 
-  <!-- Household members -->
-  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-    <h2 class="text-base font-semibold text-slate-800 mb-3">{{ _('Household') }}</h2>
-    <div class="flex gap-3">
-      {% for u in users %}
-      <div class="flex items-center gap-2">
-        <span class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold"
-              style="background: {{ u.avatar_color }}">{{ u.name[0] }}</span>
-        <div>
-          <p class="text-sm font-medium text-slate-800">{{ u.name }}</p>
-          <p class="text-xs text-slate-400">{{ u.baseline_activity_level }}</p>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
+  <section>
+    {{ ui.section_title(_('Household'), icon='home') }}
+    {% call ui.card() %}
+      <ul class="flex flex-wrap gap-x-8 gap-y-4 list-none m-0 p-0">
+        {% for u in users %}
+        <li class="flex items-center gap-3 min-w-0">
+          {{ ui.avatar(u) }}
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-ink truncate">{{ u.name }}</p>
+            <p class="text-xs text-ink-subtle">{{ dm.activity_level_label(u.baseline_activity_level) }}</p>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    {% endcall %}
+  </section>
 
 </div>
 {% endblock %}

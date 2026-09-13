@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
 from app.services.suggestion_service import SuggestionService
+from app.web.flash import set_flash
 from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
@@ -18,11 +19,9 @@ _MAX_LIST_ITEMS = 30
 
 def _parse_csv_list(raw: str) -> list[str]:
     """Parse a comma-separated string into a cleaned list, with per-item length guards."""
-    return [
-        item[:_MAX_LIST_ITEM_LEN]
-        for item in (x.strip() for x in raw.split(","))
-        if item
-    ][:_MAX_LIST_ITEMS]
+    return [item[:_MAX_LIST_ITEM_LEN] for item in (x.strip() for x in raw.split(",")) if item][
+        :_MAX_LIST_ITEMS
+    ]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -75,16 +74,24 @@ def profile_update(
     else:
         errors.append(_("Invalid activity level: %(level)s.", level=baseline_activity_level))
 
-    if dietary_restrictions:
-        current_user.dietary_restrictions_json = _parse_csv_list(dietary_restrictions)
+    # Sin condición, a propósito: con `if dietary_restrictions:` vaciar la casilla no
+    # borraba nada, así que una restricción alimentaria — el filtro que decide qué
+    # comida se puede sugerir — no se podía sacar nunca desde la interfaz. La lista
+    # que llega es la lista que queda, y vacío significa vacío.
+    current_user.dietary_restrictions_json = _parse_csv_list(dietary_restrictions)
+    current_user.impossible_activities_json = _parse_csv_list(impossible_activities)
 
-    if impossible_activities:
-        current_user.impossible_activities_json = _parse_csv_list(impossible_activities)
-
-    if not errors:
-        db.flush()
+    # Con la barra final, que es la ruta real: `/profile` existe solo como el 307 de
+    # `redirect_slashes`, así que guardar el perfil costaba tres viajes en vez de dos.
+    response = RedirectResponse(url="/profile/", status_code=302)
+    if errors:
+        # `errors` se armaba y se tiraba: una altura fuera de rango no se guardaba y
+        # la pantalla no decía nada. Es todo o nada porque `get_db` cierra la sesión
+        # sin commitear, así que un solo campo inválido descarta también los válidos
+        # — y eso hay que decirlo, no dejarlo adivinar.
+        db.rollback()
+        set_flash(response, " ".join([*errors, _("Nothing was saved.")]), "error")
+    else:
         db.commit()
-
-    # For HTMX callers pass a simple success/error indicator via query param
-    status = "error" if errors else "saved"
-    return RedirectResponse(url=f"/profile?status={status}", status_code=302)
+        set_flash(response, _("Profile saved."), "success")
+    return response
