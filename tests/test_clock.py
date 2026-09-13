@@ -217,6 +217,7 @@ class TestSchedule:
             "inactivity_notifications",
             "metric_reminders",
             "suggestion_generation",
+            "notification_pruning",
         }
         for job_id in _SCHEDULE:
             trigger = _trigger(job_id)

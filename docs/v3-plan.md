@@ -612,13 +612,105 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 
 **4.2 — Dedup por sujeto, con escalada en vez de repetición**
 
-- [ ] Los jobs pasan a poblar `related_entity_type`/`related_entity_id` (columnas que **ya
-      existen**).
-- [ ] Nuevo `has_recent_for_subject` reemplaza el chequeo por categoría: se avisa **una vez
+- [x] Los jobs pasan a poblar `related_entity_type`/`related_entity_id` (columnas que **ya
+      existen**). El sujeto de `low_stock` es `("pantry_stock", stock.id)`; el de
+      `inactivity` y `metric_reminder`, `("user", user.id)`.
+- [x] Nuevo `has_recent_for_subject` reemplaza el chequeo por categoría: se avisa **una vez
       por sujeto**, y se vuelve a avisar solo si **empeora** (stock que baja más, inactividad
-      que pasa de 4 a 8 días).
-- [ ] Poda de notificaciones viejas.
-- [ ] `get_unread_count` con `COUNT(*)` en SQL en vez de traer todas las filas.
+      que pasa de 4 a 8 días). El sujeto es la terna
+      `(category, related_entity_type, related_entity_id)` dentro del alcance del
+      destinatario. **La categoría entra en la clave** porque el sujeto de la inactividad y
+      el del recordatorio de pesaje son los dos la misma persona: sin ella, avisarle de una
+      le taparía la otra. **No mira `dismissed_at`**: descartar es "lo vi", no "avisame de
+      nuevo mañana". La ventana de 7 días es un **techo al silencio**, no el mecanismo: un
+      faltante que sigue ahí a la semana siguiente vuelve a aparecer una vez.
+- [x] **`priority` es la marca de agua de la escalada.** La 4.4 es la única sub-fase con
+      migración, así que acá no se agrega una columna: se compara la severidad que el estado
+      da hoy contra el `priority` con el que se avisó. No es un préstamo forzado — una
+      despensa más vacía o una inactividad más larga **son** más urgentes, que es lo que la
+      columna significa, y es lo único comparable que hay en la tabla. La escalada es en un
+      solo sentido: si el estado mejora, la severidad baja y eso no es novedad.
+      **Límite conocido, anotado en el docstring:** la marca de agua es la **más alta de la
+      ventana**, no la del último aviso, y no se reinicia cuando el sujeto se recupera — si la
+      leche se acabó el lunes (9), se repuso el martes y se acabó otra vez el miércoles, el
+      miércoles no se habla, porque la fila del lunes sigue adentro de la ventana con prioridad
+      9. El precio es un faltante repetido que espera hasta el fin de la ventana. Reiniciarla
+      pide retirar el aviso abierto cuando el sujeto sale del conjunto, o sea el ciclo de vida
+      por sujeto: queda para la 4.3, donde ese ciclo ya vive, en vez de entrar de contrabando
+      en un checkpoint.
+- [x] **`_addressee_scope()`: los dos alcances no se combinan con `or_`.** Un aviso per-user
+      lleva también `household_id`, así que el `or_` que había hacía que la fila de Diego
+      contara como la de Rocío y le tapara el aviso durante toda la ventana. Es la regla 4 de
+      `AGENTS.md` — filtrar por el `user_id` que actúa incluso entre convivientes — y estaba
+      anotada en la 4.1 como el bug que la 4.2 tenía que cerrar.
+      En la rama per-user `household_id` **no se usa a propósito**: `user_id` ya es el filtro
+      más estricto, y como la columna es nullable, agregarla haría que una fila per-user sin
+      hogar dejara de deduplicarse en silencio.
+- [x] **La misma regla 4, del lado de la lectura: `_visible_to()`.** El `or_` no estaba solo en
+      el chequeo de dedup — las **cuatro** consultas de lectura (`get_for_user`,
+      `get_category_counts`, `get_unread_count`, `mark_all_read`) usaban
+      `or_(user_id == yo, household_id == mío)` a secas, y un aviso dirigido a una persona lleva
+      **también** `household_id`. O sea: el globito del nav le contaba el aviso del otro en cada
+      carga de página, `/notifications` se lo listaba **con el cuerpo entero** — que desde esta
+      sub-fase dice cuántos días lleva sin pesarse o sin entrenar —, y su "marcar todo como
+      leído" se lo escribía; y después `_get_owned` le rechazaba el clic para descartarlo, así
+      que lo veía y no podía sacárselo. La condición correcta es lo propio **más** lo del hogar,
+      que es exactamente lo que `NotificationService._get_owned` ya aplicaba fila por fila:
+      ahora vive en un solo lugar y las cuatro la usan. `_addressee_scope` (escribir/deduplicar)
+      y `_visible_to` (leer) son **dos predicados distintos**, y confundirlos era el mismo bug a
+      los dos lados.
+- [x] **Ningún centinela llega al texto que lee una persona.** Las dos ramas "nunca registró
+      nada" dejaban `days_since` en el umbral para poder comparar, y ese número entraba en el
+      título y en el cuerpo: a alguien que nunca entrenó — una cuenta creada ayer, por ejemplo —
+      la app le anunciaba *"No workouts logged in 4 days"*, y al que nunca se pesó, *"you
+      haven't logged your weight in 3 days"*. Ahora `days_since` es `int | None` y el texto se
+      bifurca: sin historial no hay número que informar (*"No workouts logged yet"*), y la
+      severidad se queda en el escalón base porque no hay antigüedad que escalar.
+- [x] **`low_stock` deja de ser un resumen y pasa a ser una notificación por ítem.** Era una
+      sola fila por hogar con `"Running low on: leche, huevos"`: no hay sujeto que deduplicar
+      ni nada a lo que llevar el toque de la 4.3, y el cuerpo se recalculaba cada corrida. Un
+      aviso por ítem es lo que hace posibles las dos cosas. Para que la primera corrida contra
+      una despensa recién cargada no sea una pared, `_MAX_NEW_STOCK_ALERTS = 5` por corrida y
+      `_most_urgent_first()` reparte por severidad — explícito, porque si el orden lo decidiera
+      el motor (regla 5 de `AGENTS.md`) los dos ítems que se acabaron podrían quedar para
+      mañana. El resto drena a cinco por día.
+- [x] Poda de notificaciones viejas: `prune_older_than(days)` y un **quinto job de cron**,
+      `notification_pruning` a las 04:15. Nada las borraba nunca — ni expiración, ni poda, ni
+      tope —, y la tabla crece sin techo debajo de las dos consultas que corren en cada carga
+      de página. Corre **a propósito adentro de la franja de silencio** y **a propósito sin
+      pasar por `_muted`**: es limpieza, no le habla a nadie. Se van las leídas y las no leídas
+      por igual: un aviso de hace tres meses que nadie abrió no es información pendiente.
+- [x] `get_unread_count` con `COUNT(*)` en SQL en vez de traer todas las filas: lo llama
+      `get_template_context()`, o sea **cada** carga de página, y materializaba la tabla entera
+      en Python para hacerle `len()`.
+- [x] **Deuda de capas pagada de paso**, porque estaba en las líneas que había que reescribir:
+      `app/jobs/` ya no arma consultas sobre modelos. De ahí salen el nuevo
+      `HouseholdRepository.list_all()` — con `ORDER BY id` explícito, que la regla 5 exige
+      cuando un tope por corrida depende del orden — y `UserRepository.list_active()`, que
+      reemplaza los `select(User)` de `notification_jobs` y de `suggestion_jobs` y el
+      `db.get(Household, ...)` de este último. También `WorkoutRepository.get_last_session_start()`:
+      lo que había respondía "¿entrenó en los últimos N días?" pero no *cuánto hace*, que es
+      justo lo que la escalada necesita saber.
+- [x] `tests/test_notifications.py`: `TestSubjectDedup` (9 tests) contra el repositorio — el
+      mismo sujeto no se anuncia dos veces, otro sujeto de la misma categoría sí pasa, se
+      vuelve a hablar cuando empeora, mejorar no gana nada, la ventana vence, descartar no lo
+      trae de vuelta, dos categorías sobre la misma persona son dos sujetos, el aviso de uno no
+      tapa el del otro, y un chequeo del hogar ignora las filas dirigidas a una persona — más
+      `TestVisibility` (3) para la lectura: el aviso de una persona es invisible para la otra en
+      las tres consultas, "marcar todo como leído" no le toca las filas, y — como control
+      negativo, para que un filtro por `user_id` a secas no pueda pasar — el aviso del hogar
+      llega a los dos. Más `TestPruning` (2).
+- [x] Nuevo `tests/test_notification_jobs.py` (14 tests): los jobs de punta a punta, que es
+      donde se ve lo que la persona recibe. Uno por ítem y no uno más mañana; los tres escalones
+      de la despensa, incluido el del medio; el tope y su drenaje; los más vacíos primero; el
+      recordatorio que escala con la brecha y el que no inventa un número cuando no hay
+      historial; la inactividad reciente que se deja en paz, la vieja que escala, y la brecha de
+      uno que no es la del otro (o sea `get_last_session_start` filtrando por participante y no
+      solo por hogar); y la poda, que **commitea** — observado espiando `db.commit`, porque
+      contar filas después no distingue: el `flush()` del repositorio ya saca la fila de la
+      vista de esta sesión, así que sin el spy sacarle el commit al job deja la suite verde — y
+      que corre **adentro** de la franja de silencio, que es lo único que sostiene la decisión
+      de no ponerle el gate `_muted` (ponérselo la apagaría para siempre sin romper nada).
 
 **4.3 — Todo lo que la app dice lleva a algún lado**
 
@@ -628,6 +720,11 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       Fase 1 arregla.
 - [ ] Detectar más ausencias además de las dos actuales (hoy solo entrenamiento y pesaje):
       comidas no registradas, sueño ausente.
+- [ ] **Ciclo de vida por sujeto**, que es lo que la 4.2 dejó pendiente: retirar el aviso
+      abierto cuando su sujeto sale del conjunto — la leche que se repuso, el que volvió a
+      entrenar. Con eso la marca de agua de `priority` se reinicia sola en la recuperación, en
+      vez de esperar a que venza la ventana de 7 días, y es también lo que le da sentido a la
+      acción primaria: tocar el aviso y que el aviso se vaya.
 
 **4.4 — Que la app aprenda de verdad los gustos de cada uno con el uso**
 
@@ -768,8 +865,9 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
 - [ ] **Seguridad:** las sugerencias de sangre pasan a llevar la antigüedad del panel
       explícita y un encuadre no diagnóstico, y a atravesar los filtros como todas las demás.
 
-**Archivos:** `app/jobs/{scheduler,notification_jobs}.py`,
-`app/repositories/notification_repo.py`, `app/schemas/notification.py`,
+**Archivos:** `app/jobs/{scheduler,notification_jobs,suggestion_jobs}.py`,
+`app/repositories/{notification_repo,user_repo,workout_repo}.py` + nuevo
+`app/repositories/household_repo.py`, `app/schemas/notification.py`,
 `app/services/{suggestion_service,meal_service,workout_service,pantry_service}.py`,
 `app/recommendations/{engine,scorer,filters}.py` + `generators/*.py`,
 `app/models/suggestion.py`, `app/web/profile.py` + template del panel de 4.4.8, nuevos

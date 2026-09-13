@@ -47,6 +47,10 @@ _SCHEDULE: dict[str, tuple[str, int]] = {
     # Dos veces: una para que Home tenga algo fresco a la mañana y otra antes de
     # que se decida la cena.
     "suggestion_generation": ("7,18", 40),
+    # De madrugada y a propósito adentro de la franja de silencio: es limpieza, no
+    # le habla a nadie, y es el rato en que nadie está mirando la pantalla que
+    # la tabla que poda alimenta.
+    "notification_pruning": ("4", 15),
 }
 
 
@@ -83,6 +87,7 @@ def start_scheduler() -> None:
         run_inactivity_notifications,
         run_low_stock_notifications,
         run_metric_reminder_notifications,
+        run_notification_pruning,
     )
     from app.jobs.suggestion_jobs import run_suggestion_generation
 
@@ -91,6 +96,7 @@ def start_scheduler() -> None:
         "inactivity_notifications": run_inactivity_notifications,
         "metric_reminders": run_metric_reminder_notifications,
         "suggestion_generation": run_suggestion_generation,
+        "notification_pruning": run_notification_pruning,
     }
     for job_id, func in jobs.items():
         scheduler.add_job(func, trigger=_trigger(job_id), id=job_id, replace_existing=True)

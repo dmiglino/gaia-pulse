@@ -24,6 +24,17 @@ class UserRepository(BaseRepository[User]):
         )
         return list(self.db.scalars(stmt).all())
 
+    def list_active(self) -> list[User]:
+        """Todas las personas activas, de todos los hogares: es la lista de los jobs.
+
+        Los tres jobs de notificación y el de sugerencias la armaban cada uno con su
+        propio `select(User)`, que es `app/jobs/` tocando un modelo — lo que la regla
+        de capas de `AGENTS.md` reserva a los repositorios. El orden va explícito por
+        el mismo motivo que en `get_household_users`.
+        """
+        stmt = select(User).where(User.is_active.is_(True)).order_by(User.id)
+        return list(self.db.scalars(stmt).all())
+
     def get_by_name_key(self, name_key: str, household_id: int) -> User | None:
         """Resolve a name key like 'diego' or 'rocio' to a User."""
         stmt = select(User).where(User.household_id == household_id, User.is_active.is_(True))

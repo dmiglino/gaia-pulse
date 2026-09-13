@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.clock import local_day_bounds
@@ -55,6 +55,28 @@ class WorkoutRepository(BaseRepository[WorkoutSession]):
             .where(WorkoutSession.id == session_id)
             .options(
                 selectinload(WorkoutSession.participants).selectinload(WorkoutParticipant.exercises)
+            )
+        )
+        return self.db.scalar(stmt)
+
+    def get_last_session_start(self, user_id: int, household_id: int) -> datetime | None:
+        """Cuándo entrenó por última vez, o `None` si nunca.
+
+        `get_user_recent_sessions` responde "¿entrenó en los últimos N días?", que
+        alcanza para decidir si avisar pero no para decir **cuánto** hace: el job de
+        inactividad necesita el número para escalar (avisar de nuevo a los 8 días
+        después de haber avisado a los 4) en vez de repetir el mismo aviso. Un
+        `max()` en la base en lugar de traer las sesiones con sus ejercicios para
+        mirarles la fecha.
+        """
+        stmt = (
+            select(func.max(WorkoutSession.timestamp_start))
+            .join(WorkoutSession.participants)
+            .where(
+                and_(
+                    WorkoutSession.household_id == household_id,
+                    WorkoutParticipant.user_id == user_id,
+                )
             )
         )
         return self.db.scalar(stmt)
