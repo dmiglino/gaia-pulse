@@ -28,6 +28,9 @@ def notifications_index(
         category=category,
     )
     ctx["unread_count"] = svc.get_unread_count(current_user.id, current_user.household_id)
+    ctx["category_counts"] = svc.get_category_counts(
+        current_user.id, current_user.household_id
+    )
     ctx["filter_category"] = category
     return templates.TemplateResponse("notifications/index.html", ctx)
 
@@ -95,14 +98,19 @@ def dismiss(
 
 @router.post("/mark-all-read")
 def mark_all_read(request: Request, current_user: CurrentUser, db: DB) -> Response:
+    """Marcar todo como leído y volver a la lista.
+
+    Antes esto tenía una rama `HX-Request` que devolvía `notifications/index.html`
+    entera — una plantilla que extiende `base.html`, o sea un documento con
+    `<html><head>`. La plantilla la llamaba con `hx-target="body"
+    hx-swap="outerHTML"`, así que ese documento completo se insertaba adentro del
+    `<body>` de la página que ya estaba abierta: `<html>` anidado, dos `<head>`, y
+    el navegador reparando el árbol como pudiera. Nunca fue un swap válido.
+
+    Marcar todo como leído cambia el estado de todas las tarjetas, del contador y de
+    las pastillas de filtro: es una recarga, no un fragmento. Un POST y un 302 hacen
+    exactamente eso, y además funciona sin JS.
+    """
     svc = NotificationService(db)
     svc.mark_all_read(current_user.id, current_user.household_id)
-    if request.headers.get("HX-Request"):
-        ctx = get_template_context(request, db, current_user)
-        ctx["notifications"] = svc.get_for_user(
-            current_user.id, current_user.household_id, limit=50
-        )
-        ctx["unread_count"] = 0
-        ctx["filter_category"] = None
-        return templates.TemplateResponse("notifications/index.html", ctx)
     return RedirectResponse(url="/notifications/", status_code=302)

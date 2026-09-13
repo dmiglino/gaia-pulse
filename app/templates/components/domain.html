@@ -123,6 +123,56 @@
 {%- endmacro %}
 
 
+{#- ── Notificaciones ──────────────────────────────────────────────────────────
+    `Notification.category` se rotulaba con `cat|replace('_',' ')|title` (en inglés,
+    y un msgid que `pybabel extract` no puede encontrar) y se ilustraba con emoji
+    (🛒🏃⚖️💡📈🔔).
+
+    Las claves son las siete que el comentario de la columna enumera. Los jobs de hoy
+    solo escriben tres —`low_stock`, `inactivity`, `metric_reminder`—; las otras
+    cuatro están acá porque la columna las declara y la Fase 4 las va a usar, no para
+    dibujar filtros vacíos: los filtros de la pantalla salen de las categorías que la
+    persona **tiene**, no de esta lista. -#}
+{%- set NOTIFICATION_ICONS = {
+  'low_stock': 'cart', 'inactivity': 'bolt', 'metric_reminder': 'chart-bar',
+  'suggestion': 'bulb', 'trend': 'trend-up', 'reminder': 'clock', 'info': 'info',
+} -%}
+{%- set NOTIFICATION_TONES = {
+  'low_stock': 'stock', 'inactivity': 'move', 'metric_reminder': 'body',
+  'suggestion': 'brand', 'trend': 'info', 'reminder': 'warn', 'info': 'info',
+} -%}
+
+
+{% macro notification_category_label(category) -%}
+{%- set labels = {
+  'low_stock': _('Running low'), 'inactivity': _('Inactivity'),
+  'metric_reminder': _('Weigh-in'), 'suggestion': _('Suggestion'),
+  'trend': _('Trend'), 'reminder': _('Reminder'), 'info': _('Info'),
+} -%}
+{{- labels.get(category | lower if category else '', category | replace('_', ' ') | title) -}}
+{%- endmacro %}
+
+
+{% macro notification_icon(category, class='w-5 h-5') -%}
+{%- set key = category | lower if category else '' -%}
+{%- set tone = NOTIFICATION_TONES.get(key, 'info') -%}
+<span class="flex-shrink-0 w-9 h-9 rounded-control flex items-center justify-center
+             bg-{{ tone }}-soft text-{{ tone }}-ink" aria-hidden="true">
+  {{ ic.icon(NOTIFICATION_ICONS.get(key, 'bell'), class) }}
+</span>
+{%- endmacro %}
+
+
+{#- El ícono de arriba es `aria-hidden` y un cuadradito con un carrito no dice
+    "poco stock" por sí solo. Este es el rótulo en palabras, y es el mismo texto
+    que usan las pastillas de filtro. -#}
+{% macro notification_badge(category, size='sm') -%}
+{{ ui.badge(notification_category_label(category),
+            tone=NOTIFICATION_TONES.get(category | lower if category else '', 'info'),
+            size=size) }}
+{%- endmacro %}
+
+
 {#- ── Análisis de sangre ──────────────────────────────────────────────────────
     `BloodAnalysis.status` es pending/analyzed/error y se mostraba crudo, en
     inglés y en minúscula (`{{ a.status }}`), con tres paletas inline. -#}

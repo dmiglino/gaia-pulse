@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
@@ -35,6 +35,27 @@ class NotificationRepository(BaseRepository[Notification]):
         if category:
             stmt = stmt.where(Notification.category == category)
         return list(self.db.scalars(stmt).all())
+
+    def get_category_counts(self, user_id: int, household_id: int) -> dict[str, int]:
+        """Cuántas notificaciones vivas hay por categoría.
+
+        La pantalla dibujaba seis pastillas de filtro fijas en la plantilla, y solo
+        tres categorías las escribe algún job: las otras tres eran filtros que nunca
+        podían dar un resultado. Con esto las pastillas son las categorías que la
+        persona realmente tiene, con su cuenta al lado, en una sola consulta agrupada.
+        """
+        stmt = (
+            select(Notification.category, func.count())
+            .where(
+                or_(
+                    Notification.user_id == user_id,
+                    Notification.household_id == household_id,
+                ),
+                Notification.dismissed_at.is_(None),
+            )
+            .group_by(Notification.category)
+        )
+        return {category: count for category, count in self.db.execute(stmt).all()}
 
     def get_unread_count(self, user_id: int, household_id: int) -> int:
         stmt = select(Notification).where(

@@ -1,39 +1,59 @@
-{# One notification. Also returned on its own by POST /notifications/{id}/read,
-   so it must not depend on anything but `n`. #}
-<div class="bg-white rounded-xl border {% if not n.is_read %}border-indigo-200 bg-indigo-50/30{% else %}border-slate-100{% endif %} shadow-sm p-4 flex gap-3"
-     id="notif-{{ n.id }}">
-  <!-- Category icon -->
-  <div class="flex-shrink-0 text-xl mt-0.5" aria-hidden="true">
-    {% if n.category == 'low_stock' %}🛒
-    {% elif n.category == 'inactivity' %}🏃
-    {% elif n.category == 'metric_reminder' %}⚖️
-    {% elif n.category == 'suggestion' %}💡
-    {% elif n.category == 'trend' %}📈
-    {% else %}🔔{% endif %}
-  </div>
+{#- Una notificación.
+
+    `POST /notifications/{id}/read` la devuelve sola, así que no puede depender de
+    nada del contexto más que de `n` (los macros `ui`/`ic`/`dm` y los filtros son
+    globals del entorno, así que sí están).
+
+    Lo que arregla el rediseño:
+
+    - los seis emoji de categoría (🛒🏃⚖️💡📈🔔) pasan al ícono de dominio, que sigue
+      el tema y el peso de la tipografía, y encima llega acompañado del rótulo en
+      palabras: un carrito solo no dice "poco stock";
+    - `created_at.strftime('%b %d')` mostraba el mes en inglés (el `strftime` usa el
+      locale del proceso), en UTC, y sin hora ni año — así que una notificación de
+      las 22:00 decía el día siguiente, y una del año pasado no se distinguía;
+    - `slate`/`indigo`/`rose` crudos pasan a tokens, que es lo que hace que la
+      tarjeta exista en modo oscuro;
+    - los glifos `✓`/`✕` como botones pasan a `ui.btn`: tenían el `aria-label` bien
+      puesto pero un área de toque de 12px de alto. -#}
+<div id="notif-{{ n.id }}"
+     class="flex gap-3 p-4 rounded-card border shadow-sm
+            {{ 'bg-brand-50 border-brand-300' if not n.is_read else 'bg-card border-line' }}">
+
+  {{ dm.notification_icon(n.category) }}
+
   <div class="flex-1 min-w-0">
     <div class="flex items-start justify-between gap-2">
-      <p class="text-sm font-semibold {% if not n.is_read %}text-slate-900{% else %}text-slate-600{% endif %}">
+      <p class="text-sm font-semibold {{ 'text-ink' if not n.is_read else 'text-ink-muted' }}">
+        {#- El estado "sin leer" lo dice el fondo y el borde, y ninguno de los dos llega
+            a un lector de pantalla. -#}
+        {%- if not n.is_read %}<span class="sr-only">{{ _('Unread') }}. </span>{% endif -%}
         {{ n.title }}
       </p>
-      <span class="text-xs text-slate-400 flex-shrink-0">
-        {{ n.created_at.strftime('%b %d') }}
+      {#- `<span>` y no `<time datetime=…>`: la columna guarda UTC naive, así que un
+          `isoformat()` crudo sale sin offset y el navegador lo leería como hora local
+          — o sea que el atributo legible por máquina afirmaría un instante distinto
+          al del texto. La unificación naive/aware es de la Fase 4. -#}
+      <span class="text-xs text-ink-subtle flex-shrink-0 tabular-nums">
+        {{ n.created_at | local_date('medium') }} · {{ n.created_at | local_time }}
       </span>
     </div>
-    <p class="text-sm text-slate-600 mt-0.5">{{ n.body }}</p>
+
+    <p class="text-sm text-ink-muted mt-1">{{ n.body }}</p>
+
+    <div class="mt-2">{{ dm.notification_badge(n.category) }}</div>
   </div>
+
   <div class="flex-shrink-0 flex flex-col gap-1">
-    {% if not n.is_read %}
-    <button hx-post="/notifications/{{ n.id }}/read"
-            hx-target="#notif-{{ n.id }}"
-            hx-swap="outerHTML"
-            aria-label="{{ _('Mark as read') }}"
-            class="text-xs text-slate-400 hover:text-slate-600">✓</button>
-    {% endif %}
-    <button hx-post="/notifications/{{ n.id }}/dismiss"
-            hx-target="#notif-{{ n.id }}"
-            hx-swap="outerHTML"
-            aria-label="{{ _('Dismiss') }}"
-            class="text-xs text-slate-300 hover:text-rose-400">✕</button>
+    {%- if not n.is_read %}
+    {{ ui.btn(tone='ghost', size='icon', icon='check', type='button',
+              aria_label=_('Mark as read'),
+              attrs='hx-post="/notifications/' ~ n.id ~ '/read"
+                     hx-target="#notif-' ~ n.id ~ '" hx-swap="outerHTML"') }}
+    {%- endif %}
+    {{ ui.btn(tone='ghost', size='icon', icon='x', type='button',
+              aria_label=_('Dismiss'),
+              attrs='hx-post="/notifications/' ~ n.id ~ '/dismiss"
+                     hx-target="#notif-' ~ n.id ~ '" hx-swap="outerHTML"') }}
   </div>
 </div>

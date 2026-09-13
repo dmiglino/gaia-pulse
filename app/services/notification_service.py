@@ -48,6 +48,16 @@ class NotificationService:
     def get_unread_count(self, user_id: int, household_id: int) -> int:
         return self.repo.get_unread_count(user_id, household_id)
 
+    def get_category_counts(self, user_id: int, household_id: int) -> dict[str, int]:
+        """Qué categorías tiene esta persona, y cuántas de cada una.
+
+        La pantalla dibujaba seis pastillas de filtro escritas a mano en la plantilla,
+        y de esas seis solo tres las escribe algún job: `suggestion`, `trend` e `info`
+        eran tres filtros que no podían dar resultado nunca. Con esto las pastillas son
+        las categorías que la persona realmente tiene.
+        """
+        return self.repo.get_category_counts(user_id, household_id)
+
     def _get_owned(
         self, notification_id: int, user_id: int, household_id: int
     ) -> Notification | None:

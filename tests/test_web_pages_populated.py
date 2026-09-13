@@ -521,3 +521,114 @@ def test_home_warns_about_low_stock(
     """El único aviso del Home que depende del estado de la despensa."""
     body = authenticated_client.get("/").text
     assert "banana" in body
+
+
+@pytest.fixture
+def three_categories(db: Session, household: Household, diego: User) -> None:
+    """Una notificación de cada categoría que algún job escribe hoy.
+
+    El fixture `seeded` trae una sola (`low_stock`), y con una sola categoría la
+    pantalla no dibuja pestañas — así que la rama del filtro quedaría sin cubrir.
+    """
+    db.add_all(
+        [
+            Notification(
+                household_id=household.id,
+                category="inactivity",
+                title="Hace 5 días que nadie entrena",
+                body="El último entrenamiento fue el lunes.",
+            ),
+            Notification(
+                household_id=household.id,
+                user_id=diego.id,
+                category="metric_reminder",
+                title="¿Te pesaste esta semana?",
+                body="El último registro es de hace 9 días.",
+            ),
+        ]
+    )
+    db.flush()
+
+
+def test_notification_filters_are_the_categories_that_exist(
+    authenticated_client: TestClient, seeded: dict[str, int], three_categories: None
+) -> None:
+    """Las pastillas eran seis literales en la plantilla; tres no las escribe nadie.
+
+    `suggestion`, `trend` e `info` están declaradas en la columna y ningún job las
+    produce, así que eran tres filtros que no podían devolver nada. Ahora las
+    pastillas salen de `get_category_counts`.
+    """
+    body = authenticated_client.get("/notifications/").text
+    for present in ("low_stock", "inactivity", "metric_reminder"):
+        assert f"/notifications/?category={present}" in body, present
+    for absent in ("suggestion", "trend", "info"):
+        assert f"/notifications/?category={absent}" not in body, absent
+
+
+@pytest.mark.parametrize("category", ["low_stock", "inactivity", "metric_reminder"])
+def test_notification_filter_links_do_not_bounce(
+    authenticated_client: TestClient,
+    seeded: dict[str, int],
+    three_categories: None,
+    category: str,
+) -> None:
+    """Los enlaces iban a `/notifications?category=…`, sin barra final: 307 en cada clic."""
+    resp = authenticated_client.get(f"/notifications/?category={category}", follow_redirects=False)
+    assert resp.status_code == 200, f"{category} → {resp.status_code}"
+
+
+def test_notification_card_names_its_category_in_spanish(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """El rótulo era `cat|replace('_',' ')|title` — "Low Stock", inextraíble y en inglés.
+
+    Y el ícono era un emoji: 🛒 no dice "poco stock" a un lector de pantalla, y cambia
+    de forma en cada sistema operativo.
+    """
+    body = authenticated_client.get("/notifications/").text
+    assert "Poco stock" in body
+    assert "Low Stock" not in body
+    for emoji in ("🛒", "🏃", "⚖️", "💡", "📈", "🔔"):
+        assert emoji not in body, emoji
+
+
+def test_notification_card_dates_are_local_and_in_spanish(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """`created_at.strftime('%b %d')` daba el mes en inglés, en UTC y sin hora."""
+    db.add(
+        Notification(
+            household_id=diego.household_id,
+            user_id=diego.id,
+            category="metric_reminder",
+            title="Pesaje pendiente",
+            body="El último registro es de hace 9 días.",
+            created_at=datetime(2026, 3, 7, 23, 30, tzinfo=UTC),
+        )
+    )
+    db.flush()
+
+    body = authenticated_client.get("/notifications/").text
+    assert "mar" in body, "no se ve el mes localizado"
+    for english in ("Mar 07", "Mar 7"):
+        assert english not in body, english
+
+
+def test_mark_all_read_never_swaps_a_whole_document(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """La rama `HX-Request` devolvía `index.html` entera para meterla dentro del <body>.
+
+    La plantilla la llamaba con `hx-target="body" hx-swap="outerHTML"`, así que un
+    documento con `<html><head>` terminaba anidado adentro del que ya estaba abierto.
+    Ahora es un POST con redirect, con o sin HTMX.
+    """
+    for headers in ({}, {"HX-Request": "true"}):
+        resp = authenticated_client.post(
+            "/notifications/mark-all-read", headers=headers, follow_redirects=False
+        )
+        assert resp.status_code == 302, resp.status_code
+        assert "<html" not in resp.text
+
+    assert "0 sin leer" not in authenticated_client.get("/notifications/").text

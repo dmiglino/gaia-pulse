@@ -713,33 +713,65 @@ msgid "Signal"
 msgstr "Señal"
 
 # ─── Notificaciones — strings adicionales ───────────────────────────────────
-
-msgid "unread"
-msgstr "sin leer"
+#
+# "Low Stock", "Metric Reminder", "unread" y "No notifications in this category."
+# salieron de acá: los dos primeros eran el intento de traducir
+# `cat|replace('_',' ')|title` (un msgid que `pybabel extract` no puede encontrar,
+# así que nunca se tradujeron en pantalla) y los otros dos ya no los pide ninguna
+# plantilla.
 
 msgid "Mark all read"
 msgstr "Marcar todo como leído"
 
+msgid "%(num)d unread"
+msgstr "%(num)d sin leer"
+
+msgid "Nothing left to read."
+msgstr "No queda nada por leer."
+
+msgid "Unread"
+msgstr "Sin leer"
+
+msgid "Mark as read"
+msgstr "Marcar como leída"
+
+msgid "Notification categories"
+msgstr "Categorías de notificación"
+
 msgid "No notifications."
 msgstr "Sin notificaciones."
-
-msgid "No notifications in this category."
-msgstr "Sin notificaciones en esta categoría."
 
 msgid "We'll let you know when something needs attention."
 msgstr "Te avisamos cuando haya algo que requiera atención."
 
-msgid "Low Stock"
-msgstr "Stock Bajo"
+msgid "Nothing in this category."
+msgstr "Nada en esta categoría."
+
+msgid "Other categories may still have something."
+msgstr "Puede haber algo en las otras categorías."
+
+msgid "See all notifications"
+msgstr "Ver todas las notificaciones"
+
+# Las siete categorías que declara `Notification.category`.
+
+msgid "Running low"
+msgstr "Poco stock"
 
 msgid "Inactivity"
 msgstr "Inactividad"
 
-msgid "Metric Reminder"
-msgstr "Recordatorio de Métrica"
+msgid "Weigh-in"
+msgstr "Pesaje"
+
+msgid "Suggestion"
+msgstr "Sugerencia"
 
 msgid "Trend"
 msgstr "Tendencia"
+
+msgid "Reminder"
+msgstr "Recordatorio"
 
 msgid "Info"
 msgstr "Info"

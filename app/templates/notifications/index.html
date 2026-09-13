@@ -1,49 +1,83 @@
 {% extends "base.html" %}
 {% block title %}{{ _('Notifications') }}{% endblock %}
 
+{#- Tres cosas que esta pantalla hacía mal:
+
+    1. Las pastillas de filtro eran una lista literal de seis categorías escrita en la
+       plantilla, y solo tres las escribe algún job: `suggestion`, `trend` e `info`
+       eran tres filtros que no podían dar resultado nunca. Ahora salen de
+       `get_category_counts`, así que son las categorías que la persona **tiene**, con
+       su cuenta al lado.
+    2. Los enlaces iban a `/notifications` y `/notifications?category=…`, sin la barra
+       final: cada clic se comía un 307 antes de llegar a la ruta real.
+    3. "Marcar todo como leído" era un `hx-post` con `hx-target="body"
+       hx-swap="outerHTML"` contra una ruta que devolvía esta misma plantilla — un
+       documento con `<html><head>` insertado adentro del `<body>` abierto. Ahora es un
+       POST normal con redirect, que es lo que corresponde cuando cambia el estado de
+       toda la lista (y funciona sin JS). -#}
+
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-4">
+<div class="px-4 sm:px-6 py-6 max-w-2xl mx-auto">
 
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-900">{{ _('Notifications') }}</h1>
-      {% if unread_count > 0 %}
-      <p class="text-sm text-slate-500 mt-0.5">{{ unread_count }} {{ _('unread') }}</p>
-      {% endif %}
-    </div>
-    {% if unread_count > 0 %}
-    <button hx-post="/notifications/mark-all-read"
-            hx-target="body"
-            hx-swap="outerHTML"
-            class="text-sm text-indigo-600 hover:underline">{{ _('Mark all read') }}</button>
-    {% endif %}
+  {% call ui.page_header(
+      _('Notifications'),
+      subtitle=_('%(num)d unread', num=unread_count) if unread_count
+               else _('Nothing left to read.'),
+      icon='bell', tone='brand') %}
+    {%- if unread_count %}
+    <form method="post" action="/notifications/mark-all-read">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+      {{ ui.btn(_('Mark all read'), tone='secondary', size='sm', icon='check-circle') }}
+    </form>
+    {%- endif %}
+  {% endcall %}
+
+  {#- Las pestañas se dibujan solo si hay más de una categoría: con una sola, "Todas"
+      y esa categoría son el mismo listado y el filtro no filtra nada. -#}
+  {%- if category_counts | length > 1 %}
+  {%- set ns = namespace(items=[{
+        'key': '', 'label': _('All'), 'href': '/notifications/',
+        'icon': 'bell', 'count': category_counts.values() | sum,
+      }]) %}
+  {%- for cat, count in category_counts | dictsort %}
+  {%- set ns.items = ns.items + [{
+        'key': cat, 'label': dm.notification_category_label(cat),
+        'href': '/notifications/?category=' ~ cat,
+        'icon': dm.NOTIFICATION_ICONS.get(cat, 'bell'), 'count': count,
+      }] %}
+  {%- endfor %}
+  <div class="mb-5">
+    {{ ui.tabs(ns.items, current=filter_category or '',
+               label=_('Notification categories')) }}
   </div>
+  {%- endif %}
 
-  <!-- Category filters -->
-  <div class="flex gap-2 flex-wrap text-sm">
-    <a href="/notifications" class="px-3 py-1 rounded-full {% if not filter_category %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">{{ _('All') }}</a>
-    {% for cat in ['low_stock','inactivity','metric_reminder','suggestion','trend','info'] %}
-    <a href="/notifications?category={{ cat }}"
-       class="px-3 py-1 rounded-full {% if filter_category == cat %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
-      {{ cat|replace('_', ' ')|title }}
-    </a>
-    {% endfor %}
-  </div>
-
-  {% if notifications %}
+  {%- if notifications %}
   <div class="space-y-2">
-    {% for n in notifications %}
-    {% include "notifications/partials/notification_card.html" with context %}
-    {% endfor %}
+    {%- for n in notifications %}
+    {% include "notifications/partials/notification_card.html" %}
+    {%- endfor %}
   </div>
-  {% else %}
+  {%- else %}
   {#- El emoji 🔔 como iconografía se va: el resto de la app usa Heroicons y un
-      emoji cambia de forma en cada sistema operativo. -#}
-  {{ ui.empty_state(
-      _('No notifications in this category.') if filter_category else _('No notifications.'),
-      text=_("We'll let you know when something needs attention."),
-      icon='bell') }}
-  {% endif %}
+      emoji cambia de forma en cada sistema operativo.
+
+      Con un filtro puesto el vacío significa otra cosa —"no hay de *esta* categoría"—
+      y la salida es volver a todas, así que la acción va por `{% call %}`: la del
+      macro trae un ícono `plus`, que acá sería "crear una notificación". -#}
+  {%- if filter_category %}
+  {% call ui.empty_state(_('Nothing in this category.'),
+                         text=_('Other categories may still have something.'),
+                         icon='bell') %}
+    {{ ui.btn(_('See all notifications'), href='/notifications/', tone='secondary',
+              icon='arrow-left') }}
+  {% endcall %}
+  {%- else %}
+  {{ ui.empty_state(_('No notifications.'),
+                    text=_("We'll let you know when something needs attention."),
+                    icon='bell') }}
+  {%- endif %}
+  {%- endif %}
 
 </div>
 {% endblock %}
