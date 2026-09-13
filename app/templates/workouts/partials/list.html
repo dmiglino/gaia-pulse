@@ -1,0 +1,34 @@
+{#- La lista de entrenamientos: el fragmento que HTMX intercambia y que
+    `workouts/index.html` incluye en la primera carga. Mismo contrato que
+    `meals/partials/list.html`, que explica en detalle por qué existe. -#}
+
+{% if workout_sessions %}
+{% for workout in workout_sessions %}
+{% include 'workouts/partials/workout_card.html' %}
+{% endfor %}
+
+{%- if has_more %}
+{% set more_attrs %}hx-get="/workouts?offset={{ next_offset }}" hx-include="#workout-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#workouts-spinner"{% endset %}
+<div class="flex justify-center pt-1">
+  {{ ui.btn(_('Load more'), tone='secondary', type='button', icon_right='chevron-down', attrs=more_attrs) }}
+</div>
+{%- endif %}
+
+{% elif offset %}
+{#- Se pidió una página que ya no tiene filas: no hay nada que mostrar y tampoco es
+    un error que valga un cartel. -#}
+{% else %}
+{% call ui.card(padding='') %}
+  {%- if filters_active %}
+  {{ ui.empty_state(_('No workouts match these filters'),
+      text=_('Try another day, or look at the whole household.'),
+      icon='filter', tone='move',
+      action_label=_('Clear filters'), action_href='/workouts') }}
+  {%- else %}
+  {{ ui.empty_state(_('No workouts logged yet'),
+      text=_('A walk counts. Describe it in your own words on the Capture screen and it lands here.'),
+      icon='bolt', tone='move',
+      action_label=_('Log first workout'), action_href='/capture?prefill=workout') }}
+  {%- endif %}
+{% endcall %}
+{% endif %}

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -78,13 +78,23 @@ class WorkoutService:
         limit: int = 20,
         offset: int = 0,
         user_id: int | None = None,
+        on_date: date | None = None,
     ) -> list[WorkoutSession]:
+        """Los entrenamientos del hogar, del más nuevo al más viejo.
+
+        `on_date` filtra un solo día. El filtro de fecha de la pantalla mandaba un
+        parámetro que la ruta no leía, así que elegir un día no cambiaba nada.
+        """
         return self.workout_repo.get_household_sessions(
-            household_id, limit=limit, offset=offset, user_id=user_id
+            household_id,
+            limit=limit,
+            offset=offset,
+            user_id=user_id,
+            start_date=on_date,
+            end_date=on_date,
         )
 
     def get_today_sessions(self, household_id: int) -> list[WorkoutSession]:
-        from datetime import date
         return self.workout_repo.get_today_sessions(household_id, date.today())
 
     def get_session(self, session_id: int) -> WorkoutSession | None:

@@ -57,6 +57,30 @@
 {%- endmacro %}
 
 
+{#- ── Tipo de entrenamiento ───────────────────────────────────────────────────
+    La v1 pintaba cada tipo con una paleta distinta (`bg-blue-100`, `bg-orange-100`,
+    `bg-violet-100`, `bg-teal-100`, `bg-sky-100`): cinco familias de color que el
+    modo oscuro no puede seguir. Acá todos caen en los tokens, y el default es
+    `move` — el acento de dominio del movimiento — para que un tipo que el NLP
+    invente igual se vea como un entrenamiento y no como texto gris. -#}
+{% macro workout_type_label(workout_type) -%}
+{%- set labels = {
+  'gym': _('Gym'), 'home': _('At home'), 'outdoor': _('Outdoors'),
+  'cardio': _('Cardio'), 'sports': _('Sports'), 'yoga': _('Yoga'),
+  'other': _('Workout'),
+} -%}
+{{- labels.get(workout_type | lower if workout_type else 'other', workout_type | title) -}}
+{%- endmacro %}
+
+
+{% macro workout_badge(workout_type, size='sm') -%}
+{%- set tones = {'gym': 'move', 'home': 'brand', 'outdoor': 'ok',
+                 'cardio': 'warn', 'sports': 'info', 'yoga': 'body'} -%}
+{{ ui.badge(workout_type_label(workout_type), tone=tones.get(workout_type | lower if workout_type else '', 'move'),
+            icon='bolt', size=size) }}
+{%- endmacro %}
+
+
 {#- ── Cantidad ────────────────────────────────────────────────────────────────
     `quantity` es `Numeric`, así que llega como `Decimal`: sin esto una porción de
     2 se mostraba como "2.00". Los enteros se muestran enteros y el resto con un

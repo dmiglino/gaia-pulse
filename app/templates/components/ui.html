@@ -315,6 +315,82 @@
 {% set INPUT_CLASS = 'w-full px-3.5 py-2.5 bg-card-alt border border-line rounded-control text-sm text-ink placeholder:text-ink-subtle transition-colors focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20' %}
 
 
+{#- ── Indicador de carga ──────────────────────────────────────────────────────
+    `htmx-indicator` (regla en `app.css`) lo muestra solo mientras la request está
+    en vuelo. El `role="status"` con el texto oculto es lo único que un lector de
+    pantalla puede anunciar: la animación no le dice nada.
+
+    El SVG va inline y no por `ic.icon()`: son dos formas con dos opacidades y ese
+    macro rinde un único `path` con `stroke`. -#}
+{% macro spinner(id, class='py-4') -%}
+<div id="{{ id }}" class="htmx-indicator flex justify-center {{ class }}" role="status">
+  <span class="sr-only">{{ _('Loading…') }}</span>
+  <svg class="animate-spin w-5 h-5 text-brand-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+  </svg>
+</div>
+{%- endmacro %}
+
+
+{#- ── Filtro de día + persona ─────────────────────────────────────────────────
+    El filtro que comparten las listas del diario (comidas, entrenamientos). Un
+    `<form method="get">` de verdad y no un espejo del estado en Alpine:
+
+    - funciona sin JS, y con JS HTMX lo intercepta para intercambiar solo la lista;
+    - `hx-push-url` deja la URL compartible y recargable;
+    - el chip activo lo pinta `peer-checked` a partir del valor que vino en la
+      query, así que el estado vive en un solo lugar (la v1 lo tenía en un
+      `x-data="{ activeUser: 'all' }"` que se desincronizaba al recargar);
+    - los campos vacíos que manda un formulario (`?user_id=`) los absorben
+      `query_int`/`query_date` en `app/web/helpers.py`.
+
+    `form_id` es el ancla del `hx-include` del "cargar más": sin él, la tanda
+    siguiente vendría sin los filtros activos. -#}
+{% macro day_person_filters(action, form_id, target, indicator, users, filter_date='', filter_user_id=None) -%}
+<form id="{{ form_id }}" method="get" action="{{ action }}"
+      class="flex flex-col sm:flex-row sm:items-center gap-3 mb-5"
+      hx-get="{{ action }}" hx-trigger="change" hx-target="{{ target }}"
+      hx-indicator="{{ indicator }}" hx-push-url="true">
+
+  <div class="relative flex-1">
+    <label for="{{ form_id }}-date" class="sr-only">{{ _('Filter by day') }}</label>
+    <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-ink-subtle">
+      {{ ic.icon('calendar', 'w-4 h-4') }}
+    </span>
+    <input type="date" id="{{ form_id }}-date" name="date" value="{{ filter_date or '' }}"
+           class="{{ INPUT_CLASS }} pl-9" />
+  </div>
+
+  <fieldset class="flex items-center gap-1 p-1 bg-card-alt border border-line rounded-control self-start">
+    <legend class="sr-only">{{ _('Filter by person') }}</legend>
+    <label class="cursor-pointer">
+      <input type="radio" name="user_id" value="" class="sr-only peer"
+             {{ 'checked' if not filter_user_id else '' }} />
+      <span class="block px-3 py-1.5 rounded-chip text-xs font-semibold text-ink-muted transition-all
+                   peer-checked:bg-card peer-checked:text-ink peer-checked:shadow-sm
+                   peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">{{ _('All') }}</span>
+    </label>
+    {%- for user in users %}
+    <label class="cursor-pointer">
+      <input type="radio" name="user_id" value="{{ user.id }}" class="sr-only peer"
+             {{ 'checked' if filter_user_id == user.id else '' }} />
+      <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-chip text-xs font-semibold text-ink-muted transition-all
+                   peer-checked:bg-card peer-checked:text-ink peer-checked:shadow-sm
+                   peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
+        {{ avatar(user, size='xs') }}{{ user.display_name }}
+      </span>
+    </label>
+    {%- endfor %}
+  </fieldset>
+
+  {#- El submit existe para quien navega sin JS o con el teclado: HTMX dispara en
+      `change` y nunca lo necesita, pero sin él el formulario no se puede enviar. -#}
+  <button type="submit" class="sr-only">{{ _('Apply filters') }}</button>
+</form>
+{%- endmacro %}
+
+
 {#- ── Campo de formulario ──────────────────────────────────────────────────────
     Un `<label>` de verdad asociado por `for`/`id`. Varios inputs de la app no
     tienen ninguno (el filtro de fecha de workouts, la cantidad de la grilla de

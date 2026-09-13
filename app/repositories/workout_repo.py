@@ -18,6 +18,7 @@ class WorkoutRepository(BaseRepository[WorkoutSession]):
         offset: int = 0,
         user_id: int | None = None,
         start_date: date | None = None,
+        end_date: date | None = None,
     ) -> list[WorkoutSession]:
         stmt = (
             select(WorkoutSession)
@@ -37,6 +38,11 @@ class WorkoutRepository(BaseRepository[WorkoutSession]):
         if start_date:
             start_dt = datetime.combine(start_date, datetime.min.time())
             stmt = stmt.where(WorkoutSession.timestamp_start >= start_dt)
+        # `end_date` faltaba, así que el único filtro posible era "desde tal día en
+        # adelante": la pantalla de entrenamientos no tenía forma de pedir un día solo.
+        if end_date:
+            end_dt = datetime.combine(end_date, datetime.max.time())
+            stmt = stmt.where(WorkoutSession.timestamp_start <= end_dt)
         return list(self.db.scalars(stmt).unique().all())
 
     def get_today_sessions(self, household_id: int, today: date) -> list[WorkoutSession]:

@@ -54,19 +54,20 @@ class DashboardService:
         for i in range(3, -1, -1):
             week_start = today - timedelta(days=today.weekday() + 7 * i)
             week_end = week_start + timedelta(days=6)
+            # El corte de fin de semana va en el SQL desde que el repositorio acepta
+            # `end_date`. Antes se pedían las 100 sesiones **más nuevas** desde el
+            # inicio de la semana y se descartaban en Python las posteriores: con más
+            # de 100 sesiones en cuatro semanas, el límite se agotaba con las recientes
+            # y la barra de la semana más vieja daba 0.
             sessions = self.workout_repo.get_household_sessions(
                 household_id,
                 limit=100,
                 user_id=user_id,
                 start_date=week_start,
+                end_date=week_end,
             )
-            sessions_in_week = [
-                s
-                for s in sessions
-                if s.timestamp_start.date() <= week_end
-            ]
             weeks.append(week_start.strftime("W%U"))
-            counts.append(len(sessions_in_week))
+            counts.append(len(sessions))
         return {"labels": weeks, "data": counts}
 
     def _muscle_group_data(self, user_id: int, household_id: int) -> dict[str, Any]:

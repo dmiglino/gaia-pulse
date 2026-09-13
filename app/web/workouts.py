@@ -3,9 +3,13 @@ from fastapi.responses import HTMLResponse
 
 from app.core.dependencies import DB, CurrentUser
 from app.services.workout_service import WorkoutService
-from app.web.helpers import get_template_context, templates
+from app.web.helpers import get_template_context, query_date, query_int, templates
 
 router = APIRouter()
+
+# Igual que en las comidas: el "cargar más" de la v1 apuntaba a `?page=` y leía
+# `has_next`/`next_num` sobre una `list`, así que no se renderizaba nunca.
+PAGE_SIZE = 20
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -13,14 +17,35 @@ def workouts_index(
     request: Request,
     current_user: CurrentUser,
     db: DB,
-    user_id: int | None = Query(None),
-    offset: int = Query(0),
+    user_id: str | None = Query(None),
+    date: str | None = Query(None),
+    offset: int = Query(0, ge=0),
 ) -> HTMLResponse:
+    """La lista de entrenamientos, filtrable por día y por persona.
+
+    Devuelve el parcial cuando la llamada viene de HTMX y la página completa cuando
+    no, para que la misma URL sirva para compartirla o recargarla (`hx-push-url`).
+    """
     svc = WorkoutService(db)
+    filter_user_id = query_int(user_id)
+    filter_date = query_date(date)
+
     ctx = get_template_context(request, db, current_user)
-    ctx["workout_sessions"] = svc.get_sessions(
-        current_user.household_id, limit=20, offset=offset, user_id=user_id
+    page = svc.get_sessions(
+        current_user.household_id,
+        limit=PAGE_SIZE + 1,
+        offset=offset,
+        user_id=filter_user_id,
+        on_date=filter_date,
     )
-    ctx["filter_user_id"] = user_id
+    ctx["workout_sessions"] = page[:PAGE_SIZE]
+    ctx["has_more"] = len(page) > PAGE_SIZE
     ctx["offset"] = offset
+    ctx["next_offset"] = offset + PAGE_SIZE
+    ctx["filter_user_id"] = filter_user_id
+    ctx["filter_date"] = filter_date.isoformat() if filter_date else ""
+    ctx["filters_active"] = bool(filter_user_id or filter_date)
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse("workouts/partials/list.html", ctx)
     return templates.TemplateResponse("workouts/index.html", ctx)

@@ -1,111 +1,101 @@
-{# Reusable workout session card. Expects `workout` (WorkoutSession) in context. #}
-{% set type_colors = {
-  'gym': 'bg-blue-100 text-blue-700',
-  'cardio': 'bg-orange-100 text-orange-700',
-  'outdoor': 'bg-emerald-100 text-emerald-700',
-  'yoga': 'bg-violet-100 text-violet-700',
-  'sports': 'bg-sky-100 text-sky-700',
-  'home': 'bg-teal-100 text-teal-700',
-  'other': 'bg-slate-100 text-slate-600'
-} %}
-{% set wtype = workout.workout_type | lower if workout.workout_type else 'other' %}
-{% set type_color = type_colors.get(wtype, 'bg-slate-100 text-slate-600') %}
+{#- La tarjeta de un entrenamiento. Espera `workout` (WorkoutSession) en el contexto:
+    la usan `workouts/partials/list.html` y el tab de entrenamientos de
+    `history/index.html`.
 
-<div class="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-md hover:shadow-slate-100 transition-all">
+    No es un enlace, a diferencia de la de comidas: acá no hay pantalla de detalle a
+    dónde ir (`app/web/workouts.py` solo tiene el índice) y la tarjeta ya muestra todo
+    lo que hay — ejercicios, series, RPE y notas. Inventar un detalle sería una
+    pantalla nueva, no un rediseño.
 
-  <!-- Header -->
-  <div class="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-50">
-    <div class="flex items-center gap-2.5">
-      <!-- Type badge -->
-      <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-semibold {{ type_color }}">
-        <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
-        </svg>
-        {{ workout.workout_type | title if workout.workout_type else _('Workout') }}
+    Los cinco mapas de color de la v1 (`bg-blue-100`, `bg-orange-100`, `bg-violet-100`,
+    `bg-teal-100`, `bg-sky-100`) se reemplazan por `dm.workout_badge`, y la hora sale
+    de los filtros de Babel: `strftime('%-I:%M %p')` mostraba UTC en inglés
+    ("9:30 PM" para un entrenamiento de las 18:30 de acá). -#}
+{% call ui.card(padding='') %}
+  <div class="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-line">
+    <div class="flex items-center gap-2.5 min-w-0 flex-wrap">
+      {{ dm.workout_badge(workout.workout_type) }}
+      {%- if workout.duration_minutes %}
+      <span class="text-xs font-medium text-ink-muted tabular-nums">
+        {{ workout.duration_minutes }} {{ _('min') }}
       </span>
-
-      {% if workout.duration_minutes %}
-      <span class="text-xs text-slate-500 font-medium">{{ workout.duration_minutes }} {{ _('min') }}</span>
-      {% endif %}
-
-      {% if workout.calories_estimated %}
-      <span class="text-xs text-slate-400">≈ {{ workout.calories_estimated }} {{ _('kcal') }}</span>
-      {% endif %}
+      {%- endif %}
+      {%- if workout.calories_estimated %}
+      <span class="text-xs text-ink-subtle tabular-nums">≈ {{ workout.calories_estimated }} {{ _('kcal') }}</span>
+      {%- endif %}
+      {%- if workout.location %}
+      <span class="inline-flex items-center gap-1 text-xs text-ink-subtle truncate">
+        {{ ic.icon('map-pin', 'w-3.5 h-3.5') }}{{ workout.location }}
+      </span>
+      {%- endif %}
     </div>
-
-    <div class="flex items-center gap-2">
-      {% if workout.location %}
-      <span class="text-xs text-slate-400 hidden sm:block">{{ workout.location }}</span>
-      {% endif %}
-      <span class="text-xs text-slate-400">
-        {{ workout.timestamp_start.strftime('%-I:%M %p') if workout.timestamp_start else '' }}
-      </span>
-      <span class="text-xs text-slate-300">·</span>
-      <span class="text-xs text-slate-400">
-        {{ workout.timestamp_start.strftime('%b %-d') if workout.timestamp_start else '' }}
-      </span>
+    {%- if workout.timestamp_start %}
+    <div class="flex items-center gap-2 text-xs text-ink-subtle flex-shrink-0 tabular-nums">
+      <span class="font-medium text-ink-muted">{{ workout.timestamp_start | local_time }}</span>
+      <span aria-hidden="true">·</span>
+      <span>{{ workout.timestamp_start | local_date('medium') }}</span>
     </div>
+    {%- endif %}
   </div>
 
-  <!-- Participants + exercises -->
-  <div class="px-5 py-4 divide-y divide-slate-50">
+  <div class="px-5 py-4 space-y-3">
     {% if workout.participants %}
     {% for participant in workout.participants %}
-    <div class="{% if not loop.first %}pt-3 {% endif %}{% if not loop.last %}pb-3{% endif %}">
-      <div class="flex items-start gap-2.5">
-        <div class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold mt-0.5"
-             style="background-color: {{ participant.user.avatar_color }}">
-          {{ participant.user.display_name[0] | upper }}
-        </div>
-        <div class="flex-1 min-w-0">
-          <p class="text-xs font-semibold text-slate-600 mb-1.5">{{ participant.user.display_name }}</p>
-          {% if participant.exercises %}
-          <div class="space-y-1">
-            {% for exercise in participant.exercises %}
-            <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-sm text-slate-700 font-medium">{{ exercise.exercise_name }}</span>
-              {% if exercise.sets and exercise.reps %}
-              <span class="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
-                {{ exercise.sets }}×{{ exercise.reps }}
-                {% if exercise.load_kg %} @ {{ exercise.load_kg }}{{ _('kg') }}{% endif %}
-              </span>
-              {% elif exercise.duration_minutes %}
-              <span class="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
-                {{ exercise.duration_minutes }} {{ _('min') }}
-              </span>
-              {% endif %}
-              {% if exercise.distance_km %}
-              <span class="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
-                {{ exercise.distance_km }} km
-              </span>
-              {% endif %}
-              {% if exercise.perceived_effort %}
-              <span class="text-xs text-slate-400">RPE {{ exercise.perceived_effort }}/10</span>
-              {% endif %}
-              {% if exercise.muscle_group %}
-              <span class="text-xs text-slate-400 italic">{{ exercise.muscle_group }}</span>
-              {% endif %}
-            </div>
-            {% endfor %}
-          </div>
-          {% else %}
-          <p class="text-xs text-slate-400 italic">{{ _('No exercises recorded') }}</p>
-          {% endif %}
-          {% if participant.notes %}
-          <p class="text-xs text-slate-400 mt-1.5 italic">{{ participant.notes }}</p>
-          {% endif %}
-        </div>
+    <div class="flex items-start gap-2.5 {{ 'pt-3 border-t border-line' if not loop.first else '' }}">
+      {{ ui.avatar(participant.user, size='sm') }}
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-semibold text-ink-muted mb-1.5">{{ participant.user.display_name }}</p>
+        {% if participant.exercises %}
+        <ul class="space-y-1.5 list-none m-0 p-0">
+          {% for exercise in participant.exercises %}
+          <li class="flex items-center gap-2 flex-wrap">
+            <span class="text-sm font-medium text-ink">{{ exercise.exercise_name }}</span>
+            {#- Series y carga en un solo chip: es una unidad ("3×10 @ 40 kg"), y
+                partirla en tres chips hacía que un ejercicio de fuerza ocupara una
+                línea entera de la tarjeta. -#}
+            {%- if exercise.sets and exercise.reps %}
+            <span class="text-xs text-ink-muted bg-card-alt border border-line px-1.5 py-0.5 rounded-chip tabular-nums">
+              {{ exercise.sets }}×{{ exercise.reps }}
+              {%- if exercise.load_kg %} @ {{ dm.quantity(exercise.load_kg, _('kg')) }}{% endif %}
+            </span>
+            {%- elif exercise.duration_minutes %}
+            <span class="text-xs text-ink-muted bg-card-alt border border-line px-1.5 py-0.5 rounded-chip tabular-nums">
+              {{ exercise.duration_minutes }} {{ _('min') }}
+            </span>
+            {%- endif %}
+            {%- if exercise.distance_km %}
+            <span class="text-xs text-ink-muted bg-card-alt border border-line px-1.5 py-0.5 rounded-chip tabular-nums">
+              {{ dm.quantity(exercise.distance_km, _('km')) }}
+            </span>
+            {%- endif %}
+            {%- if exercise.perceived_effort %}
+            {#- El RPE es la única señal de esfuerzo que el usuario carga a mano, así
+                que se muestra con su escala visible y con `title` explicando qué es. -#}
+            <span class="text-xs text-ink-subtle tabular-nums" title="{{ _('Perceived effort, from 1 to 10') }}">
+              {{ _('RPE') }} {{ exercise.perceived_effort }}/10
+            </span>
+            {%- endif %}
+            {%- if exercise.muscle_group %}
+            <span class="text-xs text-ink-subtle">{{ exercise.muscle_group | title }}</span>
+            {%- endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-xs text-ink-subtle">{{ _('No exercises recorded') }}</p>
+        {% endif %}
+        {%- if participant.notes %}
+        <p class="text-xs text-ink-subtle mt-1.5">{{ participant.notes }}</p>
+        {%- endif %}
       </div>
     </div>
     {% endfor %}
     {% else %}
-    <p class="text-sm text-slate-400 py-2">{{ _('No participants recorded.') }}</p>
+    <p class="text-sm text-ink-subtle">{{ _('No participants recorded.') }}</p>
     {% endif %}
-  </div>
 
-  {% if workout.notes %}
-  <div class="px-5 pb-3">
-    <p class="text-xs text-slate-400 italic">{{ _('Note:') }} {{ workout.notes }}</p>
+    {%- if workout.notes %}
+    <p class="text-xs text-ink-subtle pt-1">{{ _('Note:') }} {{ workout.notes }}</p>
+    {%- endif %}
   </div>
-  {% endif %}
-</div>
+{% endcall %}
