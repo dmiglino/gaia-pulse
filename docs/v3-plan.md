@@ -953,24 +953,64 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       filtro exige `scope_type == "household"`, porque las personales también llevan
       `household_id` y sin eso la tarjeta de despensa que aceptó uno bloqueaba la del otro.
 
-**4.4.1 — Aprender de lo que hacen, no solo de lo que tocan**
+**4.4.1 — Aprender de lo que hacen, no solo de lo que tocan** ✅ hecho
 
 Hoy la única entrada real de aprendizaje son los botones de aceptar/descartar de una
 sugerencia. Un household que simplemente *usa* la app —registra comidas, entrenamientos y
 compras— no le enseña nada. Cada captura confirmada pasa a emitir señales implícitas:
 
-- [ ] Comidas: cada `MealItemConsumed` confirmado emite señal por alimento **y** por
-      `FoodItem.category`, con el `meal_type` en `context_json`.
-- [ ] Entrenamientos: `WorkoutExercise` emite señal por ejercicio y por
-      `ExerciseType.muscle_group`; el `perceived_effort` (RPE) modula el valor — lo que
-      cuesta mucho y no se repite es una señal distinta de lo que se repite solo.
-- [ ] Compras: `PantryMovement(movement_type="purchase")` emite `repeated_purchase`, que el
-      scorer **ya lee** y hoy nadie escribe.
+- [x] Comidas: cada `MealItemConsumed` confirmado emite señal por alimento, con el
+      `meal_type` en `context_json` — `MealEvent.meal_type` se guardaba desde la v1 y nadie
+      lo leía para aprender, así que "café" era un gusto y no un gusto *del desayuno*, y la
+      4.4.5 hubiera tenido que volver a buscar la comida para averiguar algo que estaba a
+      mano al escribir. **La señal por `FoodItem.category` se difiere a la 4.4.4**, que es
+      donde se construye el lector de sujetos de nivel atributo: escribir filas de categoría
+      ahora, sin ningún candidato que declare ese `subject_type`, es exactamente el bug de
+      `repeated_purchase` —escritor sin lector, o lector sin escritor— que este mismo commit
+      viene a cerrar.
+- [x] Entrenamientos: `WorkoutExercise` emite señal por ejercicio **y** por su
+      `muscle_group`, y el `perceived_effort` (RPE) modula el valor: de 9 en adelante pesa la
+      mitad (`_HIGH_EFFORT_WEIGHT`), porque haber hecho algo es evidencia de que se puede
+      repetir y una serie al límite dice lo contrario. La escala es de un solo lado a
+      propósito: un RPE bajo no se castiga, una sesión liviana es perfectamente repetible.
+      El grupo muscular sale de la columna de la captura y no del catálogo — cuando el
+      ejercicio viene sin grupo no se inventa uno; resolverlo contra `ExerciseType` es 4.5.
+      La señal de `workout_type` que ya existía **no** se reemplazó: `workout_type` es el
+      *lugar* ("gym"/"home"/"outdoor"), no la actividad, y era la única que había — cien
+      sesiones de gimnasio registradas no enseñaban nada sobre press de banca.
+- [x] Compras: `PantryMovement(movement_type="purchase")` emite `repeated_purchase`, que el
+      scorer **ya leía** y nadie escribía: el circuito que motivó todo el módulo `learning`
+      queda cerrado. Pesa 0.5 y no 1.0 porque comprar dice menos que comer —se compra para
+      el otro, se compra y se tira— y porque se atribuye a quien registró la compra, que en
+      una casa de dos es quien fue al súper. Hizo falta un `flush` dentro del bucle:
+      `_make_movement` solo hace `add`, así que sin eso `movement.id` era `None` y la señal
+      quedaba sin rastro de dónde salió, que es lo que la 4.4.8 necesita para explicarla y
+      para poder olvidarla.
 - [ ] Ausencia como señal débil: un alimento sugerido que no aparece en ninguna comida en N
       días es un negativo suave, no un neutro. Es lo que distingue "no me interesa" de
-      "todavía no lo vi".
-- [ ] `source_type="implicit"` en todas estas, para poder distinguirlas de las explícitas al
-      explicar y al permitir corregir.
+      "todavía no lo vi". **Se difiere a después de la 4.4.3**, por dos razones: necesita un
+      job de barrido (nada corre "N días después" por sí solo), y sin la confianza por
+      cantidad de observaciones una sola sugerencia no comida se convierte en un veto
+      permanente sobre ese alimento — que es peor que no tener la señal.
+- [x] `source_type="implicit"` en todas estas, para poder distinguirlas de las explícitas al
+      explicar y al permitir corregir. La 4.4.2 además les va a dar semividas distintas.
+- [x] **Se saca `rejected_activity` de `NEGATIVE_SIGNAL_TYPES`.** Es el mismo bug una capa
+      más arriba: el scorer y el filtro de la v1 lo leían y ningún código lo escribió nunca,
+      así que no puede haber filas. Rechazar una sugerencia de actividad graba
+      `rejected_suggestion` con `subject_type="exercise"`, que es la misma información sin un
+      segundo tipo que mantener sincronizado. La lista de ejemplos de `app/models/signal.py`
+      —que también nombraba `repeated_recipe`, `ingredient_pairing`, `feasibility_signal`,
+      ninguno escrito jamás— pasa a apuntar a `learning.py` en vez de ser una segunda copia
+      del vocabulario que se separa sola.
+- [x] Tests: nuevo `tests/test_learning_signals.py` (15). Uno por escritor —qué sujeto,
+      qué valor, qué contexto, contra qué entidad de origen— más aislamiento por persona en
+      comidas y entrenamientos compartidos (regla 4), el fin del recorrido (comprar y comer
+      algo lo sube en el ranking; una señal de hace 200 días deja de contar), y sobre todo
+      `test_every_signal_type_the_reader_knows_has_a_writer`: recorre las fuentes de `app/`
+      por AST —no por grep, porque un comentario que menciona un tipo no es un escritor— y
+      falla si algún tipo de `POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES` no aparece en
+      ningún otro módulo. Es la red que hace que este bug falle en el commit que lo
+      introduce y no meses después.
 
 **4.4.2 — Decaimiento temporal: lo que hace que sea aprender y no acumular**
 
@@ -986,6 +1026,9 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       ser un valor fijo: un descarte es una pista, seis descartes es una regla. Hoy un solo
       tap accidental puede vetar un alimento para siempre.
 - [ ] Umbral mínimo de evidencia antes de que una señal filtre (en vez de solo puntuar).
+- [ ] Con esto en pie se puede sumar la **ausencia como señal débil** que la 4.4.1 dejó
+      pendiente: hasta que un negativo suave necesite varias observaciones para filtrar, una
+      sola sugerencia no comida veta el alimento para siempre.
 
 **4.4.4 — Aprender el atributo, no solo el nombre exacto**
 
@@ -995,6 +1038,9 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       nivel de atributo exigiendo más evidencia que el puntual.
 - [ ] Con eso la app puede acertar con algo que el usuario **nunca vio antes**, que es la
       diferencia entre recordar y aprender.
+- [ ] Acá entra la señal por `FoodItem.category` que la 4.4.1 dejó anotada: el escritor y el
+      lector del nivel atributo se hacen juntos, en el mismo commit, porque separarlos es
+      cómo nació `repeated_purchase`.
 
 **4.4.5 — Gusto con contexto horario**
 

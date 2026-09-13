@@ -72,12 +72,14 @@ POSITIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
 #: descartar como posponer, y tratar un "más tarde" como un "no" es el bug que arregla la
 #: 4.4.7. Que un descarte pese como negativo se decide por el signo de `value`, no por el
 #: tipo.
-NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
-    {
-        "rejected_suggestion",
-        "rejected_activity",
-    }
-)
+#:
+#: `rejected_activity` **tampoco** está, y no es un olvido: el scorer y el filtro de la v1
+#: lo leían y ningún código lo escribió nunca —el mismo caso que `repeated_purchase`, del
+#: que este módulo habla arriba—. Rechazar una sugerencia de actividad graba
+#: `rejected_suggestion` con `subject_type="exercise"`, que es la misma información sin un
+#: segundo tipo que mantener sincronizado. Que no vuelva a aparecer un tipo que se lee y no
+#: se escribe lo cuida `test_every_signal_type_the_reader_knows_has_a_writer`.
+NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion"})
 
 
 def normalize_subject(name: str) -> str:

@@ -8,6 +8,14 @@ from app.recommendations import learning
 from app.repositories.workout_repo import WorkoutRepository
 from app.schemas.workout import WorkoutSessionCreate
 
+#: A partir de este esfuerzo percibido (RPE 1-10) lo hecho pesa la mitad como gusto.
+#: Haber hecho algo es evidencia de que se puede repetir, y una serie al 9 o al 10 dice
+#: justamente lo contrario: se hizo, costó, y no es lo que se va a elegir el martes que
+#: viene. Un RPE bajo no se castiga —una sesión liviana es perfectamente repetible—, así
+#: que la escala es de un solo lado a propósito.
+_HIGH_EFFORT_RPE = 9
+_HIGH_EFFORT_WEIGHT = 0.5
+
 
 class WorkoutService:
     def __init__(self, db: Session) -> None:
@@ -56,6 +64,41 @@ class WorkoutService:
                 )
                 self.db.add(exercise)
 
+                #: Lo que se hizo, ejercicio por ejercicio. Antes la única señal de un
+                #: entrenamiento era su `workout_type` —"gym", "home", "outdoor"—, que es
+                #: el lugar, no la actividad: registrar cien sesiones de gimnasio no
+                #: enseñaba nada sobre press de banca ni sobre correr. El generador de
+                #: actividad propone candidatos con `subject_type="exercise"`, así que
+                #: estas filas sí las lee alguien.
+                learning.record_signal(
+                    self.db,
+                    user_id=p_data.user_id,
+                    signal_type="repeated_activity",
+                    subject_type="exercise",
+                    subject_name=ex_data.exercise_name,
+                    value=self._effort_weight(ex_data.perceived_effort),
+                    source_type="implicit",
+                    source_entity_type="workout_session",
+                    source_entity_id=session.id,
+                )
+                #: Y el grupo muscular, que es el sujeto de la rotación que propone
+                #: `activity_generator`. Sale de la columna de la captura y no del
+                #: catálogo: cuando el ejercicio viene sin grupo no se inventa uno
+                #: —resolverlo contra `ExerciseType` es parte de la 4.5, que es donde el
+                #: catálogo entero deja de estar ignorado—.
+                if ex_data.muscle_group:
+                    learning.record_signal(
+                        self.db,
+                        user_id=p_data.user_id,
+                        signal_type="repeated_activity",
+                        subject_type="muscle_group",
+                        subject_name=ex_data.muscle_group,
+                        value=self._effort_weight(ex_data.perceived_effort),
+                        source_type="implicit",
+                        source_entity_type="workout_session",
+                        source_entity_id=session.id,
+                    )
+
             # Record implicit signals for the activity
             if data.workout_type:
                 learning.record_signal(
@@ -74,6 +117,13 @@ class WorkoutService:
         self.db.commit()
         self.db.refresh(session)
         return session
+
+    @staticmethod
+    def _effort_weight(perceived_effort: int | None) -> float:
+        """Cuánto vale como gusto haber hecho un ejercicio con este RPE."""
+        if perceived_effort is not None and perceived_effort >= _HIGH_EFFORT_RPE:
+            return _HIGH_EFFORT_WEIGHT
+        return 1.0
 
     def get_sessions(
         self,

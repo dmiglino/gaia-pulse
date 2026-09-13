@@ -78,6 +78,11 @@ class MealService:
                     source_type="implicit",
                     source_entity_type="meal_event",
                     source_entity_id=event.id,
+                    #: A qué hora del día le gusta. `MealEvent.meal_type` ya se guardaba y
+                    #: nadie lo leía para aprender: sin esto, "café" es un gusto y no un
+                    #: gusto *del desayuno*, y la 4.4.5 tendría que volver a buscar la
+                    #: comida para averiguarlo.
+                    context={"meal_type": data.meal_type} if data.meal_type else None,
                 )
 
         self.db.flush()

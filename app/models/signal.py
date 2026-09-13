@@ -29,11 +29,15 @@ class BehaviorSignal(Base):
     signal_type: Mapped[str] = mapped_column(
         String(60), nullable=False, index=True
     )
-    # Examples:
-    # accepted_suggestion / rejected_suggestion / ignored_suggestion
-    # repeated_purchase / repeated_meal_choice / repeated_recipe
-    # repeated_activity / rejected_activity
-    # ingredient_pairing / contextual_preference / feasibility_signal
+    # El vocabulario vive en `app/recommendations/learning.py`
+    # (`POSITIVE_SIGNAL_TYPES` / `NEGATIVE_SIGNAL_TYPES`), que es lo que el scorer lee y
+    # el único módulo que escribe acá. Esta lista era de ejemplos aspiracionales
+    # —`repeated_recipe`, `ingredient_pairing`, `rejected_activity`— que nadie escribió
+    # nunca y que el scorer de la v1 sí leía; repetirla acá es la forma de que las dos
+    # copias se separen otra vez.
+    # Los que existen hoy:
+    # accepted_suggestion / rejected_suggestion / ignored_suggestion / explicit_preference
+    # repeated_meal_choice / repeated_purchase / repeated_activity
 
     # What entity this refers to
     entity_type: Mapped[str] = mapped_column(

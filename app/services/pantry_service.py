@@ -4,9 +4,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.pantry import PantryMovement, PantryStock
+from app.recommendations import learning
 from app.repositories.food_repo import FoodRepository
 from app.repositories.pantry_repo import PantryMovementRepository, PantryStockRepository
 from app.schemas.pantry import PurchaseRequest, StockAdjustRequest
+
+#: Una compra vale la mitad que una comida como evidencia de gusto. Ver
+#: `PantryService.process_purchase`.
+_PURCHASE_SIGNAL_VALUE = 0.5
 
 
 class PantryService:
@@ -71,6 +76,32 @@ class PantryService:
                 notes=request.notes,
             )
             movements.append(movement)
+            #: Para que la señal pueda apuntar al movimiento: `_make_movement` solo hace
+            #: `add`, así que sin esto `movement.id` es `None` y la fila queda sin rastro
+            #: de dónde salió — que es lo que la 4.4.8 necesita para poder explicarla y
+            #: para poder olvidarla.
+            self.db.flush()
+
+            #: `repeated_purchase` era el tipo de señal que el scorer leía y **nadie
+            #: escribía nunca**: el síntoma de que el vocabulario estaba repartido entre
+            #: lector y escritores. Acá se cierra el circuito, y con esto una compra
+            #: repetida empuja los candidatos de comida y de despensa que la nombran.
+            #:
+            #: Pesa la mitad que una comida a propósito: comprar algo dice menos que
+            #: comerlo —se compra para otro, se compra y se tira—, y además esto se
+            #: atribuye a quien registró la compra, que en una casa de dos es quien fue al
+            #: súper y no necesariamente quien lo come. Es una pista, no una preferencia.
+            learning.record_signal(
+                self.db,
+                user_id=user_id,
+                signal_type="repeated_purchase",
+                subject_type="food",
+                subject_name=item.food_name,
+                value=_PURCHASE_SIGNAL_VALUE,
+                source_type="implicit",
+                source_entity_type="pantry_movement",
+                source_entity_id=movement.id,
+            )
 
         self.db.flush()
         self.db.commit()
