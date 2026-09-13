@@ -944,7 +944,11 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
       con `record_signal()` y `net_affinity()`. `SuggestionService`, `MealService` y
       `WorkoutService` ya no tienen `BehaviorSignalRepository` a mano —esa era la puerta por
       la que se escribía salteando la normalización—, y por eso el vocabulario no puede
-      volver a divergir. **Corrección al diagnóstico original:** de los tres tipos que el
+      volver a divergir. (`net_affinity()` **ya no existe**: la 4.4.3 lo partió en
+      `SubjectAffinity` + `subject_affinities()`, porque un solo número mezclaba *para qué
+      lado* con *cuánto lo sostiene*. `record_signal()` sigue siendo el único punto de
+      escritura, y `PantryService` se sumó a la lista en la 4.4.1.)
+      **Corrección al diagnóstico original:** de los tres tipos que el
       scorer leía sin escritor, `repeated_meal_choice` y `repeated_activity` **sí** tenían
       quién los escribiera (`MealService` y `WorkoutService`); el único realmente huérfano
       era `repeated_purchase`, y sigue sin escritor hasta la 4.4.1.
@@ -1024,8 +1028,9 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       gusto que cambió **no se puede desaprender nunca**. El peso pasa a ser
       `value * 0.5 ** (edad_en_días / SEMIVIDA)`, con semivida distinta por tipo: las
       explícitas duran más que las implícitas.
-      → `learning.half_life_days()` / `decay_factor()` / `signal_weight()`, y
-      `net_affinity` suma pesos descontados en vez de `value` crudo. Las semividas:
+      → `learning.half_life_days()` / `decay_factor()` / `signal_weight()`, y la lectura de
+      afinidad suma pesos descontados en vez de `value` crudo —era `net_affinity`, que la
+      4.4.3 reemplazó por `subject_affinities()`—. Las semividas:
       **explícita 90 días, implícita 21**. La explícita dura más porque dice algo sobre la
       persona ("no me gusta el hígado") y la implícita algo sobre la semana ("comí pollo el
       martes"). Un `source_type` desconocido —hoy `"inferred"`, que la columna admite y
@@ -1238,14 +1243,97 @@ ejercicios esperan la 4.5)
       contexto** ni de `meal_type`, y agregarla es una migración — la v3 gastó la única que
       tenía en la `0003`. No es un lector sin escritor: el escritor existe desde la 4.4.1.
 
-**4.4.6 — Separar "me gusta" de "lo comí ayer"**
+**4.4.6 — Separar "me gusta" de "lo comí ayer"** ✅ hecho
 
-- [ ] Hoy `repeated_meal_choice` se escribe con `value=1.0` por ítem por comida, así que los
+- [x] Hoy `repeated_meal_choice` se escribe con `value=1.0` por ítem por comida, así que los
       alimentos de todos los días acumulan decenas de positivos y **dominan de forma
       monótona: el bucle empuja a repetir, no a variar**. Se parte en dos señales con
       ventanas distintas: afinidad (estable, con decaimiento) y saciedad reciente (ventana
       corta, supresiva).
-- [ ] Un favorito sigue siendo favorito, pero deja de aparecer tres días seguidos.
+      → **Corrección al plan, y es el corazón del eje:** no se parte en dos señales, se
+      parte en dos **lecturas de la misma fila**. La fila que dice "esto le gusta" dice
+      también "esto lo comió ayer", y lo que las separa no es el dato: es el reloj. La
+      saciedad lee exactamente las mismas filas con semivida de **día y medio** contra los
+      21 de la afinidad implícita — catorce veces más corta. Es la misma decisión que la del
+      nivel atributo en la 4.4.4: un lector nuevo no puede olvidarse de nada, funciona
+      retroactivo sobre los meses de señales que ya están escritas, y no cuesta ni una
+      columna ni una migración (la única de la v3 se gastó en la `0003`). Escribir una
+      segunda fila por comida habría necesitado que los tres escritores se acordaran, para
+      guardar dos veces el mismo hecho.
+      → `learning.satiety_pressure()`, `_SATIETY_HALF_LIFE_DAYS = 1.5`, y el parámetro
+      `half_life=` que se le agregó a `decay_factor()`/`signal_weight()` para que la segunda
+      lectura no sea una segunda copia de `0.5 ** (edad/vida)` — dos copias es cómo empiezan
+      a discrepar.
+- [x] **La saciedad la producen los actos, nunca los dichos.** `CONSUMPTION_SIGNAL_TYPES` es
+      el subconjunto `{repeated_meal_choice, repeated_purchase, repeated_activity}`: decir
+      que algo te gusta, o aceptar la sugerencia de comerlo, no te llena. Si contara,
+      registrar una preferencia la suprimiría. Los tres actos cuentan y no solo la comida:
+      comprar leche ayer es una razón para no sugerir comprar leche hoy, y repetir el mismo
+      ejercicio tres días seguidos es el mismo error con otro cuerpo. Un test guarda la
+      invariante de que el subconjunto siga siendo un subconjunto de los positivos.
+- [x] **No devuelve una `SubjectAffinity` porque no tiene dirección.** Los otros tres ejes
+      responden "¿le gusta?" con distinto nivel de detalle; este responde "¿cuánto ya hubo?",
+      y es el único que solo puede restar. Un favorito sigue siendo un favorito: lo que deja
+      de ser es una buena idea para hoy. Las señales se suman **en valor absoluto** —importa
+      el volumen, no el signo— y saturan con la misma curva `n/(n+k)` que la confianza del
+      gusto, con la misma `k = 2.0`: en una casa que come tres veces por día, dos raciones
+      descontadas son aproximadamente un día de haber comido eso. Sin saturar, la
+      penalización se desbordaría y un alimento frecuente quedaría suprimido para siempre —
+      el problema original con el signo dado vuelta.
+- [x] Un favorito sigue siendo favorito, pero deja de aparecer tres días seguidos.
+      → Medido, con la perilla en `_SATIETY_PENALTY = 0.15`. Un favorito con ocho comidas
+      hace un mes sale en **0.5717**; el mismo favorito comido **ayer** sale en **0.5437**,
+      así que pierde contra una alternativa igual de querida y **sigue arriba de 0.5**; y el
+      mismo con una comida más hace **una semana** sale en **0.5755**, o sea *más* que el
+      original, porque a siete días la saciedad ya se apagó y lo único que agregó esa comida
+      es gusto. Ese es el reparto entero que pedía la 4.4.6, en tres números.
+      La presión sola, para tener la escala a la vista: una comida hace 12 h da `0.284`
+      (resta `-0.043`), tres dan `0.543` (`-0.081`), treinta dan `0.923` (`-0.138`); las
+      mismas tres comidas hace 3 días dan `0.273`, hace una semana `0.056` y hace dos
+      semanas `0.002`. Se apaga por decaimiento, no por un corte: no hay ninguno.
+- [x] **La perilla vale 0.15 —lo mismo que un "no"— y no por simetría estética.** Tiene que
+      poder **cancelar** el boost acumulado de un favorito, cuyo techo es
+      `_POSITIVE_SIGNAL_BOOST = 0.12`, o el bucle sigue empujando a repetir; y no más que
+      eso, o un favorito comido ayer se caería de la lista en vez de bajar un puesto. La
+      consecuencia que conviene tener a la vista: para señales del **mismo** día la saciedad
+      y el boost puntual crecen con la misma curva, así que la resta neta queda en
+      `-0.03 * presión` — comer algo hoy lo hace, hoy, apenas menos sugerible.
+- [x] **No filtra**, como los otros dos ejes nuevos: haber comido milanesas ayer no es un
+      "no" a las milanesas, es un "hoy otra cosa". Y un veto duraría más que su propia causa,
+      que se apaga en un par de días.
+      Tampoco es la penalización por diversidad, aunque se parezcan: esa mira lo que la app
+      **sugirió** y es un escalón fijo de `-0.20` por siete días; esta mira lo que la persona
+      **hizo** y se apaga sola. Una comida que la app nunca sugirió no lleva la primera.
+- [x] Ocho tests nuevos (`TestSatiety`): el favorito comido ayer que pierde contra uno que
+      no, el favorito que a la semana vuelve a ser el favorito entero, los dos relojes
+      medidos sobre la misma fila, que un dicho no llena, que los tres actos sí, que nunca es
+      un veto, que la presión satura, y que no es la penalización por diversidad.
+- [x] **Cinco tests viejos había que arreglar, y el arreglo dice algo:** los cinco creaban
+      señales de consumo **sin fecha** —el helper las deja así a propósito, porque
+      `created_at` lo pone la base— y desde este eje una señal de consumo sin fecha es
+      consumo que está pasando *ahora*, o sea presión máxima. Es el caso correcto, no un
+      accidente: un acto en curso llena. Así que los tres tests de integración
+      (`TestWhatIsLearnedChangesWhatIsSuggested`) ahora corren las señales al pasado con un
+      helper `_backdate()` que explica por qué —en la vida real la sugerencia se calcula
+      cuando corre el job, no en la transacción que registra la cena—, y
+      `test_a_recent_taste_outranks_an_old_one` pasó su señal "reciente" de 1 día a 10.
+      El quinto es el interesante: `test_confidence_saturates_instead_of_growing` medía la
+      forma de la curva de saturación **a través del score**, y ahora la mide sobre la fuerza
+      aprendida. El ajuste es `knob * fuerza`, o sea lineal, así que la forma es idéntica en
+      los dos lados — pero el score suma además decaimiento y saciedad, y ponerle una fecha
+      para apagar la saciedad apaga también la mitad de la evidencia: la curva medida así ya
+      no es la de la saturación. El test estaba midiendo tres ejes y afirmando algo sobre
+      uno.
+- [ ] **Postergado a propósito: la saciedad cruda que ya existe en `meal_generator`.**
+      `meal_generator.py:138-139` descuenta la confianza del candidato por frecuencia
+      reciente (`confidence = max(0.5, 0.85 - 0.05 * freq_penalty)`), y hay además una regla
+      de variedad que excluye lo muy repetido y otra de preferencia que se saltea con
+      `recent_count >= 3`. Es el mismo problema resuelto peor —un escalón plano de 7 días,
+      sobre el contenido de la *tarjeta* en vez del sujeto, y sin decaimiento— y hoy convive
+      con el eje nuevo. No se toca en la 4.4.6 porque cambiarlo mueve la confianza base de
+      todos los candidatos de comida, que es lo que muchos tests usan como referencia, y
+      **ningún test afirma hoy ese comportamiento**. Va con la 4.5, junto con el
+      `UserContext`, que es donde el generador se reescribe de todos modos.
 
 **4.4.7 — El "no" que hoy se pierde**
 
@@ -1506,13 +1594,18 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 |
-|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** |
-| `ruff check .` | 292 findings | **288** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) |
-| `sync_agent_assets.py --check` | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4 |
+|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **459 passed** |
+| `ruff check .` | 292 findings | **288** | **250** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** |
+| `sync_agent_assets.py --check` | ok | ok | ok |
+
+La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
+ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
+pendiente. Los números de la última columna se midieron con la forma `.venv/bin/python -m`
+sobre el árbol de `393ec82`.
 
 > `alembic check` **no corre localmente**: no hay PostgreSQL en la máquina
 > (`connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection
