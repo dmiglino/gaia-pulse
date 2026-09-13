@@ -103,6 +103,7 @@ Todas verificadas leyendo el código, con archivo y línea.
 | 11 | `href="#"` en "Forgot password?" y checkbox `remember` que el backend ignora | `login.html:112,143` | Dos promesas que la app no cumple |
 | 12 | `scrollbar-hide` no está definido en ningún lado | `pantry/index.html:71` | Barra de scroll horizontal visible en los filtros |
 | 13 | `x-cloak` usado sin regla CSS | `base.html:65`, `stock_grid.html:50` | Flash de contenido sin estilar al cargar |
+| 14 | Los cuatro `new Chart(...)` del dashboard corren **inline en tiempo de parseo**, pero Chart.js se carga con `defer` | `dashboard/index.html:149,168,179,190` ← `base.html:50` | `Chart is not defined`: **ninguno de los cuatro gráficos del dashboard se dibujó nunca**. Encontrado durante la Fase 2; se arregla en la Fase 3, que reescribe esos configs para usar los tokens |
 
 ### B. Feature huérfana: el onboarding
 
@@ -376,29 +377,96 @@ tocar el backend donde no hace falta.
 Sin cambios visuales masivos todavía: se construye la infraestructura de la que vive la
 Fase 3.
 
-- [ ] **Capa de tokens** en `app/static/css/app.css`: `--surface`, `--card`, `--line`,
-      `--ink`, `--ink-muted` + acentos de dominio (food / move / body / stock / alert),
-      definidos en `:root` y redefinidos bajo `[data-theme="dark"]` y
-      `@media (prefers-color-scheme: dark)`. Se referencian desde la config de Tailwind como
+- [x] **Capa de tokens** en `app/static/css/app.css`: 8 neutrales (`--surface`, `--card`,
+      `--card-alt`, `--line`, `--line-strong`, `--ink`, `--ink-muted`, `--ink-subtle`), la
+      escala `brand` de 10 pasos, 4 familias de acento de dominio (food / move / body /
+      stock) y 4 de estado (ok / warn / danger / info), cada una con `soft` / `ink` /
+      `solid`. Se referencian desde la config de Tailwind como
       `rgb(var(--x) / <alpha-value>)`, de modo que **el modo oscuro es un swap de variables,
       no un barrido de clases `dark:`**. Elimina también los hex hardcodeados de `app.css`
-      (scrollbar, toasts, nav-active).
-- [ ] **`app/templates/layouts/shell.html`**: un `<head>` canónico único (meta, viewport,
-      theme-color, **una** config de Tailwind, Inter, HTMX/Alpine/Chart, `app.css`, y el
-      script de inicialización de tema **antes** del render para evitar el flash).
-      `base.html`, `auth/login.html`, `errors/404.html` y `errors/500.html` lo extienden.
-      Es necesario porque los handlers de error pasan solo `{"request": request}`
+      (scrollbar, toasts, `recordPulse`) y la regla dañina `nav a.nav-active`.
+      **Desvío del plan:** *no* hay un bloque `@media (prefers-color-scheme: dark)`
+      duplicado. El script síncrono de `shell.html` **siempre** estampa `data-theme` (de
+      `localStorage`, y si no hay nada, de la preferencia del sistema) y el servidor
+      renderiza `data-theme="light"` por default, así que no existe un estado sin tema:
+      el media query solo agregaría un segundo lugar donde editar los mismos 40 valores.
+- [x] **`app/templates/layouts/shell.html`**: un `<head>` canónico único (meta, viewport,
+      theme-color por esquema, **una** config de Tailwind, Inter, HTMX/Alpine/Chart,
+      `app.css`, y el script de inicialización de tema **antes** del render para evitar el
+      flash). `base.html`, `auth/login.html`, `errors/404.html` y `errors/500.html` lo
+      extienden. Es necesario porque los handlers de error pasan solo `{"request": request}`
       (`app/main.py`), que es la razón por la que hoy son documentos HTML sueltos con configs
-      divergentes.
-- [ ] **`app/templates/components/icons.html`** con un macro `icon(name, class)` que absorbe
-      los 91 SVG copiados y reemplaza los emoji-como-ícono.
-- [ ] **`app/templates/components/ui.html`** con `card`, `page_header`, `stat`, `badge`,
-      `btn`, `avatar`, `tabs`. Hoy hay **cero** macros en todo el proyecto.
-- [ ] Toggle de tema en `app/static/js/app.js` (detección de sistema + persistencia en
-      `localStorage`, con try/catch).
-- [ ] Escala de radios y **una sola** gramática de tarjeta; consolidar las 12 paletas
-      paralelas en los tokens.
-- [ ] Borrar el huérfano `app/templates/capture/preview.html` (254 líneas).
+      divergentes. `darkMode: 'class'` (no la forma de array, que exige Tailwind ≥3.4.1 y
+      rompería toda la config en silencio sobre un build viejo del CDN), y el script setea
+      tanto `data-theme` como la clase `dark`.
+- [x] **`app/templates/components/icons.html`** con macros `icon(name, class, stroke)` y
+      `spinner(class)`. Los paths **no** se escribieron de memoria: salieron de un script
+      sobre `app/templates/**/*.html`, que encontró **44 cuerpos distintos entre 95 SVG
+      inline** — varios eran copias *truncadas* del mismo ícono (el rayo de workouts sin su
+      mitad inferior, la caja de pantry cortada al medio). Un nombre desconocido renderiza
+      el glifo `question`, así que si algo se rompe, se ve.
+- [x] **`app/templates/components/ui.html`** — los primeros macros del proyecto:
+      `card`, `card_link`, `section_title`, `page_header`, `stat`, `badge`, `dot`,
+      `progress`, `btn`, `avatar`, `attribution`, `tabs`, `notice`, `field`, `field_wrap`,
+      `empty_state`, `theme_toggle`.
+- [x] Toggle de tema en `app/static/js/app.js` (detección de sistema + persistencia en
+      `localStorage`, con try/catch), por delegación sobre `[data-theme-toggle]` para que
+      funcione también dentro de un fragmento que llega por HTMX. Chart.js se tinta desde
+      los mismos tokens vía `tokenColor()` y `applyChartTheme()`, que re-tinta los gráficos
+      ya montados con `Chart.getChart(canvas)`.
+- [x] Escala de radios con nombre por tipo de objeto (`card` / `control` / `chip` / `pill`)
+      y **una sola** gramática de tarjeta, en el macro `card`.
+      **Alcance real:** consolidar las 12 paletas paralelas de las 29 páginas es el barrido
+      de la Fase 3. La Fase 2 construye la maquinaria y migra el chrome, el login y las
+      páginas de error — **el modo oscuro está completo solo al terminar la Fase 3.**
+- [x] Borrar el huérfano `app/templates/capture/preview.html` (254 líneas; el que se usa es
+      `preview_partial.html`).
+- [x] **Los macros como globals del entorno**, no como `{% import %}` por plantilla
+      (`app/web/helpers.py`). `{% import %}` **no se hereda**: un import en `base.html` no
+      existe dentro de los bloques de los hijos, así que sin esto las 29 plantillas repiten
+      las mismas dos líneas y una olvidada es un `UndefinedError` en tiempo de request, no
+      en el arranque. Como globals, `ui.*` y `ic.*` resuelven también en los parciales de
+      HTMX y en las páginas de error, cuyo contexto es solo `{"request": request}`.
+- [x] **`tests/test_components.py`** (46 tests): cada macro se rinde una vez con sus
+      defaults. Existe porque la revisión encontró que el docstring de `ui.html` documentaba
+      una firma de `tabs()` que el macro nunca tuvo, y nada lo atrapó: **ningún test rendía
+      un solo macro**, y 14 de los 18 no tenían ni un caller cuando se escribieron. Incluye
+      el test que ata los tonos que los macros aceptan (`bg-{tone}-soft` y compañía, armadas
+      por concatenación) a las familias que `app.css` define de verdad — un tono inexistente
+      rinde una clase que Tailwind no genera y el elemento sale transparente **sin ningún
+      error**.
+- [x] **Validar `avatar_color` en la escritura** (`app/schemas/user.py`). `ui.avatar()` lo
+      rinde dentro de un `style="background-color: …"`: el autoescape de Jinja impide salir
+      del atributo pero **no** impide inyectar propiedades CSS extra, y la app no tiene
+      ninguna CSP que sirva de segunda línea. El patrón va en `UserCreate`/`UserUpdate` y no
+      en `UserBase`, para que `UserRead` no explote leyendo una fila vieja fuera de forma.
+
+Además, dos piezas de código muerto verificadas por `grep`, borradas porque estaban en
+archivos que la fase reescribía de punta a punta:
+
+- `window.VoiceRecorder` (70 líneas de grabación de audio en `app.js`, **cero llamadores**:
+  la grabación real la implementa `capture/index.html` en su propio componente de Alpine,
+  que es el que habla con `/capture/transcribe`).
+- `<div id="toast-container">` en `base.html` (nadie escribía nunca dentro; `app.js` crea el
+  suyo).
+
+`#htmx-indicator` en cambio **se conservó y se cableó**. De los once `hx-indicator` de la
+app solo uno lo nombra (el "Refresh" de `suggestions/index.html:18`); los otros diez
+apuntan a spinners locales, así que en el resto de las pantallas la barra era markup
+muerto: la única regla que la mostraba, `.htmx-request .htmx-indicator`, exige un
+**ancestro** con `.htmx-request`, y el div vive al tope del `<body>`. Ahora `app.js` la
+marca a sí misma contando requests en vuelo (`htmx:beforeRequest` / `htmx:afterRequest`,
+con un contador para que dos pedidos superpuestos no la apaguen antes de tiempo), y
+`app.css` agrega `.htmx-request.htmx-indicator` para que los dos caminos la muestren
+igual. No es una barra de porcentaje: XHR no reporta progreso de una respuesta chunked,
+así que es indeterminada (`@keyframes indeterminate` sobre `transform: scaleX`, con
+`origin-left`), y bajo `prefers-reduced-motion: reduce` se queda quieta en `scaleX(1)`
+en vez de animarse.
+
+Un cambio de comportamiento, deliberado: `htmx.config.selfRequestsOnly` estaba forzado a
+`false` en el script inline de la v1. La reescritura **no lo sobrescribe**, así que aplica
+el default de HTMX (`true`). Ningún `hx-*` de la app apunta a otro origen — ya hay un test
+que lo afirma — y la config ahora vive donde las páginas standalone también la ven.
 
 ---
 
@@ -417,7 +485,11 @@ Fase 3.
     eliminación del estado `editing` muerto, y la rama `{% else %}` que hoy vuelca
     `{{ intent | tojson }}` crudo al usuario reemplazada por un fallback legible.
   - Edición inline completa **fuera de v3** (requiere cambiar el contrato del backend).
-- [ ] **Dashboard** — Chart.js con los tokens y colores que funcionen en ambos temas.
+- [ ] **Dashboard** — Chart.js con los tokens y colores que funcionen en ambos temas, y
+      **arreglar el defecto 14**: los cuatro `new Chart(...)` corren inline en tiempo de
+      parseo contra un Chart.js `defer`, así que hoy tiran `Chart is not defined` y no se
+      dibuja ninguno. Van dentro de un `DOMContentLoaded` (o de un `<script defer>`), que
+      es además el orden que necesitan para leer los tokens vía `GP.tokenColor`.
 - [ ] `components/empty_state.html` en los ~9 lugares que lo necesitan, no en 3.
 - [ ] `errors/404.html` y `errors/500.html` pasan a ser páginas reales de la app.
 
@@ -429,7 +501,14 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 
 **4.1 — Un solo reloj local**
 
-- [ ] Nuevo `app/core/clock.py` con `local_now()` y `is_quiet_hours()`.
+- [x] Nuevo `app/core/clock.py` con `household_tz()`, `local_now()`, `local_today()` y
+      `to_local()`. **Se adelantó a la Fase 2**: `home.html` ya llamaba a `now()`, un global
+      de Jinja que nadie había registrado, así que el guardia `{% if now is defined %}` caía
+      siempre al `else` y el saludo decía "buenas tardes" a las 7 de la mañana. Un
+      `TIMEZONE` mal escrito degrada a UTC con un warning en vez de tumbar cada página.
+      `to_local()` **interpreta** un naive como UTC y convierte, en vez de afirmarle la
+      timezone local encima — que es el bug que hoy tiene `notification_jobs.py:131`.
+- [ ] Falta `is_quiet_hours()` sobre ese mismo módulo.
 - [ ] `scheduler.py` pasa de `IntervalTrigger` a `CronTrigger` en la timezone configurada
       (stock a la mañana, inactividad al mediodía, peso al arrancar el día), de modo que la
       hora deje de depender de cuándo arrancó el proceso.
@@ -673,9 +752,29 @@ Ejemplos del corte esperado en la Fase 1:
 | `fase1: no suprimir la notificación del otro miembro del hogar` | bug de inteligencia |
 | `fase1: arreglar el mapeo food_name de la capa 2 del NLP` | bug de inteligencia |
 
+Corte real de la Fase 2 (ya en `v3`):
+
+| Commit | Alcance |
+|---|---|
+| `fase2: capa de tokens semanticos, modo oscuro y JS global` | `app.css`, `app.js` |
+| `fase3: un solo reloj local para el hogar` | `core/clock.py`, el global `now`, `home.py`, `tzdata` |
+| `fase2: shell canonico, macros de UI e iconos` | `layouts/shell.html`, `components/{ui,icons}.html`, los globals `ui`/`ic`, `tests/test_components.py` |
+| `fase2: migrar las cuatro entradas HTML al shell canonico` | `base.html`, login, 404, 500, perfil, badge, catálogo `es_AR` |
+| `fase2: hacer que los cuatro graficos del dashboard se dibujen` | `dashboard/index.html` (defecto 14) |
+| `fase2: validar avatar_color en la escritura` | `schemas/user.py` |
+| `docs: marcar la fase 2 y anotar los defectos pendientes` | este documento |
+
+**Una verruga honesta en esa historia:** `app/templates/capture/preview.html` estaba
+*staged* como borrado desde antes, y un `git commit -F -` sin pathspec se lo llevó al
+primer commit (`fase2: capa de tokens…`) en vez de al de migración de plantillas, donde
+correspondía. El árbol final es idéntico y nada está pusheado, así que no se reescribió la
+historia: un rebase no interactivo acá es más riesgoso que la verruga.
+
 Reglas:
 
 - **Nada de push ni tags** salvo pedido explícito.
+- `git commit` **siempre con pathspec explícito** (`-- <paths>`). Sin pathspec commitea
+  todo el índice, incluido lo que alguien dejó staged antes — ver la verruga de arriba.
 - Antes de cualquier comando que pueda descartar trabajo (`checkout`/`restore`/`reset`/
   `clean`, `rm -rf`), correr `git status` primero.
 - Los archivos sin trackear que ya estaban antes de v3 (`.agents/`, `.claude/`, `AGENTS.md`,
@@ -686,7 +785,7 @@ Reglas:
 
 ## Verificación
 
-**Levantar la app** (no hay venv local con `passlib`/`psycopg2`, así que va por Docker):
+**Levantar la app** por Docker, que es lo que trae PostgreSQL:
 
 ```bash
 docker compose up          # http://localhost:8000
@@ -711,15 +810,31 @@ docker compose up          # http://localhost:8000
 **Compuerta de calidad** (`AGENTS.md`):
 
 ```bash
-pytest tests/ --cov=app --cov-report=term-missing
-black --check .
-mypy app
+.venv/bin/python -m pytest tests/
+.venv/bin/python -m ruff check .
+.venv/bin/python -m black --check .
+.venv/bin/python -m mypy app
 alembic check
 python3 scripts/agents/sync_agent_assets.py --check
 ```
 
-> `ruff` **no está instalado en este entorno** (`exit 127`). Se reporta explícitamente en
-> cada checkpoint en lugar de saltearlo en silencio.
+**Línea de base medida, para no confundir deuda vieja con daño nuevo.** Los tres números
+que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
+checkpoint reporta el número, no una impresión:
+
+| Comando | Antes de v3 | Después de la Fase 2 |
+|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** |
+| `ruff check .` | 292 findings | **288** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) |
+| `sync_agent_assets.py --check` | ok | ok |
+
+> `alembic check` **no corre localmente**: no hay PostgreSQL en la máquina
+> (`connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection
+> refused`). Va por `docker compose`, y se reporta explícitamente en cada checkpoint en
+> lugar de saltearlo en silencio. `ruff` además emite un warning de config propio
+> (`ignore`/`select` → `lint.ignore`/`lint.select`), que también es previo a v3.
 
 **Ruteo de agentes** (tabla de `AGENTS.md`): `frontend` para plantillas/Tailwind/Alpine/
 HTMX/i18n; `backend` para las rutas web nuevas que devuelven parciales;
@@ -751,3 +866,12 @@ Explícito, para que no se cuele por la ventana:
   **ninguna ruta POST lo valida jamás** (`app/web/helpers.py:43`). Es un hueco real de
   seguridad que por `AGENTS.md` exige una revisión de `security-privacy` propia; queda
   señalado en vez de arreglado de contrabando dentro de un rediseño visual.
+- **Cabeceras de seguridad.** La app **no manda ninguna**: no hay
+  `Content-Security-Policy`, ni `X-Frame-Options`, ni `Referrer-Policy`, ni HSTS. Y una CSP
+  útil no es posible mientras el CDN de Tailwind inyecte `<style>` en runtime: haría falta
+  `style-src 'unsafe-inline'` para siempre, que es justamente lo que una CSP viene a
+  cerrar. O sea que esto está atado al build step de Tailwind, que también está fuera de
+  alcance. La consecuencia práctica queda anotada donde importa: **cualquier dato de
+  request o de DB interpolado en un atributo `style` o en el parámetro `attrs` de un macro
+  no tiene red de contención**, y por eso `components/ui.html` lleva escrita la regla de
+  no interpolar nunca ahí, y `avatar_color` se valida en la escritura.
