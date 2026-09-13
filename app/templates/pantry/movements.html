@@ -19,28 +19,9 @@
                     back='/pantry', back_label=_('Pantry')) }}
 
   {% if movements %}
-  <ul class="space-y-2">
-    {% for m in movements %}
-    <li>
-      {% call ui.card(padding='px-4 py-3', class='flex items-center gap-3') %}
-        {{ dm.movement_icon(m.movement_type) }}
-        {#- El alimento va primero porque es lo que uno busca al recorrer la lista;
-            el tipo y la cantidad son el detalle. Así ninguna línea necesita una
-            palabra de pegamento ("2 l **de** leche") como msgid suelto. -#}
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold text-ink truncate">{{ m.food_item.canonical_name }}</p>
-          <p class="text-xs text-ink-muted">
-            {{ dm.movement_type_label(m.movement_type) }}
-            <span aria-hidden="true">·</span>
-            <span class="tabular-nums">{{ dm.quantity(m.quantity, m.unit) }}</span>
-          </p>
-          {% if m.notes %}<p class="text-xs text-ink-subtle truncate">{{ m.notes }}</p>{% endif %}
-        </div>
-        <p class="text-xs text-ink-subtle flex-shrink-0 text-right tabular-nums">
-          {{ m.timestamp | local_time }}<br />{{ m.timestamp | local_date('medium') }}
-        </p>
-      {% endcall %}
-    </li>
+  <ul class="space-y-2 list-none m-0 p-0">
+    {% for movement in movements %}
+    <li>{% include "pantry/partials/movement_card.html" %}</li>
     {% endfor %}
   </ul>
   {% else %}

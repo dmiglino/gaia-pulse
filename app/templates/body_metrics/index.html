@@ -90,23 +90,7 @@
           <p class="text-xs text-ink-subtle tabular-nums">{{ metric.timestamp | local_time }}</p>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap gap-1.5">
-            {%- if metric.weight_kg %}
-            {{ ui.badge(_('Weight') ~ ' ' ~ dm.quantity(metric.weight_kg, _('kg')), tone='body', size='sm') }}
-            {%- endif %}
-            {%- if metric.body_fat_pct %}
-            {{ ui.badge(_('Body Fat') ~ ' ' ~ dm.quantity(metric.body_fat_pct) ~ '%', tone='food', size='sm') }}
-            {%- endif %}
-            {%- if metric.muscle_mass_kg %}
-            {{ ui.badge(_('Muscle') ~ ' ' ~ dm.quantity(metric.muscle_mass_kg, _('kg')), tone='ok', size='sm') }}
-            {%- endif %}
-            {%- if metric.waist_cm %}
-            {{ ui.badge(_('Waist') ~ ' ' ~ dm.quantity(metric.waist_cm, _('cm')), tone='move', size='sm') }}
-            {%- endif %}
-            {%- if metric.sleep_hours %}
-            {{ ui.badge(_('Sleep') ~ ' ' ~ dm.quantity(metric.sleep_hours, _('hrs')), tone='info', size='sm') }}
-            {%- endif %}
-          </div>
+          {{ dm.metric_badges(metric) }}
           {%- if metric.notes %}
           <p class="mt-1.5 text-xs text-ink-muted">{{ metric.notes }}</p>
           {%- endif %}

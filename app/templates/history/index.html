@@ -1,108 +1,138 @@
 {% extends "base.html" %}
 {% block title %}{{ _('History') }}{% endblock %}
 
+{#- El timeline. Lo que arregla el rediseño, además del re-skin:
+
+    - el tab de métricas corporales tomaba `?user_id=` del query string y lo pasaba
+      derecho al servicio, sin validarlo contra el hogar: devolvía el peso, la grasa
+      corporal y las horas de sueño de cualquier persona de la base;
+    - ese mismo tab dibujaba la paginación y "Older →" traía las mismas 30 filas,
+      porque el servicio no exponía el `offset` que el repositorio sí soporta;
+    - el filtro de persona ofrecía "Todos" en el tab de métricas, donde no significa
+      nada: las medidas son de una persona, no del hogar. Ahí el filtro son las dos
+      personas y arranca en quien está mirando;
+    - las filas de métricas y de despensa estaban escritas dos veces en el proyecto,
+      y esta copia era la vieja: emoji como iconografía, unidades pegadas en inglés
+      ("📊 18.2% fat") y `strftime('%b %d, %H:%M')`, o sea UTC;
+    - el filtro de persona activo pintaba el fondo con un `style="background: ..."`
+      inline; ahora es el avatar de la persona dentro de la pestaña. -#}
+
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-4xl mx-auto space-y-6">
-  <h1 class="text-2xl font-bold text-slate-900">{{ _('History') }}</h1>
+<div class="px-4 py-6 md:px-8 max-w-3xl mx-auto">
 
-  <!-- Tab bar -->
-  <div class="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto">
-    {% for tab_id, tab_label in [('meals', _('Meals')),('workouts', _('Workouts')),('body_metrics', _('Body Metrics')),('pantry', _('Pantry'))] %}
-    <a href="/history?tab={{ tab_id }}{% if filter_user_id %}&user_id={{ filter_user_id }}{% endif %}"
-       class="flex-shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-              {% if active_tab == tab_id %}bg-white shadow-sm text-slate-900{% else %}text-slate-500 hover:text-slate-700{% endif %}">
-      {{ tab_label }}
-    </a>
-    {% endfor %}
+  {{ ui.page_header(_('History'), subtitle=_('Everything logged, newest first'),
+                    icon='clock', tone='brand') }}
+
+  {#- Las dos barras en una sola fila: el tipo de registro a la izquierda es la
+      navegación, la persona a la derecha es un refinamiento del mismo listado. -#}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+
+    {%- set person_qs = ('&user_id=' ~ filter_user_id) if filter_user_id else '' -%}
+    {%- set ns = namespace(tabs=[]) -%}
+    {%- for tab_id, tab_label, tab_icon in [
+          ('meals', _('Meals'), 'meal'),
+          ('workouts', _('Workouts'), 'bolt'),
+          ('body_metrics', _('Body Metrics'), 'heart'),
+          ('pantry', _('Pantry'), 'pantry'),
+        ] -%}
+    {%- set ns.tabs = ns.tabs + [{
+          'key': tab_id, 'label': tab_label, 'icon': tab_icon,
+          'href': '/history/?tab=' ~ tab_id ~ (person_qs if tab_id != 'pantry' else ''),
+        }] -%}
+    {%- endfor %}
+    {{ ui.tabs(ns.tabs, current=active_tab, label=_('Record type')) }}
+
+    {#- La despensa es del hogar y no tiene columna de persona, así que ahí no hay
+        nada que filtrar. -#}
+    {%- if active_tab != 'pantry' and users | length > 1 %}
+    {%- set ns2 = namespace(people=[]) -%}
+    {%- if active_tab != 'body_metrics' -%}
+    {%- set ns2.people = [{'key': none, 'label': _('All'), 'href': '/history/?tab=' ~ active_tab}] -%}
+    {%- endif -%}
+    {%- for u in users -%}
+    {%- set ns2.people = ns2.people + [{
+          'key': u.id, 'label': u.display_name, 'avatar': u,
+          'href': '/history/?tab=' ~ active_tab ~ '&user_id=' ~ u.id,
+        }] -%}
+    {%- endfor %}
+    {#- En métricas corporales no hay "Todos", así que la pestaña activa cuando no
+        se eligió a nadie es la de quien está mirando: es lo que la ruta trae. -#}
+    {{ ui.tabs(ns2.people, label=_('Filter by person'),
+               current=filter_user_id if filter_user_id or active_tab != 'body_metrics'
+                       else current_user.id) }}
+    {%- endif %}
   </div>
 
-  <!-- User filter -->
-  {% if active_tab != 'pantry' %}
-  <div class="flex gap-2">
-    <a href="/history?tab={{ active_tab }}"
-       class="px-3 py-1 rounded-full text-sm {% if not filter_user_id %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
-      {{ _('All') }}
-    </a>
-    {% for u in users %}
-    <a href="/history?tab={{ active_tab }}&user_id={{ u.id }}"
-       class="px-3 py-1 rounded-full text-sm flex items-center gap-1 {% if filter_user_id == u.id %}text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}"
-       style="{% if filter_user_id == u.id %}background: {{ u.avatar_color }}{% endif %}">
-      {{ u.display_name }}
-    </a>
-    {% endfor %}
-  </div>
-  {% endif %}
+  {%- if events %}
+  <ul class="space-y-3 list-none m-0 p-0">
+    {%- for event in events %}
+    <li>
+      {%- if active_tab == 'meals' %}
+      {% include "meals/partials/meal_card.html" %}
 
-  <!-- Events list -->
-  {% if events %}
-  <div class="space-y-3">
-    {% for event in events %}
+      {%- elif active_tab == 'workouts' %}
+      {#- El parcial lee `workout`; la variable del loop es `event`. -#}
+      {%- set workout = event %}
+      {% include "workouts/partials/workout_card.html" %}
 
-    {% if active_tab == 'meals' %}
-    {% include "meals/partials/meal_card.html" with context %}
+      {%- elif active_tab == 'body_metrics' %}
+      {% call ui.card(padding='px-4 py-3', class='flex items-start gap-4') %}
+        <div class="flex-shrink-0 w-20 text-xs tabular-nums">
+          <p class="font-medium text-ink">{{ event.timestamp | local_date('medium') }}</p>
+          <p class="text-ink-subtle">{{ event.timestamp | local_time }}</p>
+        </div>
+        <div class="min-w-0 flex-1">
+          {{ dm.metric_badges(event) }}
+          {%- if event.notes %}
+          <p class="mt-1.5 text-xs text-ink-muted">{{ event.notes }}</p>
+          {%- endif %}
+        </div>
+      {% endcall %}
 
-    {% elif active_tab == 'workouts' %}
-    {# The partial reads `workout`; the history loop variable is `event`. #}
-    {% set workout = event %}
-    {% include "workouts/partials/workout_card.html" with context %}
+      {%- else %}
+      {%- set movement = event %}
+      {% include "pantry/partials/movement_card.html" %}
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
 
-    {% elif active_tab == 'body_metrics' %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-4">
-      {% for u in users %}{% if u.id == event.user_id %}
-      <span class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style="background:{{ u.avatar_color }}">{{ u.name[0] }}</span>
-      {% endif %}{% endfor %}
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-slate-800">
-          {% if event.weight_kg %}<span class="mr-3">⚖️ {{ event.weight_kg }} {{ _('kg') }}</span>{% endif %}
-          {% if event.body_fat_pct %}<span class="mr-3">📊 {{ event.body_fat_pct }}% fat</span>{% endif %}
-          {% if event.waist_cm %}<span class="mr-3">📏 {{ event.waist_cm }} {{ _('cm') }} waist</span>{% endif %}
-          {% if event.sleep_hours %}<span>😴 {{ event.sleep_hours }}h {{ _('Sleep') }}</span>{% endif %}
-        </p>
-        {% if event.notes %}<p class="text-xs text-slate-400 mt-0.5">{{ event.notes }}</p>{% endif %}
-      </div>
-      <p class="text-xs text-slate-400 flex-shrink-0">{{ event.timestamp.strftime('%b %d, %H:%M') }}</p>
-    </div>
+  {#- Paginación. Una página incompleta es la última, así que "Older →" solo aparece
+      cuando vinieron `page_size` filas justas. No hay un total: contarlo sería una
+      consulta más por carga para un dato que solo dibuja un "de 7". -#}
+  {%- if offset > 0 or events | length == page_size %}
+  <nav class="flex items-center justify-between gap-3 mt-5" aria-label="{{ _('Pagination') }}">
+    {%- if offset > 0 %}
+    {{ ui.btn(_('Newer'), href='/history/?tab=' ~ active_tab ~ person_qs
+                               ~ '&offset=' ~ ([offset - page_size, 0] | max),
+              tone='secondary', size='sm', icon='chevron-left') }}
+    {%- else %}<span></span>{% endif %}
+    {%- if events | length == page_size %}
+    {{ ui.btn(_('Older'), href='/history/?tab=' ~ active_tab ~ person_qs
+                               ~ '&offset=' ~ (offset + page_size),
+              tone='secondary', size='sm', icon_right='chevron-right') }}
+    {%- endif %}
+  </nav>
+  {%- endif %}
 
-    {% elif active_tab == 'pantry' %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
-      <span class="text-lg">
-        {% if event.movement_type == 'purchase' %}🛒
-        {% elif event.movement_type == 'consumption' %}🍽️
-        {% elif event.movement_type == 'discard' %}🗑️
-        {% else %}📝{% endif %}
-      </span>
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-slate-800">
-          {{ event.movement_type|title }}: <strong>{{ event.quantity }} {{ event.unit }}</strong> · <strong>{{ event.food_item.canonical_name }}</strong>
-        </p>
-        {% if event.notes %}<p class="text-xs text-slate-400">{{ event.notes }}</p>{% endif %}
-      </div>
-      <p class="text-xs text-slate-400 flex-shrink-0">{{ event.timestamp.strftime('%b %d, %H:%M') }}</p>
-    </div>
-    {% endif %}
+  {%- elif offset > 0 %}
+  {#- Una página vacía **más allá** de la primera no es un hogar sin registros: es un
+      `?offset=` que se pasó del final. Decir "todavía no hay nada" ahí sería mentir
+      justo después de haber mostrado filas. -#}
+  {% call ui.notice(_('Nothing on this page.'), tone='info', icon='clock') %}
+    {{ ui.btn(_('Back to the newest'), href='/history/?tab=' ~ active_tab ~ person_qs,
+              tone='secondary', size='sm', icon='chevron-left') }}
+  {% endcall %}
 
-    {% endfor %}
-  </div>
-
-  <!-- Pagination -->
-  <div class="flex justify-between pt-2">
-    {% if offset > 0 %}
-    <a href="/history?tab={{ active_tab }}&offset={{ [offset - 30, 0]|max }}{% if filter_user_id %}&user_id={{ filter_user_id }}{% endif %}"
-       class="text-sm text-indigo-600 hover:underline">{{ _('← Newer') }}</a>
-    {% else %}<span></span>{% endif %}
-    {% if events|length == 30 %}
-    <a href="/history?tab={{ active_tab }}&offset={{ offset + 30 }}{% if filter_user_id %}&user_id={{ filter_user_id }}{% endif %}"
-       class="text-sm text-indigo-600 hover:underline">{{ _('Older →') }}</a>
-    {% endif %}
-  </div>
-
-  {% else %}
-  {{ ui.empty_state(
-      _('No records yet.'),
-      text=_('Meals, workouts and weigh-ins all land here as you log them.'),
-      icon='clock',
-      action_label=_('Log something now'), action_href='/capture') }}
-  {% endif %}
+  {%- else %}
+  {% call ui.card(padding='') %}
+    {{ ui.empty_state(
+        _('No records yet.'),
+        text=_('Meals, workouts and weigh-ins all land here as you log them.'),
+        icon='clock', tone='brand',
+        action_label=_('Log something now'), action_href='/capture') }}
+  {% endcall %}
+  {%- endif %}
 
 </div>
 {% endblock %}

@@ -1,0 +1,24 @@
+{#- Una fila de `PantryMovement`. Espera `movement` en el contexto: la usan
+    `pantry/movements.html` y el tab de despensa de `history/index.html`.
+
+    Estaba escrita dos veces con dos diseños distintos, y la copia de history seguía
+    con la versión vieja: emoji como iconografía (🛒🍽️🗑️📝), `movement_type|title`
+    —siempre en inglés— y `strftime('%b %d, %H:%M')`, o sea UTC. -#}
+{% call ui.card(padding='px-4 py-3', class='flex items-center gap-3') %}
+  {{ dm.movement_icon(movement.movement_type) }}
+  {#- El alimento va primero porque es lo que uno busca al recorrer la lista; el tipo
+      y la cantidad son el detalle. Así ninguna línea necesita una palabra de
+      pegamento ("2 l **de** leche") como msgid suelto. -#}
+  <div class="flex-1 min-w-0">
+    <p class="text-sm font-semibold text-ink truncate">{{ movement.food_item.canonical_name }}</p>
+    <p class="text-xs text-ink-muted">
+      {{ dm.movement_type_label(movement.movement_type) }}
+      <span aria-hidden="true">·</span>
+      <span class="tabular-nums">{{ dm.quantity(movement.quantity, movement.unit) }}</span>
+    </p>
+    {% if movement.notes %}<p class="text-xs text-ink-subtle truncate">{{ movement.notes }}</p>{% endif %}
+  </div>
+  <p class="text-xs text-ink-subtle flex-shrink-0 text-right tabular-nums">
+    {{ movement.timestamp | local_time }}<br />{{ movement.timestamp | local_date('medium') }}
+  </p>
+{% endcall %}

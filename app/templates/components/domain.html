@@ -157,6 +157,35 @@
 {%- endmacro %}
 
 
+{#- ── Métricas corporales ─────────────────────────────────────────────────────
+    Las cinco medidas de un `BodyMetricLog` como badges, en un solo lugar: el
+    historial de `/body-metrics/` y el tab de métricas de `/history/` mostraban la
+    misma fila con dos diseños distintos, y el de history usaba emoji con las
+    unidades pegadas en inglés ("📊 18.2% fat", "📏 84 cm waist").
+
+    `muscle_mass_kg` entra acá porque la API la acepta desde la v1 y **ninguna
+    pantalla la mostraba nunca**. -#}
+{% macro metric_badges(metric, size='sm') -%}
+<div class="flex flex-wrap gap-1.5">
+  {%- if metric.weight_kg %}
+  {{ ui.badge(_('Weight') ~ ' ' ~ quantity(metric.weight_kg, _('kg')), tone='body', size=size) }}
+  {%- endif %}
+  {%- if metric.body_fat_pct %}
+  {{ ui.badge(_('Body Fat') ~ ' ' ~ quantity(metric.body_fat_pct) ~ '%', tone='food', size=size) }}
+  {%- endif %}
+  {%- if metric.muscle_mass_kg %}
+  {{ ui.badge(_('Muscle') ~ ' ' ~ quantity(metric.muscle_mass_kg, _('kg')), tone='ok', size=size) }}
+  {%- endif %}
+  {%- if metric.waist_cm %}
+  {{ ui.badge(_('Waist') ~ ' ' ~ quantity(metric.waist_cm, _('cm')), tone='move', size=size) }}
+  {%- endif %}
+  {%- if metric.sleep_hours %}
+  {{ ui.badge(_('Sleep') ~ ' ' ~ quantity(metric.sleep_hours, _('hrs')), tone='info', size=size) }}
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+
 {#- ── Cantidad ────────────────────────────────────────────────────────────────
     `quantity` es `Numeric`, así que llega como `Decimal`: sin esto una porción de
     2 se mostraba como "2.00". Los enteros se muestran enteros y el resto con un

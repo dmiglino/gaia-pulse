@@ -26,8 +26,13 @@ class BodyMetricService:
         self.db.commit()
         return metric
 
-    def get_user_metrics(self, user_id: int, limit: int = 60) -> list[BodyMetricLog]:
-        return self.repo.get_user_metrics(user_id, limit=limit)
+    def get_user_metrics(
+        self, user_id: int, limit: int = 60, offset: int = 0
+    ) -> list[BodyMetricLog]:
+        # `offset` lo soportaba el repositorio desde el principio y el servicio no lo
+        # exponía, así que el tab de métricas de `/history/` mostraba los controles de
+        # paginación y "Older →" devolvía las mismas 30 filas.
+        return self.repo.get_user_metrics(user_id, limit=limit, offset=offset)
 
     def get_latest(self, user_id: int) -> BodyMetricLog | None:
         return self.repo.get_latest_for_user(user_id)

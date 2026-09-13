@@ -306,6 +306,81 @@ def test_health_detail_does_not_leak_raw_enum_values(
     assert "analyzed" not in body, "el estado del análisis se muestra sin traducir"
 
 
+def test_history_body_metrics_tab_ignores_a_foreign_user_id(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session
+) -> None:
+    """El mismo `?user_id=` sin validar que `/body-metrics/`, en la otra pantalla.
+
+    Las consultas de comidas y entrenamientos ya filtran por `household_id`, así que
+    ahí un id ajeno solo daba lista vacía; el tab de métricas lo pasaba derecho a
+    `get_user_metrics`, que filtra **solo** por usuario.
+    """
+    from app.models.body_metric import BodyMetricLog
+
+    other = Household(name="Otra casa")
+    db.add(other)
+    db.flush()
+    stranger = User(
+        household_id=other.id,
+        name="Ajeno",
+        email="ajeno@test.com",
+        password_hash="x",
+        onboarding_completed=True,
+    )
+    db.add(stranger)
+    db.flush()
+    db.add(
+        BodyMetricLog(user_id=stranger.id, timestamp=UTC_NOW, weight_kg=99.9, notes="de otra casa")
+    )
+    db.flush()
+
+    resp = authenticated_client.get(f"/history/?tab=body_metrics&user_id={stranger.id}")
+    assert resp.status_code == 200
+    assert "99.9" not in resp.text and "de otra casa" not in resp.text
+
+
+def test_history_body_metrics_tab_actually_paginates(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """`BodyMetricService.get_user_metrics` no exponía el `offset` del repositorio.
+
+    La plantilla dibujaba "Older →" igual, y la segunda página traía las mismas filas
+    que la primera. Hacen falta más de `PAGE_SIZE` registros para verlo, de ahí las 31
+    filas locales en vez de las dos del fixture.
+    """
+    from app.models.body_metric import BodyMetricLog
+
+    for i in range(31):
+        db.add(
+            BodyMetricLog(
+                user_id=diego.id,
+                timestamp=UTC_NOW - timedelta(days=100 + i),
+                weight_kg=90.0,
+                notes=f"fila {i}",
+            )
+        )
+    db.flush()
+
+    second = authenticated_client.get("/history/?tab=body_metrics&offset=30").text
+    assert "fila 0" not in second, "la segunda página repite la primera"
+    assert "fila " in second, "la segunda página quedó vacía"
+
+
+@pytest.mark.parametrize(
+    "qs", ["?tab=body_metrics&user_id=", "?tab=meals&user_id=abc", "?offset=", "?offset=-30"]
+)
+def test_history_survives_a_hand_edited_query_string(
+    authenticated_client: TestClient, seeded: dict[str, int], qs: str
+) -> None:
+    """Con `int | None`, FastAPI responde 422 en JSON desde una ruta de página.
+
+    Estas URLs se comparten y se editan a mano, y un `?user_id=` vacío es exactamente
+    lo que manda un formulario GET sin JS.
+    """
+    resp = authenticated_client.get(f"/history/{qs}")
+    assert resp.status_code == 200, f"{qs} → {resp.status_code}"
+
+
 def test_home_warns_about_low_stock(
     authenticated_client: TestClient, seeded: dict[str, int]
 ) -> None:
