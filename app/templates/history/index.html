@@ -42,6 +42,8 @@
     {% include "meals/partials/meal_card.html" with context %}
 
     {% elif active_tab == 'workouts' %}
+    {# The partial reads `workout`; the history loop variable is `event`. #}
+    {% set workout = event %}
     {% include "workouts/partials/workout_card.html" with context %}
 
     {% elif active_tab == 'body_metrics' %}

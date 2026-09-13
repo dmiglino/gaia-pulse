@@ -158,15 +158,23 @@ function captureApp() {
     init() {
       const urlParams = new URLSearchParams(window.location.search);
       const prefill = urlParams.get('prefill');
+      // Openers, not full sentences: the user finishes the phrase, so a stray
+      // submit can never record something that did not happen. English because
+      // that is what the rule-based parser matches on.
       const prefillMap = {
-        meal:    "We had [meal] for [meal_type]",
-        workout: "I did [duration] minutes of [activity]",
-        pantry:  "I bought [quantity] of [item]",
-        weight:  "My weight today is [X] kg",
+        meal:    'We had ',
+        workout: 'I did ',
+        pantry:  'I bought ',
+        weight:  'My weight today is ',
       };
-      if (prefill && prefillMap[prefill]) {
-        // Only pre-fill if nothing typed yet
-        if (!this.captureText) this.captureText = '';
+      if (prefill && prefillMap[prefill] && !this.captureText) {
+        this.captureText = prefillMap[prefill];
+        this.$nextTick(() => {
+          const el = document.getElementById('capture-text');
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        });
       }
     },
 
