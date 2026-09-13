@@ -93,6 +93,86 @@ class TestStockAdjustment:
         assert float(b.current_quantity) == 0
 
 
+class TestLedgerMatchesStock:
+    """The movement ledger must record what moved, not what was asked for.
+
+    Stock is clamped at zero, so an over-draw used to be written down at its
+    requested magnitude: `/pantry/movements` claimed a consumption of 10 units
+    of an item that never held more than 2, and stock could no longer be
+    reconciled from its own movements.
+    """
+
+    def test_overdraw_records_only_what_left_the_pantry(
+        self, db: Session, household: Household, diego: User, banana: FoodItem
+    ) -> None:
+        svc = PantryService(db)
+        svc.process_purchase(
+            household.id,
+            diego.id,
+            PurchaseRequest(items=[PurchaseItem(food_name="banana", quantity=2, unit="unit")]),
+        )
+        svc.adjust_stock(
+            household.id,
+            diego.id,
+            StockAdjustRequest(
+                food_name="banana", quantity=10, unit="unit", movement_type="consumption"
+            ),
+        )
+        consumed = [
+            float(m.quantity)
+            for m in svc.get_movements(household.id)
+            if m.movement_type == "consumption"
+        ]
+        assert consumed == [2.0]
+
+    def test_overdraw_by_stock_id_records_only_what_left(
+        self, db: Session, household: Household, diego: User, banana: FoodItem
+    ) -> None:
+        svc = PantryService(db)
+        svc.process_purchase(
+            household.id,
+            diego.id,
+            PurchaseRequest(items=[PurchaseItem(food_name="banana", quantity=2, unit="unit")]),
+        )
+        stock_row = next(
+            s for s in svc.get_stock(household.id) if s.food_item.canonical_name == "banana"
+        )
+        svc.adjust_stock_by_id(
+            household.id, diego.id, stock_row.id, quantity=5, movement_type="consumption"
+        )
+        consumed = [
+            float(m.quantity)
+            for m in svc.get_movements(household.id)
+            if m.movement_type == "consumption"
+        ]
+        assert consumed == [2.0]
+        assert float(stock_row.current_quantity) == 0
+
+    def test_stock_equals_the_sum_of_its_movements(
+        self, db: Session, household: Household, diego: User, banana: FoodItem
+    ) -> None:
+        svc = PantryService(db)
+        svc.process_purchase(
+            household.id,
+            diego.id,
+            PurchaseRequest(items=[PurchaseItem(food_name="banana", quantity=6, unit="unit")]),
+        )
+        for qty in (2, 3, 4):  # the last one over-draws
+            svc.adjust_stock(
+                household.id,
+                diego.id,
+                StockAdjustRequest(
+                    food_name="banana", quantity=qty, unit="unit", movement_type="consumption"
+                ),
+            )
+        signs = {"purchase": 1.0, "consumption": -1.0, "discard": -1.0}
+        ledger = sum(
+            signs[m.movement_type] * float(m.quantity) for m in svc.get_movements(household.id)
+        )
+        b = next(s for s in svc.get_stock(household.id) if s.food_item.canonical_name == "banana")
+        assert ledger == float(b.current_quantity) == 0
+
+
 class TestLowStock:
     def test_low_stock_detection(
         self, db: Session, household: Household, diego: User, banana: FoodItem

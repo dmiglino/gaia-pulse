@@ -60,7 +60,7 @@ class PantryService:
         """Apply a stock adjustment (consumption, manual correction, discard)."""
         food = self.food_repo.get_or_create(request.food_name)
         sign = -1.0 if request.movement_type in ("consumption", "discard") else 1.0
-        self.stock_repo.upsert_stock(
+        applied = self._apply_delta(
             household_id=household_id,
             food_item_id=food.id,
             delta=sign * request.quantity,
@@ -71,7 +71,7 @@ class PantryService:
             user_id=user_id,
             food_item_id=food.id,
             movement_type=request.movement_type,
-            quantity=request.quantity,
+            quantity=abs(applied),
             unit=request.unit,
             notes=request.notes,
         )
@@ -108,7 +108,7 @@ class PantryService:
         else:
             delta = quantity
 
-        self.stock_repo.upsert_stock(
+        applied = self._apply_delta(
             household_id=household_id,
             food_item_id=stock.food_item_id,
             delta=delta,
@@ -119,7 +119,7 @@ class PantryService:
             user_id=user_id,
             food_item_id=stock.food_item_id,
             movement_type=movement_type,
-            quantity=abs(delta),
+            quantity=abs(applied),
             unit=stock.unit,
             notes=notes,
         )
@@ -144,7 +144,7 @@ class PantryService:
         if not self.stock_repo.get_by_food_item(household_id, food.id):
             return None
 
-        self.stock_repo.upsert_stock(
+        applied = self._apply_delta(
             household_id=household_id,
             food_item_id=food.id,
             delta=-quantity,
@@ -155,7 +155,7 @@ class PantryService:
             user_id=user_id,
             food_item_id=food.id,
             movement_type="consumption",
-            quantity=quantity,
+            quantity=abs(applied),
             unit=unit,
             related_entity_type=related_entity_type,
             related_entity_id=related_entity_id,
@@ -171,6 +171,27 @@ class PantryService:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _apply_delta(
+        self, household_id: int, food_item_id: int, delta: float, unit: str
+    ) -> float:
+        """Apply *delta* to the stock row and return the change that actually landed.
+
+        The repository clamps stock at zero, so asking to consume 5 of an item
+        that has 2 only moves 2. The ledger has to record what moved and not what
+        was asked for: otherwise `/pantry/movements` claims a consumption of 5
+        units of something that never held more than 2, and stock stops being
+        reconcilable from its own movements.
+        """
+        existing = self.stock_repo.get_by_food_item(household_id, food_item_id)
+        before = float(existing.current_quantity) if existing else 0.0
+        stock = self.stock_repo.upsert_stock(
+            household_id=household_id,
+            food_item_id=food_item_id,
+            delta=delta,
+            unit=unit,
+        )
+        return float(stock.current_quantity) - before
 
     def _make_movement(
         self,

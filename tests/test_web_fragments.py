@@ -108,6 +108,9 @@ def test_pantry_adjust(
     )
     assert r.status_code == 200, r.text
     assert f'id="stock-item-{stock.id}"' in r.text
+    # The card used to print `item.food_item.name`, an attribute `FoodItem` does
+    # not have (it is `canonical_name`), so every card showed a blank name.
+    assert banana.canonical_name in r.text
     db.refresh(stock)
     assert float(stock.current_quantity) == 2.0
 
@@ -139,6 +142,50 @@ def test_home_and_pantry_pages_render(authenticated_client: TestClient) -> None:
     for path in ("/", "/pantry/"):
         r = authenticated_client.get(path)
         assert r.status_code == 200, (path, r.text[:500])
+
+
+def test_pages_that_loop_over_rows_render_their_names(
+    authenticated_client: TestClient, db: Session, diego: User, banana: FoodItem
+) -> None:
+    """Render the `{% include %}`-inside-`{% for %}` paths with real rows.
+
+    With an empty pantry and no notifications these loops never execute, so the
+    partials extracted in v3 were exercised by nothing — which is how a card
+    printing a non-existent attribute stayed invisible.
+    """
+    db.add(
+        PantryStock(
+            household_id=diego.household_id,
+            food_item_id=banana.id,
+            current_quantity=1.0,
+            low_stock_threshold=5.0,
+            unit="unit",
+        )
+    )
+    NotificationService(db).create(
+        NotificationCreate(
+            user_id=diego.id,
+            household_id=diego.household_id,
+            category="low_stock",
+            title="Running low",
+            body="Buy more bananas",
+        )
+    )
+    db.flush()
+
+    r = authenticated_client.get("/pantry/")
+    assert r.status_code == 200, r.text[:500]
+    assert banana.canonical_name in r.text
+
+    r = authenticated_client.get("/notifications/")
+    assert r.status_code == 200, r.text[:500]
+    assert "Running low" in r.text
+    assert "Buy more bananas" in r.text
+
+    # Home lists the low-stock names in its alert banner.
+    r = authenticated_client.get("/")
+    assert r.status_code == 200, r.text[:500]
+    assert banana.canonical_name in r.text
 
 
 def test_flash_survives_a_redirect_and_is_shown_once(

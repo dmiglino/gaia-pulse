@@ -38,7 +38,7 @@
         {% set n = low_stock_items | length %}
         {{ n }} {% if n == 1 %}{{ _('pantry item running low') }}{% else %}{{ _('pantry items running low') }}{% endif %}
       </p>
-      <p class="text-xs text-rose-600 truncate">{{ low_stock_items | map(attribute='food_item.name') | join(', ') }}</p>
+      <p class="text-xs text-rose-600 truncate">{{ low_stock_items | map(attribute='food_item.canonical_name') | join(', ') }}</p>
     </div>
     <a href="/pantry" class="flex-shrink-0 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-100 hover:bg-rose-200 px-3 py-1.5 rounded-lg transition-colors">
       {{ _('View Pantry →') }}

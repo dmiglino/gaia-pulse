@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
-from app.repositories.notification_repo import NotificationRepository
 from app.services.notification_service import NotificationService
 from app.web.helpers import get_template_context, templates
 
@@ -55,9 +54,15 @@ def mark_read(
     HTMX swapped that JSON into the page.
     """
     svc = NotificationService(db)
-    if not svc.mark_read(notification_id, current_user.id, current_user.household_id):
+    notification = svc.mark_read(notification_id, current_user.id, current_user.household_id)
+    if notification is None:
         raise HTTPException(status_code=404, detail="Notification not found")
-    return _card_or_redirect(request, db, current_user, notification_id)
+    if not request.headers.get("HX-Request"):
+        return RedirectResponse(url="/notifications/", status_code=302)
+    return templates.TemplateResponse(
+        "notifications/partials/notification_card.html",
+        {"request": request, "n": notification},
+    )
 
 
 @router.post("/{notification_id}/dismiss", response_class=HTMLResponse)
@@ -71,18 +76,6 @@ def dismiss(
     if request.headers.get("HX-Request"):
         return HTMLResponse("")
     return RedirectResponse(url="/notifications/", status_code=302)
-
-
-def _card_or_redirect(
-    request: Request, db: DB, current_user: CurrentUser, notification_id: int
-) -> Response:
-    if not request.headers.get("HX-Request"):
-        return RedirectResponse(url="/notifications/", status_code=302)
-    notification = NotificationRepository(db).get(notification_id)
-    return templates.TemplateResponse(
-        "notifications/partials/notification_card.html",
-        {"request": request, "n": notification},
-    )
 
 
 @router.post("/mark-all-read")

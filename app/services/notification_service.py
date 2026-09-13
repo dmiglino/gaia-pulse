@@ -67,13 +67,21 @@ class NotificationService:
             return n
         return None
 
-    def mark_read(self, notification_id: int, user_id: int, household_id: int) -> bool:
+    def mark_read(
+        self, notification_id: int, user_id: int, household_id: int
+    ) -> Notification | None:
+        """Mark one notification read and hand it back, or ``None`` if not theirs.
+
+        Returning the row (instead of a bool) is what lets the web layer render
+        the updated card without reaching into the repository itself, which
+        ``AGENTS.md`` forbids — and it avoids re-reading what was just loaded.
+        """
         n = self._get_owned(notification_id, user_id, household_id)
         if not n:
-            return False
+            return None
         n.read_at = datetime.now(timezone.utc)
         self.db.commit()
-        return True
+        return n
 
     def mark_all_read(self, user_id: int, household_id: int) -> int:
         count = self.repo.mark_all_read(user_id, household_id)
