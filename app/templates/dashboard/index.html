@@ -4,126 +4,137 @@
 {% block content %}
 <div class="px-4 sm:px-6 py-6 max-w-6xl mx-auto space-y-6">
 
-  <!-- Header + user selector -->
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-900">{{ _('Statistics & Dashboard') }}</h1>
-      <p class="text-sm text-slate-500 mt-0.5">{{ _('Last 30 days overview') }}</p>
-    </div>
-    <div class="flex gap-2">
+  {% call ui.page_header(_('Statistics'), subtitle=_('How the last 30 days went'), icon='chart-bar') %}
+    {#- Selector de miembro. No usa `ui.tabs` porque cada opción lleva avatar y el
+        color del avatar es dato del usuario, no del diseño: `tabs` renderiza un
+        ícono de la librería, no un color arbitrario. -#}
+    <nav aria-label="{{ _('Household member') }}" class="flex items-center gap-2">
       {% for u in users %}
-      <a href="/dashboard?user_id={{ u.id }}"
-         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors
-                {% if u.id == selected_user_id %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-600 hover:bg-slate-200{% endif %}">
-        <span class="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:{{ u.avatar_color }}">{{ u.name[0] }}</span>
-        {{ u.display_name }}
+      {% set active = u.id == selected_user_id %}
+      <a href="/dashboard?user_id={{ u.id }}"{% if active %} aria-current="page"{% endif %}
+         class="inline-flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-pill text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                {{ 'bg-brand-500 text-white shadow-sm' if active else 'bg-card-alt text-ink-muted border border-line hover:text-ink' }}">
+        {{ ui.avatar(u, size='xs') }}{{ u.display_name }}
       </a>
       {% endfor %}
-    </div>
-  </div>
+    </nav>
+  {% endcall %}
 
-  <!-- Summary cards -->
+  <!-- Resumen -->
   {% set pantry = chart_data.pantry_summary %}
+  {% set latest_weight = chart_data.weight_trend.data[-1] if chart_data.weight_trend.data else None %}
+  {% set first_weight = chart_data.weight_trend.data | reject('equalto', none) | first if chart_data.weight_trend.data | length > 1 else None %}
+  {% set change = (latest_weight - first_weight) | round(1) if latest_weight and first_weight else None %}
+  {#- El delta va como bloque `{% set %}` y no como texto plano porque el color *es*
+      la información: bajar y subir tienen que distinguirse de un vistazo. Un bloque
+      `{% set %}` con autoescape activo produce `Markup`, así que el HTML llega
+      entero al macro en lugar de escaparse. -#}
+  {% set weight_hint %}
+    {%- if change %}
+    <span class="font-semibold {{ 'text-ok-ink' if change < 0 else 'text-warn-ink' }}">{{ '+' if change > 0 else '' }}{{ change }} {{ _('kg') }}</span>
+    {{ _('in 30 days') }}
+    {%- elif change is not none %}{{ _('No change in 30 days') }}{% endif -%}
+  {%- endset %}
+  {% set pantry_hint %}
+    {%- if pantry.low_stock_count > 0 -%}
+    <span class="font-semibold text-warn-ink">{{ pantry.low_stock_count }} {{ _('low stock') }}</span>
+    {%- else -%}
+    <span class="font-semibold text-ok-ink">{{ _('All stocked') }}</span>
+    {%- endif -%}
+  {%- endset %}
+
+  {% set workout_counts = chart_data.workout_frequency.data %}
+  {% set active_days = chart_data.active_days.days | selectattr('active') | list %}
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    {% set latest_weight = chart_data.weight_trend.data[-1] if chart_data.weight_trend.data else None %}
-    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-      <p class="text-xs text-slate-500 uppercase tracking-wide">{{ _('Current Weight') }}</p>
-      <p class="text-2xl font-bold text-slate-900 mt-1">
-        {% if latest_weight %}{{ latest_weight }} {{ _('kg') }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-      </p>
-      {% if chart_data.weight_trend.data|length > 1 %}
-      {% set first = chart_data.weight_trend.data|reject('equalto', none)|first %}
-      {% set change = (latest_weight - first)|round(1) if latest_weight and first else 0 %}
-      <p class="text-xs mt-1 {% if change < 0 %}text-emerald-600{% elif change > 0 %}text-amber-600{% else %}text-slate-400{% endif %}">
-        {% if change != 0 %}{{ '+' if change > 0 else '' }}{{ change }} {{ _('kg') }} (30d){% else %}{{ _('No change') }}{% endif %}
-      </p>
-      {% endif %}
-    </div>
-
-    {% set workout_counts = chart_data.workout_frequency.data %}
-    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-      <p class="text-xs text-slate-500 uppercase tracking-wide">{{ _('Workouts (this week)') }}</p>
-      <p class="text-2xl font-bold text-slate-900 mt-1">{{ workout_counts[-1] if workout_counts else 0 }}</p>
-      <p class="text-xs text-slate-400 mt-1">{{ (workout_counts|sum) if workout_counts else 0 }} {{ _('total past 4 weeks') }}</p>
-    </div>
-
-    {% set active = chart_data.active_days.days|selectattr('active')|list %}
-    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-      <p class="text-xs text-slate-500 uppercase tracking-wide">{{ _('Active Days (30d)') }}</p>
-      <p class="text-2xl font-bold text-slate-900 mt-1">{{ active|length }}</p>
-      <p class="text-xs text-slate-400 mt-1">{{ _('out of 30 days') }}</p>
-    </div>
-
-    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-      <p class="text-xs text-slate-500 uppercase tracking-wide">{{ _('Pantry Items') }}</p>
-      <p class="text-2xl font-bold text-slate-900 mt-1">{{ pantry.total_items }}</p>
-      {% if pantry.low_stock_count > 0 %}
-      <p class="text-xs text-rose-600 mt-1">{{ pantry.low_stock_count }} {{ _('low stock') }}</p>
-      {% else %}
-      <p class="text-xs text-emerald-600 mt-1">{{ _('All stocked') }}</p>
-      {% endif %}
-    </div>
+    {{ ui.stat(_('Current weight'),
+               latest_weight if latest_weight else '—',
+               unit=_('kg') if latest_weight else None,
+               icon='trend-up', tone='body', hint=weight_hint,
+               href='/body-metrics') }}
+    {{ ui.stat(_('Workouts this week'), workout_counts[-1] if workout_counts else 0,
+               icon='bolt', tone='move',
+               hint=((workout_counts | sum) if workout_counts else 0) ~ ' ' ~ _('in the past 4 weeks'),
+               href='/workouts') }}
+    {{ ui.stat(_('Active days'), active_days | length, unit=_('/ 30'),
+               icon='calendar', tone='brand', hint=_('Days with a meal or a workout')) }}
+    {{ ui.stat(_('Pantry items'), pantry.total_items,
+               icon='pantry', tone='stock', hint=pantry_hint, href='/pantry') }}
   </div>
 
-  <!-- Charts row 1: Weight + Workout Frequency -->
+  <!-- Peso y frecuencia de entrenamiento -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-      <h3 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Weight Trend (30 days)') }}</h3>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Weight trend'), subtitle=_('Last 30 days'), icon='chart-bar', tone='body') }}
       {% if chart_data.weight_trend.labels %}
       <canvas id="weightChart" height="200"></canvas>
       {% else %}
-      <div class="h-48 flex items-center justify-center text-slate-400 text-sm">{{ _('No weight data yet') }}</div>
+      {{ ui.empty_state(_('No weigh-ins yet.'),
+          text=_('Log your weight a few times and the trend line shows up here.'),
+          icon='chart-bar', tone='body',
+          action_label=_('Log weight'), action_href='/capture?prefill=weight') }}
       {% endif %}
-    </div>
+    {% endcall %}
 
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-      <h3 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Workouts per Week') }}</h3>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Workouts per week'), subtitle=_('Last 4 weeks'), icon='bolt', tone='move') }}
       {% if chart_data.workout_frequency.labels %}
       <canvas id="workoutFreqChart" height="200"></canvas>
       {% else %}
-      <div class="h-48 flex items-center justify-center text-slate-400 text-sm">{{ _('No workout data yet') }}</div>
+      {{ ui.empty_state(_('No workouts yet.'),
+          text=_('Every session you log adds a bar here.'),
+          icon='bolt', tone='move',
+          action_label=_('Log workout'), action_href='/capture?prefill=workout') }}
       {% endif %}
-    </div>
+    {% endcall %}
   </div>
 
-  <!-- Charts row 2: Muscle groups + Meal types -->
+  <!-- Grupos musculares y tipos de comida -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-      <h3 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Muscle Groups Trained') }}</h3>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Muscle groups trained'), subtitle=_('Last 30 days'), icon='chart-box', tone='move') }}
       {% if chart_data.muscle_groups.labels %}
       <canvas id="muscleChart" height="220"></canvas>
       {% else %}
-      <div class="h-48 flex items-center justify-center text-slate-400 text-sm">{{ _('No exercise data yet') }}</div>
+      {{ ui.empty_state(_('No exercises yet.'),
+          text=_('Name the exercises inside a workout and this shows which groups you cover.'),
+          icon='chart-box', tone='move',
+          action_label=_('Log workout'), action_href='/capture?prefill=workout') }}
       {% endif %}
-    </div>
+    {% endcall %}
 
-    <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-      <h3 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Meals by Type (7 days)') }}</h3>
+    {% call ui.card() %}
+      {{ ui.section_title(_('Meals by type'), subtitle=_('Last 7 days'), icon='meal', tone='food') }}
       {% if chart_data.meal_types.labels %}
       <canvas id="mealTypesChart" height="220"></canvas>
       {% else %}
-      <div class="h-48 flex items-center justify-center text-slate-400 text-sm">{{ _('No meal data yet') }}</div>
+      {{ ui.empty_state(_('No meals yet.'),
+          text=_('Breakfast, lunch, dinner and snacks split up here once you log them.'),
+          icon='meal', tone='food',
+          action_label=_('Log meal'), action_href='/capture?prefill=meal') }}
       {% endif %}
-    </div>
+    {% endcall %}
   </div>
 
-  <!-- Active days heatmap -->
-  <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
-    <h3 class="text-sm font-semibold text-slate-700 mb-4">{{ _('Activity Calendar (30 days)') }}</h3>
-    <div class="flex flex-wrap gap-1.5">
+  <!-- Calendario de actividad -->
+  {% call ui.card() %}
+    {{ ui.section_title(_('Activity calendar'), subtitle=_('A day counts as active with a meal or a workout'), icon='calendar') }}
+    {#- `role="list"` explícito: el `flex` de la grilla borra la semántica de lista
+        que un `<ul>` daría en varios lectores de pantalla, y acá la cuenta de días
+        es justamente lo que se quiere escuchar. -#}
+    <div class="flex flex-wrap gap-1.5" role="list">
       {% for day in chart_data.active_days.days %}
-      <div title="{{ day.date }}"
-           class="w-7 h-7 rounded-md flex items-center justify-center text-xs
-                  {% if day.active %}bg-indigo-500 text-white{% else %}bg-slate-100 text-slate-400{% endif %}">
+      <div role="listitem" title="{{ day.date }}"
+           class="w-7 h-7 rounded-chip flex items-center justify-center text-xs font-medium tabular-nums
+                  {{ 'bg-brand-500 text-white' if day.active else 'bg-card-alt text-ink-subtle' }}">
         {{ day.date[-2:] }}
       </div>
       {% endfor %}
     </div>
-    <div class="flex gap-4 mt-3 text-xs text-slate-500">
-      <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-indigo-500 inline-block"></span> {{ _('Active day') }}</span>
-      <span class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-slate-100 inline-block"></span> {{ _('Rest day') }}</span>
+    <div class="flex gap-4 mt-4 text-xs text-ink-muted">
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-chip bg-brand-500 inline-block"></span>{{ _('Active day') }}</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-chip bg-card-alt border border-line inline-block"></span>{{ _('Rest day') }}</span>
     </div>
-  </div>
+  {% endcall %}
 
 </div>
 {% endblock %}
