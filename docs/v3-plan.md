@@ -1,7 +1,8 @@
 # GaiaPulse v3 — Plan de trabajo
 
 > Producto **bonito, intuitivo, dinámico, inmersivo, moderno e inteligente**.
-> Branch: `v3`. Entrega en 5 fases con checkpoint al final de cada una.
+> Branch: `v3`. Entrega en 5 fases con checkpoint al final de cada una, más una fase 6
+> de documentación de cierre que se escribe cuando las cinco están terminadas.
 > Commits parciales y atómicos por funcionalidad (ver [Estrategia de commits](#estrategia-de-commits)).
 
 ---
@@ -23,6 +24,7 @@
    - [Fase 3 — Barrido visual + rediseño de IA](#fase-3--barrido-visual--rediseño-de-ia)
    - [Fase 4 — Inteligencia oportuna, con memoria y explicable](#fase-4--inteligencia-oportuna-con-memoria-y-explicable)
    - [Fase 5 — i18n, accesibilidad y red de seguridad](#fase-5--i18n-accesibilidad-y-red-de-seguridad)
+   - [Fase 6 — Los dos documentos de cierre](#fase-6--los-dos-documentos-de-cierre)
 5. [Estrategia de commits](#estrategia-de-commits)
 6. [Verificación](#verificación)
 7. [Fuera de alcance de v3](#fuera-de-alcance-de-v3)
@@ -1345,6 +1347,63 @@ Usando el fixture `client` de `tests/conftest.py:51` que hoy nunca se usa:
       una señal vieja pese menos que una reciente (decaimiento), que un solo descarte **no**
       vete un sujeto pero seis sí, que el nivel de atributo exija más evidencia que el
       puntual, y que la señal de un miembro **no** afecte las sugerencias del otro.
+
+---
+
+### Fase 6 — Los dos documentos de cierre
+
+Pedido explícito del usuario, a entregar **cuando la v3 esté terminada**. Son dos
+documentos con dos lectores distintos, y por eso son dos y no uno: mezclar "qué cambió"
+con "cómo se usa" produce un changelog que nadie puede seguir y un tutorial que envejece
+en cada commit.
+
+Se planifican acá, en vez de improvisarse al final, por una razón práctica: buena parte
+del material se pierde si se junta después. La explicación de por qué el nivel atributo
+pesa la mitad, o de por qué `"other"` no es una franja horaria, está fresca en el commit
+que la introdujo y hay que ir juntándola a medida que cada fase cierra — el registro por
+sección de este mismo plan es la materia prima.
+
+**6.1 — `docs/gaiapulse-v3.md`: qué hay, qué se hizo, qué queda de la v2**
+
+Para alguien que quiere entender el estado de la app, no usarla. Estructura pensada:
+
+- [ ] Qué es GaiaPulse en un párrafo y para quién (dos personas, un hogar, un objetivo).
+- [ ] **El recorrido de un dato**, que es lo que hace entendible todo lo demás: una frase
+      escrita en Capture → NLP capa 1/capa 2 → la pantalla de confirmación → las tablas de
+      dominio → las señales de aprendizaje → una sugerencia. Un diagrama y cinco párrafos.
+- [ ] Por área, tres columnas honestas: **lo que ya estaba en la v2**, **lo que la v3
+      cambió**, y **lo que sigue igual a propósito**. Áreas: funcionamiento (los 13
+      defectos y el onboarding huérfano), diseño (tokens, modo oscuro, macros), la capa de
+      inteligencia (el reloj, la memoria por sujeto, el aprendizaje de 4.4), i18n y
+      accesibilidad, y la red de tests.
+- [ ] **Lo que quedó afuera y por qué**, con nombre y razón: la validación de CSRF, el LLM
+      en el camino de recomendación, la edición inline del NLP, el build de Tailwind, la
+      normalización de los marcadores de sangre. Un documento que solo cuenta lo que se hizo
+      es propaganda; lo valioso para el que llega después es el mapa de lo que falta.
+- [ ] Los números verificados al momento de escribirlo (tablas, migraciones, tests,
+      pantallas), sacados del árbol y no de la memoria — es exactamente el error que hoy
+      tiene `README.md:81`.
+
+**6.2 — `docs/guia-de-uso.md`: cómo usarla y sacarle provecho**
+
+Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de módulo.
+
+- [ ] **La primera semana**, en orden: el onboarding, la primera captura, el primer
+      registro de peso, cargar la despensa. Qué esperar de la app cuando todavía no sabe
+      nada de vos — y por qué las primeras sugerencias son genéricas.
+- [ ] **Cómo hablarle**: qué frases entiende bien, con ejemplos reales en castellano de los
+      dos idiomas que el parser acepta, y qué conviene escribir para que una comida quede
+      con su hora (que es lo que le enseña *cuándo* te gusta algo).
+- [ ] **Cómo aprende y cómo enseñarle**: qué pasa cuando aceptás, cuando descartás y cuando
+      posponés una sugerencia; por qué un solo toque es una pista y seis son una regla; por
+      qué un "no" caduca; y que rechazar tres verduras le enseña algo sobre la cuarta. Es la
+      sección que convierte la 4.4 en algo que se puede usar a propósito en vez de sufrir.
+- [ ] **Cómo leer una sugerencia**: el "¿por qué esta sugerencia?", qué significa el
+      porcentaje de confianza, y qué **no** significa (no es una recomendación médica).
+- [ ] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
+      captura mal interpretada, y qué mira la app para dejar de repetirse.
+- [ ] Una página final de "trucos": las acciones rápidas del Home, el modo oscuro, la
+      despensa como fuente de las sugerencias de comida.
 
 ---
 
