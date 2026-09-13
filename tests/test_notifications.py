@@ -330,6 +330,182 @@ class TestSubjectDedup:
         assert not self._asked(db, household)
 
 
+class TestRetiringASubject:
+    """La otra mitad del ciclo por sujeto: sacar el aviso cuando la cosa se arregló.
+
+    `TestSubjectDedup` cubre el "no repetir". Acá se cubre el "retirar", que es lo que
+    reinicia la marca de agua de `priority`: mientras la fila esté, `has_recent_for_subject`
+    la ve — leída, descartada, da igual — y la app se queda muda en la próxima recaída.
+    """
+
+    def _notify(
+        self,
+        db: Session,
+        household: Household,
+        *,
+        category: str = "low_stock",
+        entity_type: str | None = "pantry_stock",
+        entity_id: int | None = 1,
+        user_id: int | None = None,
+        source_type: str = "job",
+    ) -> int:
+        NotificationService(db).create(NotificationCreate(
+            user_id=user_id,
+            household_id=household.id,
+            category=category,
+            title="title",
+            body="body",
+            priority=7,
+            source_type=source_type,
+            related_entity_type=entity_type,
+            related_entity_id=entity_id,
+        ))
+        return db.query(Notification).count()
+
+    def _surviving(self, db: Session) -> set[tuple[str, int | None]]:
+        return {(n.category, n.related_entity_id) for n in db.query(Notification).all()}
+
+    def test_it_removes_the_row_and_with_it_the_watermark(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """El borrado es el mecanismo, no un efecto: es lo que hace que la próxima vez
+        que el sujeto vuelva a estar mal, el aviso vuelva a salir desde el escalón base."""
+        repo = NotificationRepository(db)
+        self._notify(
+            db, household, category="inactivity", entity_type="user",
+            entity_id=diego.id, user_id=diego.id,
+        )
+        assert repo.has_recent_for_subject(
+            "inactivity", "user", diego.id,
+            household_id=household.id, user_id=diego.id, days=7, severity=5,
+        )
+
+        assert repo.retire_subject(
+            "inactivity", "user", diego.id, household_id=household.id, user_id=diego.id
+        ) == 1
+
+        assert not repo.has_recent_for_subject(
+            "inactivity", "user", diego.id,
+            household_id=household.id, user_id=diego.id, days=7, severity=5,
+        )
+
+    def test_it_only_takes_the_subject_it_was_given(
+        self, db: Session, household: Household
+    ) -> None:
+        self._notify(db, household, entity_id=1)
+        self._notify(db, household, entity_id=2)
+
+        assert NotificationRepository(db).retire_subject(
+            "low_stock", "pantry_stock", 1, household_id=household.id
+        ) == 1
+        assert self._surviving(db) == {("low_stock", 2)}
+
+    def test_retiring_someone_elses_subject_is_not_retiring_theirs(
+        self, db: Session, household: Household, diego: User, rocio: User
+    ) -> None:
+        """Regla 4 en el borrado, que es donde más caro sale.
+
+        Los avisos per-user llevan también `household_id`, así que un scope con `or_` —el
+        mismo bug que tenía `has_recent_for_subject`— haría que el pesaje de Diego borre el
+        de Rocío: ella pierde su recordatorio **y** su watermark sin haberse pesado.
+        """
+        for user in (diego, rocio):
+            self._notify(
+                db, household, category="metric_reminder", entity_type="user",
+                entity_id=user.id, user_id=user.id,
+            )
+
+        assert NotificationRepository(db).retire_subject(
+            "metric_reminder", "user", diego.id, household_id=household.id, user_id=diego.id
+        ) == 1
+        assert self._surviving(db) == {("metric_reminder", rocio.id)}
+
+    def test_a_household_retirement_does_not_reach_a_per_user_row(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """El otro lado del scope: el aviso de la despensa es del hogar (`user_id IS
+        NULL`), y un `DELETE` de hogar no tiene por qué llevarse una fila dirigida."""
+        self._notify(db, household, user_id=diego.id)
+
+        assert NotificationRepository(db).retire_subject(
+            "low_stock", "pantry_stock", 1, household_id=household.id
+        ) == 0
+        assert db.query(Notification).count() == 1
+
+    def test_it_leaves_alone_what_a_job_did_not_write(
+        self, db: Session, household: Household
+    ) -> None:
+        self._notify(db, household, source_type="manual")
+
+        assert NotificationRepository(db).retire_subject(
+            "low_stock", "pantry_stock", 1, household_id=household.id
+        ) == 0
+        assert db.query(Notification).count() == 1
+
+    def test_the_complement_keeps_what_is_still_missing(
+        self, db: Session, household: Household
+    ) -> None:
+        """La forma de la despensa: la lista de faltantes de hoy **es** la verdad."""
+        for entity_id in (1, 2, 3):
+            self._notify(db, household, entity_id=entity_id)
+
+        assert NotificationRepository(db).retire_subjects_other_than(
+            "low_stock", "pantry_stock", [2, 3], household_id=household.id
+        ) == 1
+        assert self._surviving(db) == {("low_stock", 2), ("low_stock", 3)}
+
+    def test_an_empty_set_retires_everything(
+        self, db: Session, household: Household
+    ) -> None:
+        """Despensa entera repuesta. Sin este caso, un `if keep_ids:` de más arriba —o un
+        `notin_([])`, que en SQL no matchea nada— dejaría los avisos puestos justo cuando
+        ya no falta nada."""
+        for entity_id in (1, 2):
+            self._notify(db, household, entity_id=entity_id)
+
+        assert NotificationRepository(db).retire_subjects_other_than(
+            "low_stock", "pantry_stock", [], household_id=household.id
+        ) == 2
+        assert db.query(Notification).count() == 0
+
+    def test_the_complement_does_not_touch_a_row_without_a_subject(
+        self, db: Session, household: Household
+    ) -> None:
+        """Las filas de la v1 no grababan `related_entity_*`, y sin id no hay forma de
+        saber de qué ítem hablaban: no se puede decidir que se repuso. Se van con la poda."""
+        self._notify(db, household, entity_type=None, entity_id=None)
+
+        assert NotificationRepository(db).retire_subjects_other_than(
+            "low_stock", "pantry_stock", [], household_id=household.id
+        ) == 0
+        assert db.query(Notification).count() == 1
+
+    def test_the_complement_does_not_cross_categories(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        self._notify(db, household, entity_id=1)
+        self._notify(
+            db, household, category="inactivity", entity_type="user",
+            entity_id=diego.id, user_id=diego.id,
+        )
+
+        assert NotificationRepository(db).retire_subjects_other_than(
+            "low_stock", "pantry_stock", [], household_id=household.id
+        ) == 1
+        assert self._surviving(db) == {("inactivity", diego.id)}
+
+    def test_retiring_nothing_is_not_an_error(
+        self, db: Session, household: Household
+    ) -> None:
+        repo = NotificationRepository(db)
+        assert repo.retire_subject(
+            "low_stock", "pantry_stock", 99, household_id=household.id
+        ) == 0
+        assert repo.retire_subjects_other_than(
+            "low_stock", "pantry_stock", [], household_id=household.id
+        ) == 0
+
+
 class TestPruning:
     def test_it_drops_the_old_and_keeps_the_recent(
         self, db: Session, household: Household, diego: User

@@ -29,8 +29,9 @@
 #}
 
 {% block content %}
-{#- Los mismos cuatro comienzos de frase que el `prefillMap` del componente y que las
-    acciones rápidas del Home. El `key` es lo que viaja en `?prefill=`. -#}
+{#- Los cuatro chips de esta pantalla, que son los mismos que las acciones rápidas del
+    Home. El `key` es lo que viaja en `?prefill=` y se resuelve contra el `prefillMap` del
+    componente, que tiene una clave más (`sleep`, sin chip): el por qué está ahí. -#}
 {% set openers = [
     {'key': 'meal',    'label': _('Meal'),    'icon': 'meal',     'tone': 'food'},
     {'key': 'workout', 'label': _('Workout'), 'icon': 'bolt',     'tone': 'move'},
@@ -181,13 +182,22 @@ function captureApp() {
 
     // Comienzos de frase, no oraciones enteras: la persona la termina, así que un
     // envío de más nunca puede registrar algo que no pasó. En inglés porque es lo
-    // que matchea el parser de reglas. Es el mismo mapa que consumen los chips de
-    // esta pantalla y el `?prefill=` de las acciones rápidas del Home.
+    // que matchea el parser de reglas.
+    //
+    // Es el mismo mapa que consumen los chips de esta pantalla, el `?prefill=` de las
+    // acciones rápidas del Home y `app/web/actions.py`, pero **no** son los mismos
+    // conjuntos: `sleep` está acá y no entre los `openers` de arriba. Lo manda el aviso
+    // de sueño ausente, y un quinto chip en la pantalla de captura le daría al sueño el
+    // mismo peso visual que a las comidas — cuando el sueño se anota junto con el peso,
+    // no como un registro aparte. Una clave que **no** esté en este mapa abre el
+    // textarea vacío y sin ningún error visible; eso lo cubre
+    // `tests/test_actions.py::test_capture_knows_every_prefill_key_we_send`.
     prefillMap: {
       meal:    'We had ',
       workout: 'I did ',
       pantry:  'I bought ',
       weight:  'My weight today is ',
+      sleep:   'I slept ',
     },
 
     init() {

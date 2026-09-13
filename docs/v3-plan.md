@@ -776,13 +776,129 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
     `GET /api/v1/notifications/` devuelva el sujeto, que es el único consumidor de los dos
     campos nuevos del schema (la pantalla web lee la fila del ORM, no el schema, así que sin
     esto los dos campos parecen muertos y borrarlos no rompe ningún test).
-- [ ] Detectar más ausencias además de las dos actuales (hoy solo entrenamiento y pesaje):
+- [x] Detectar más ausencias además de las dos actuales (hoy solo entrenamiento y pesaje):
       comidas no registradas, sueño ausente.
-- [ ] **Ciclo de vida por sujeto**, que es lo que la 4.2 dejó pendiente: retirar el aviso
+  - Las cuatro ausencias por persona pasan a ser **datos y un solo driver**: un
+    `_Absence` congelado (categoría, umbral, severidad base, cómo leer el último registro,
+    cómo redactar) y `_run_absence_job()`. Antes eran dos funciones casi iguales; con dos
+    más, copiarlas otra vez era garantizar que el sujeto, la marca de agua y el retiro se
+    separaran en alguna de las cuatro. Los cuatro puntos de entrada que el scheduler
+    importa quedan como envoltorios de una línea.
+  - Umbrales distintos porque los huecos no significan lo mismo: comidas a los **2 días**
+    (severidad base 4) porque no anotar qué se comió en dos días ya deja al motor sin la
+    mitad de su entrada; sueño a los **3** (base 3) porque una noche sin anotar es normal.
+    La escalada es la de la 4.2: un punto por cada tanda entera de umbrales.
+  - **Ninguna de las dos habla cuando no hay registro previo** (`first_message=None`),
+    a diferencia de inactividad y pesaje. La cuenta recién creada no tiene nada anotado de
+    nada: si las cuatro ausencias saludaran, el primer día de uso serían cuatro
+    notificaciones antes de que la persona escriba una línea. Entrenamiento y pesaje
+    saludan porque son el pedido inicial del producto; comidas y sueño esperan a tener una
+    primera marca contra la cual medir.
+  - Los dos lectores nuevos son de repositorio y devuelven un instante, no una lista:
+    `MealRepository.get_last_meal_at` hace `max(timestamp)` **con join a
+    `MealParticipant`** — sin la mitad del participante, la cena que Rocío anotó sola
+    taparía el hueco de Diego (regla 4) — y `BodyMetricRepository.get_last_sleep_at` filtra
+    `sleep_hours IS NOT NULL`, porque las horas son una columna opcional de la fila de
+    peso: el sujeto es *la última noche con horas*, no el último pesaje. Un pesaje de ayer
+    sin horas no cuenta como sueño anotado, y hay un test que lo fija.
+  - Horarios elegidos por cuándo el dato existe, no por repartir la agenda:
+    **20:45** para comidas (después de cenar el día de comidas ya está completo; a la
+    mañana el hueco todavía no existe y a media tarde el aviso sale mientras la persona
+    está por almorzar) y **10:25** para sueño (el sueño se anota cuando uno ya se levantó,
+    y a las 8:20 competiría con el aviso del pesaje). El de comidas es el que pasa más
+    cerca de la franja de silencio, y por eso es el que la deja documentada.
+  - Las dos categorías nuevas entran también en las tres superficies que ya existían:
+    acción primaria en `actions.py` ("Anotar una comida" / "Anotar cuánto dormiste" —
+    `sleep` suma una clave al `prefillMap` de `capture/index.html` sin sumar un quinto chip,
+    porque el sueño se anota al lado del peso), ícono y tono de dominio en `domain.html`
+    (tono `food` y `body`, no `reminder`: lo que se pide es de comida y de cuerpo), y
+    rótulo traducido. Un test nuevo (`TestEveryCategoryHasAFace`) lee las categorías de los
+    `_Absence` del módulo de jobs y exige que los tres mapas de `domain.html` las cubran:
+    una quinta ausencia sin cara no se puede mergear en silencio.
+  - Los textos de estos jobs quedan en inglés como los dos que ya estaban: son cuerpos
+    armados en Python y su traducción es el backlog de i18n de la Fase 5, no de acá.
+- [x] **Ciclo de vida por sujeto**, que es lo que la 4.2 dejó pendiente: retirar el aviso
       abierto cuando su sujeto sale del conjunto — la leche que se repuso, el que volvió a
       entrenar. Con eso la marca de agua de `priority` se reinicia sola en la recuperación, en
       vez de esperar a que venza la ventana de 7 días, y es también lo que le da sentido a la
       acción primaria: tocar el aviso y que el aviso se vaya.
+  - **Retirar es un `DELETE`, no una bandera.** No es una elección estética: la marca de
+    agua vive en la fila, y `has_recent_for_subject` ignora `dismissed_at` a propósito
+    (así descartar no vuelve a abrir la canilla). O sea que marcar la fila —con la columna
+    que fuera— la dejaría igual de suprimida y la recuperación no reiniciaría nada. Sacar
+    la fila es lo único que reinicia el escalón, y evita además una columna nueva: la
+    única migración de la v3 es la `0003` y es de la 4.4.
+  - Por eso mismo **el retiro no mira leído ni descartado**: el aviso que la persona ya
+    leyó es exactamente el que hay que sacar cuando la cosa se resolvió.
+  - Dos formas en el repositorio, porque los dos sujetos son distintos:
+    `retire_subject(...)` para lo de una persona (volvió a entrenar, se pesó, comió, durmió)
+    y `retire_subjects_other_than(..., keep_ids)` para la despensa, donde **la lista de
+    faltantes de hoy *es* la verdad** y el complemento —lo que ya no falta— es lo que se
+    va. El conjunto vacío tiene que borrar todo: un `if keep_ids:` de más, o un `notin_([])`
+    —que en SQL no matchea nada—, dejaría los avisos puestos justo cuando ya no falta nada,
+    y hay un test para ese caso.
+  - Las dos formas filtran `source_type == "job"` y exigen `related_entity_id IS NOT NULL`:
+    **lo que escribió una persona no lo borra un job**, y una fila de la v1 sin sujeto no se
+    puede declarar resuelta porque no se sabe de qué hablaba (esas se van con la poda).
+    El scope es el mismo `_addressee_scope` de la 4.2, o sea que el `DELETE` lleva la regla
+    4 adentro: retirar el pesaje de Diego no puede llevarse el de Rocío, que perdería su
+    recordatorio **y** su marca de agua sin haberse pesado.
+  - El retiro queda **después** del gate de silencio, no antes: si el job entero se saltea
+    por horario, nada corre — y eso está bien, porque un retiro tardío no molesta a nadie,
+    mientras que abrir la sesión para borrar durante la franja de silencio es trabajo con
+    riesgo y sin beneficio.
+  - Una corrida que **solo** retira necesita su propio `commit()`: `retire_subject` hace
+    `flush()`, y si no se creó ninguna notificación no hay `NotificationService.create` que
+    commitee por nosotros; sin eso el borrado se iría con el `close()` del `finally`. Es una
+    trampa que un test no puede detectar contando filas —el `flush()` ya las saca de la
+    vista de la sesión—, así que el test cuenta los `commit()` con un monkeypatch, igual que
+    el de la poda.
+  - Tests (31 nuevos entre `test_notification_jobs.py` y `test_notifications.py`, 406 en
+    total): que el hueco se mida contra el último registro y no contra la creación de la
+    cuenta; que quien nunca anotó quede en silencio; que las comidas de uno no sean las del
+    otro; que un pesaje sin horas no cuente como sueño; que registrar la cosa saque el aviso
+    abierto; que reponer un ítem deje el aviso del otro; que la marca de agua se reinicie en
+    la recuperación (9 días → prioridad 6, se pesa, 5 días → prioridad 5 y no 6); que el
+    retiro alcance a un aviso ya leído y descartado; que una corrida de solo-retiro
+    commitee; y que una fila escrita a mano sobreviva.
+  - **Lo que encontró la revisión de `code-health-qa`, y que era un defecto de verdad:**
+    "dormí 7 horas" contaba como pesaje. `weight_kg` también es opcional —el parser acepta
+    el intent de medición con cualquiera de sus cuatro campos, y `BodyMetricService` escribe
+    la fila con el peso en `NULL`—, y el lector del recordatorio de peso preguntaba por la
+    última fila cualquiera fuera su contenido. Antes de esta sub-fase eso *atrasaba* el
+    aviso; con el retiro por sujeto **lo borra**, y con él la marca de agua: quien anota
+    sueño cada dos días no volvía a recibir el aviso del peso **nunca**, y en silencio.
+    El camino entero está adentro de lo que la 4.3 construye —tocar el aviso de sueño lleva
+    a la captura con "I slept " puesto—, así que la sub-fase se estaba comiendo su propia
+    cola. Arreglado con `get_last_weight_at`, el espejo exacto de `get_last_sleep_at`
+    (`weight_kg IS NOT NULL`, `max()` en la base), que es además el filtro que
+    `get_weight_series` ya tenía tres líneas más abajo. El test que lo fija se cae con el
+    lector viejo: verificado, no supuesto.
+  - Otras cuatro cosas de la misma revisión: el `commit()` del retiro pasó a estar
+    **adentro** del `for` de personas, donde ya estaba el del job de stock, porque el
+    `except` está afuera del loop y una excepción con la segunda persona se llevaba el
+    retiro de la primera; se fue el `assert absence.first_message is not None`, que era
+    control de flujo dependiente de `assert` —bajo `python -O` se convertía en
+    `None(user)`— y que existía solo para arrastrar un centinela hasta después del dedup
+    (ahora cada rama arma su texto y desaparecen el centinela y su segundo `if`); se fue el
+    parámetro `user_id` de `retire_subjects_other_than`, que no tenía un solo llamador
+    (regla 6: el único conjunto que se conoce entero es la despensa, y la despensa es del
+    hogar); y `TestEveryDestinationExists` dejó de listar las categorías a mano para
+    derivarlas de los `_Absence`, porque si no una quinta ausencia rompía el test de los
+    mapas de `domain.html`, alguien completaba los mapas, y el aviso salía lindo y **sin
+    botón** con la suite en verde.
+  - Dos tests negativos más un tercero pasaron a distinguir "calló porque no tenía nada que
+    decir" de "el job explotó": su única afirmación era `== []`, y como cada job termina en
+    `except Exception: logger.exception(...)`, un typo en un helper de mensajes los dejaba
+    pasar igual. Ahora un helper compartido exige que no haya nada logueado en `ERROR`, y
+    está verificado haciendo fallar un job a propósito.
+  - **Queda anotada una consecuencia del gate de silencio**, no arreglada: saltear el job
+    entero saltea también el retiro, que no le habla a nadie. Se acepta porque el retiro es
+    idempotente y la corrida de mañana lo hace igual; el caso raro —poner
+    `QUIET_HOURS_START=20`, con lo cual el job de comidas de las 20:45 queda mudo siempre y
+    su tarjeta abierta no se va hasta la poda de 90 días— está escrito en el docstring de
+    `_muted`. Mover una hora de `_SCHEDULE` adentro de la franja es apagar ese aviso, no
+    postergarlo, y eso ahora está dicho donde se lo va a leer.
 
 **4.4 — Que la app aprenda de verdad los gustos de cada uno con el uso**
 

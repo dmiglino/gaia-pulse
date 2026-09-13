@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -44,6 +44,29 @@ class MealRepository(BaseRepository[MealEvent]):
 
     def get_today_meals(self, household_id: int, today: date) -> list[MealEvent]:
         return self.get_household_meals(household_id, limit=50, start_date=today, end_date=today)
+
+    def get_last_meal_at(self, user_id: int, household_id: int) -> datetime | None:
+        """Cuándo comió por última vez **según el registro**, o `None` si nunca anotó.
+
+        La comida es del hogar y el participante es quien la comió, así que el filtro va
+        por los dos, igual que en `WorkoutRepository.get_last_session_start`: sin la
+        mitad del participante, la cena que Rocío anotó sola contaría como registro de
+        Diego y el hueco de él quedaría tapado.
+
+        Un `max()` en la base y no la lista de comidas con sus participantes e ítems: el
+        job de ausencia solo necesita el instante.
+        """
+        stmt = (
+            select(func.max(MealEvent.timestamp))
+            .join(MealEvent.participants)
+            .where(
+                and_(
+                    MealEvent.household_id == household_id,
+                    MealParticipant.user_id == user_id,
+                )
+            )
+        )
+        return self.db.scalar(stmt)
 
     def get_with_participants(self, meal_id: int) -> MealEvent | None:
         stmt = (

@@ -40,8 +40,8 @@ class PrimaryAction:
 def _capture(prefill: str) -> str:
     """La pantalla de captura con el comienzo de frase ya puesto.
 
-    Las claves que se mandan desde acá — `meal`, `workout`, `weight` — tienen que estar
-    en el `prefillMap` de `capture/index.html`, que es el que traduce la clave a texto;
+    Las claves que se mandan desde acá — `meal`, `workout`, `weight`, `sleep` — tienen que
+    estar en el `prefillMap` de `capture/index.html`, que es el que traduce la clave a texto;
     una clave que no esté ahí abre el textarea vacío y sin error visible. Eso lo verifica
     `tests/test_actions.py::test_capture_knows_every_prefill_key_we_send`.
 
@@ -77,6 +77,10 @@ def notification_action(
         return PrimaryAction(_("Log a workout"), _capture("workout"), "bolt")
     if category == "metric_reminder":
         return PrimaryAction(_("Log your weight"), _capture("weight"), "trend-up")
+    if category == "meal_reminder":
+        return PrimaryAction(_("Log a meal"), _capture("meal"), "meal")
+    if category == "sleep_reminder":
+        return PrimaryAction(_("Log your sleep"), _capture("sleep"), "moon")
     return None
 
 

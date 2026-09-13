@@ -216,6 +216,8 @@ class TestSchedule:
             "low_stock_notifications",
             "inactivity_notifications",
             "metric_reminders",
+            "meal_reminders",
+            "sleep_reminders",
             "suggestion_generation",
             "notification_pruning",
         }
@@ -275,7 +277,11 @@ class TestSchedule:
 
 
 class TestQuietHoursGate:
-    """Los tres jobs de notificación se callan en la franja."""
+    """Todos los jobs que le hablan a alguien se callan en la franja.
+
+    La poda no está en la lista a propósito: corre a las 4:15, adentro de la franja,
+    porque no le habla a nadie.
+    """
 
     @pytest.mark.parametrize(
         "job_name",
@@ -283,6 +289,8 @@ class TestQuietHoursGate:
             "run_low_stock_notifications",
             "run_inactivity_notifications",
             "run_metric_reminder_notifications",
+            "run_meal_reminder_notifications",
+            "run_sleep_reminder_notifications",
         ],
     )
     def test_a_muted_job_does_not_even_open_a_session(

@@ -84,6 +84,8 @@ class TestNotificationActionMap:
         [
             ("inactivity", "workout"),
             ("metric_reminder", "weight"),
+            ("meal_reminder", "meal"),
+            ("sleep_reminder", "sleep"),
         ],
     )
     def test_absence_categories_open_the_capture_prefilled(self, category, prefill):
@@ -158,26 +160,48 @@ class TestSuggestionActionMap:
         assert {c["source_type"] for c in produced} == {"blood_analysis"}
 
 
+def _categories_the_jobs_write() -> set[str]:
+    """Las categorías de notificación que algún job escribe hoy, leídas del módulo.
+
+    Las cuatro ausencias por persona son instancias de `_Absence` en el módulo de jobs, así
+    que se leen de ahí en vez de repetirlas: es lo que hace que agregar una quinta rompa
+    los tests que tienen que romperse. `low_stock` no es una ausencia y va a mano.
+    """
+    from app.jobs import notification_jobs
+
+    absences = {
+        value.category
+        for value in vars(notification_jobs).values()
+        if isinstance(value, notification_jobs._Absence)
+    }
+    assert len(absences) == 4, "cambió el conjunto de ausencias por persona"
+    return absences | {"low_stock"}
+
+
 class TestEveryDestinationExists:
     """Que el destino sea una URL que la app sirve, y no una que parece servir."""
 
-    #: Todas las categorías que hoy producen una acción, de los dos mapas. Son las que
-    #: algún job o algún generador realmente escribe: una categoría que nadie emite sería
-    #: una rama inalcanzable acá y un test que parece cobertura sin proteger nada.
-    _CATEGORIES = (
-        "low_stock",
-        "inactivity",
-        "metric_reminder",
-        "meal",
-        "activity",
-        "shopping",
-    )
+    #: Las de sugerencia son las tres que algún generador realmente emite; las de
+    #: notificación **no** se listan acá, se derivan de los jobs. Una categoría que nadie
+    #: emite sería una rama inalcanzable y un test que parece cobertura sin proteger nada.
+    _SUGGESTION_CATEGORIES = ("meal", "activity", "shopping")
 
     def _all_actions(self):
-        for category in self._CATEGORIES:
-            action = notification_action(category, "pantry_stock", 1) or suggestion_action(
-                category, "rule"
-            )
+        #: Derivado y no escrito a mano: con la tupla, una quinta ausencia hacía fallar el
+        #: test de los mapas de `domain.html` —que sí introspecciona—, alguien completaba
+        #: los tres mapas, y `notification_action` quedaba sin tocar. El aviso salía con
+        #: ícono y rótulo lindos, sin botón, y `POST /act` redirigía a `/notifications/`:
+        #: justo la acción primaria que es el punto de la sub-fase, ausente y en verde.
+        for category in sorted(_categories_the_jobs_write()):
+            action = notification_action(category, "pantry_stock", 1)
+            assert action is not None, f"{category} no tiene acción primaria"
+            yield category, action
+
+        #: Los dos mapas se recorren por separado a propósito: con un `or` entre los dos,
+        #: una categoría que perdiera su acción de notificación podía quedar tapada por la
+        #: de sugerencia que se llama parecido.
+        for category in self._SUGGESTION_CATEGORIES:
+            action = suggestion_action(category, "rule")
             assert action is not None, category
             yield category, action
 
@@ -217,6 +241,40 @@ class TestEveryDestinationExists:
         # aviso deja de aterrizar en el ítem y nada más lo nota.
         card = Path("app/templates/pantry/partials/stock_card.html").read_text(encoding="utf-8")
         assert 'id="stock-item-{{ item.id }}"' in card
+
+
+class TestEveryCategoryHasAFace:
+    """Que una categoría que los jobs escriben tenga ícono, tono y rótulo.
+
+    Los tres mapas de `components/domain.html` degradan en silencio: una categoría que no
+    esté cae en `'bell'`, en el tono `info` y en un `category | replace('_',' ') | title`.
+    O sea que el aviso de sueño ausente saldría con una campanita gris y el rótulo
+    "Sleep Reminder" sin pasar por el catálogo, y ningún test se caería. Agregar una
+    ausencia nueva y olvidarse de los mapas es el error que esto ataja.
+    """
+
+    #: El tercer mapa se ancla en su macro y no en `set labels` a secas: hay otro `labels`
+    #: en el mismo archivo, el de los tipos de comida, y la búsqueda floja lo encontraba
+    #: primero — el test fallaba con "breakfast, snack, other" y no con lo que mira.
+    _MAPS = {
+        "NOTIFICATION_ICONS": r"set NOTIFICATION_ICONS = \{(.*?)\}",
+        "NOTIFICATION_TONES": r"set NOTIFICATION_TONES = \{(.*?)\}",
+        "notification_category_label": (
+            r"macro notification_category_label.*?set labels = \{(.*?)\}"
+        ),
+    }
+
+    @pytest.mark.parametrize("block", sorted(_MAPS))
+    def test_the_map_covers_them(self, block: str) -> None:
+        domain = Path("app/templates/components/domain.html").read_text(encoding="utf-8")
+        #: Los tres son literales de Jinja `{% set X = { … } %}` en el mismo archivo, así
+        #: que alcanza con leer el archivo: no hace falta renderizar una plantilla para
+        #: saber qué claves declara.
+        match = re.search(self._MAPS[block], domain, re.DOTALL)
+        assert match is not None, f"{block} ya no está donde estaba"
+        known = set(re.findall(r"'([a-z_]+)':", match.group(1)))
+
+        assert _categories_the_jobs_write() <= known
 
 
 class TestTheButtonReachesThePage:

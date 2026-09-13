@@ -10,8 +10,8 @@ donde sin un `CronTrigger` no tenía ningún efecto observable.
 
 Ahora cada job tiene una hora local y una razón para tenerla, y esa hora no cambia
 si el proceso se reinicia. Las horas están corridas de la punta de la hora a
-propósito: los cuatro jobs abren su propia sesión de base y no hay motivo para que
-compitan en el mismo minuto.
+propósito: cada job abre su propia sesión de base y no hay motivo para que compitan
+en el mismo minuto.
 
 `NOTIFICATION_JOB_INTERVAL_MINUTES` y `SUGGESTION_JOB_INTERVAL_MINUTES` se fueron
 con esto. El primero no lo leía ningún código — estaba documentado y muerto —, y el
@@ -44,6 +44,13 @@ _SCHEDULE: dict[str, tuple[str, int]] = {
     "inactivity_notifications": ("13", 5),
     # Al arrancar el día, antes de desayunar: el pesaje sirve en ayunas.
     "metric_reminders": ("8", 20),
+    # Después de cenar, cuando el día de comidas ya está completo: a la mañana el
+    # hueco todavía no existe, y a media tarde el aviso sale mientras la persona
+    # está por almorzar.
+    "meal_reminders": ("20", 45),
+    # A media mañana y no al despertarse: el sueño se anota cuando uno ya se
+    # levantó, y a las 8:20 el aviso competiría con el del pesaje.
+    "sleep_reminders": ("10", 25),
     # Dos veces: una para que Home tenga algo fresco a la mañana y otra antes de
     # que se decida la cena.
     "suggestion_generation": ("7,18", 40),
@@ -86,8 +93,10 @@ def start_scheduler() -> None:
     from app.jobs.notification_jobs import (
         run_inactivity_notifications,
         run_low_stock_notifications,
+        run_meal_reminder_notifications,
         run_metric_reminder_notifications,
         run_notification_pruning,
+        run_sleep_reminder_notifications,
     )
     from app.jobs.suggestion_jobs import run_suggestion_generation
 
@@ -95,6 +104,8 @@ def start_scheduler() -> None:
         "low_stock_notifications": run_low_stock_notifications,
         "inactivity_notifications": run_inactivity_notifications,
         "metric_reminders": run_metric_reminder_notifications,
+        "meal_reminders": run_meal_reminder_notifications,
+        "sleep_reminders": run_sleep_reminder_notifications,
         "suggestion_generation": run_suggestion_generation,
         "notification_pruning": run_notification_pruning,
     }

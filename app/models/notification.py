@@ -27,7 +27,8 @@ class Notification(Base):
 
     category: Mapped[str] = mapped_column(
         String(40), nullable=False
-    )  # low_stock/suggestion/inactivity/metric_reminder/trend/info/reminder
+    )  # low_stock/suggestion/inactivity/metric_reminder/meal_reminder/sleep_reminder/
+    # trend/info/reminder
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
 

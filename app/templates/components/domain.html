@@ -128,17 +128,24 @@
     y un msgid que `pybabel extract` no puede encontrar) y se ilustraba con emoji
     (🛒🏃⚖️💡📈🔔).
 
-    Las claves son las siete que el comentario de la columna enumera. Los jobs de hoy
-    solo escriben tres —`low_stock`, `inactivity`, `metric_reminder`—; las otras
-    cuatro están acá porque la columna las declara y la Fase 4 las va a usar, no para
-    dibujar filtros vacíos: los filtros de la pantalla salen de las categorías que la
-    persona **tiene**, no de esta lista. -#}
+    Las claves son las nueve que el comentario de la columna enumera. Los jobs de hoy
+    escriben cinco —`low_stock`, `inactivity`, `metric_reminder`, y desde la 4.3
+    `meal_reminder` y `sleep_reminder`—; las otras cuatro están acá porque la columna las
+    declara, no para dibujar filtros vacíos: los filtros de la pantalla salen de las
+    categorías que la persona **tiene**, no de esta lista.
+
+    Los dos recordatorios nuevos comparten tono con el dominio del que hablan y no con
+    `reminder`: el de comidas es `food` y el de sueño es `body`, igual que el pesaje, que
+    es la misma fila de la base. Que "no anotaste el sueño" y "no anotaste el peso" se
+    vean del mismo color es correcto: se registran en la misma pantalla. -#}
 {%- set NOTIFICATION_ICONS = {
   'low_stock': 'cart', 'inactivity': 'bolt', 'metric_reminder': 'chart-bar',
+  'meal_reminder': 'meal', 'sleep_reminder': 'moon',
   'suggestion': 'bulb', 'trend': 'trend-up', 'reminder': 'clock', 'info': 'info',
 } -%}
 {%- set NOTIFICATION_TONES = {
   'low_stock': 'stock', 'inactivity': 'move', 'metric_reminder': 'body',
+  'meal_reminder': 'food', 'sleep_reminder': 'body',
   'suggestion': 'brand', 'trend': 'info', 'reminder': 'warn', 'info': 'info',
 } -%}
 
@@ -146,7 +153,8 @@
 {% macro notification_category_label(category) -%}
 {%- set labels = {
   'low_stock': _('Running low'), 'inactivity': _('Inactivity'),
-  'metric_reminder': _('Weigh-in'), 'suggestion': _('Suggestion'),
+  'metric_reminder': _('Weigh-in'), 'meal_reminder': _('Meals'),
+  'sleep_reminder': _('Sleep'), 'suggestion': _('Suggestion'),
   'trend': _('Trend'), 'reminder': _('Reminder'), 'info': _('Info'),
 } -%}
 {{- labels.get(category | lower if category else '', category | replace('_', ' ') | title) -}}

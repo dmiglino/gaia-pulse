@@ -1717,5 +1717,8 @@ msgstr "Anotar tu peso"
 msgid "Log a meal"
 msgstr "Anotar una comida"
 
+msgid "Log your sleep"
+msgstr "Anotar cuánto dormiste"
+
 msgid "Open the pantry"
 msgstr "Abrir la despensa"

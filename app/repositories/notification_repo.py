@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
@@ -165,14 +166,12 @@ class NotificationRepository(BaseRepository[Notification]):
         **son** más urgentes, que es lo que la columna significa, y es lo único
         comparable que hay en la tabla sin agregarle una columna.
 
-        La marca de agua es la **más alta** de la ventana, no la del último aviso, y no
-        se reinicia cuando el sujeto se recupera: si la leche se acabó el lunes (9), se
-        repuso el martes y se acabó otra vez el miércoles, el miércoles no se habla,
-        porque la fila del lunes sigue adentro de la ventana con prioridad 9. Es la
-        contracara conocida de no tener columna para esto: el precio es un faltante
-        repetido que espera hasta el fin de la ventana, y la alternativa — retirar el
-        aviso abierto cuando el sujeto sale del conjunto — necesita el ciclo de vida por
-        sujeto que trae la 4.3.
+        La marca de agua es la **más alta** de la ventana, no la del último aviso. Que no
+        se quede alta después de que el sujeto se recupera es lo que resuelve
+        `retire_subject`: la leche que se repuso pierde su fila, así que cuando vuelva a
+        acabarse el miércoles no hay nada adentro de la ventana que la calle. Sin ese
+        retiro —como estaba hasta la 4.3— la fila del lunes con prioridad 9 la dejaba
+        muda hasta que venciera la ventana entera.
 
         No mira `dismissed_at`: descartar es "lo vi", y todo el punto de esto es no
         volver a decir lo mismo mañana a la mañana.
@@ -191,6 +190,104 @@ class NotificationRepository(BaseRepository[Notification]):
             )
         )
         return bool(self.db.scalar(stmt))
+
+    def _retire(
+        self,
+        category: str,
+        household_id: int,
+        user_id: int | None,
+        *subject: ColumnElement[bool],
+    ) -> int:
+        """Borra los avisos de *category* cuyo sujeto cumple *subject*, y dice cuántos.
+
+        Borrar y no marcar: lo que hace falta es que el aviso desaparezca de la lista
+        **y** que la marca de agua de `priority` se vaya con él, y `has_recent_for_subject`
+        no mira `dismissed_at` a propósito — descartar es "lo vi", no "ya no pasa". Sin
+        una columna nueva para "esto se resolvió" —y la única migración de la v3 es la de
+        la 4.4, sobre `suggestions`— la fila que se queda es la que sigue sosteniendo el
+        watermark. Un recordatorio resuelto tampoco es historia que valga guardar: la
+        poda ya tira todo a los 90 días.
+
+        Se borra sin mirar si estaba leído o descartado, y eso es deliberado: si solo se
+        retiraran los abiertos, descartar el aviso de la leche y después reponerla
+        dejaría el watermark en 9, y la próxima vez que se acabe la leche la app se
+        quedaría callada hasta que venza la ventana.
+
+        `source_type == "job"` acota el borrado a las filas que escribieron estos jobs:
+        el sujeto `("user", 3)` podría llegar a nombrarlo también algo que no sea un
+        aviso de ausencia, y esto no tiene por qué barrerlo.
+        """
+        result = cast(
+            "CursorResult[Any]",
+            self.db.execute(
+                delete(Notification).where(
+                    Notification.category == category,
+                    Notification.source_type == "job",
+                    *subject,
+                    *self._addressee_scope(household_id, user_id),
+                ),
+                execution_options={"synchronize_session": False},
+            ),
+        )
+        self.db.flush()
+        return result.rowcount
+
+    def retire_subject(
+        self,
+        category: str,
+        entity_type: str,
+        entity_id: int,
+        *,
+        household_id: int,
+        user_id: int | None = None,
+    ) -> int:
+        """Retira el aviso de este sujeto porque el sujeto salió del conjunto.
+
+        El que volvió a entrenar, el que se pesó. Es la mitad que le faltaba al ciclo
+        de vida por sujeto de la 4.2: ahí se resolvió no repetir el aviso mientras la
+        cosa no empeore, pero nada lo retiraba cuando la cosa se **arreglaba**, así que
+        "no anotaste tu peso en 4 días" seguía en la lista después del pesaje y el
+        watermark de `priority` esperaba hasta el fin de la ventana de 7 días.
+        """
+        return self._retire(
+            category,
+            household_id,
+            user_id,
+            Notification.related_entity_type == entity_type,
+            Notification.related_entity_id == entity_id,
+        )
+
+    def retire_subjects_other_than(
+        self,
+        category: str,
+        entity_type: str,
+        keep_ids: Sequence[int],
+        *,
+        household_id: int,
+    ) -> int:
+        """Ídem, cuando el conjunto se conoce entero: *keep_ids* es lo que sigue vigente.
+
+        Es la forma de la despensa: la lista de faltantes de hoy **es** la verdad, así
+        que todo aviso de `low_stock` que nombre un ítem que no está en ella es de algo
+        que se repuso. Un solo `DELETE` en lugar de preguntar ítem por ítem si tiene un
+        aviso abierto; con la lista vacía —despensa entera repuesta— se retiran todos.
+
+        Los avisos sin sujeto quedan afuera (`related_entity_id IS NOT NULL`): son las
+        filas de la v1, que no grababan `related_entity_*`, y sin id no hay forma de
+        saber de qué ítem hablaban. Se van con la poda, no con esto.
+
+        Sin `user_id`, a diferencia de `retire_subject`: el único conjunto que se conoce
+        entero es la despensa, y la despensa es del hogar. Un `user_id` acá sería un
+        parámetro sin llamador (regla 6); el día que exista un conjunto completo por
+        persona, `_retire` ya sabe recibirlo.
+        """
+        subject: list[ColumnElement[bool]] = [
+            Notification.related_entity_type == entity_type,
+            Notification.related_entity_id.is_not(None),
+        ]
+        if keep_ids:
+            subject.append(Notification.related_entity_id.notin_(keep_ids))
+        return self._retire(category, household_id, None, *subject)
 
     def prune_older_than(self, days: int) -> int:
         """Borra las notificaciones más viejas que *days* y devuelve cuántas.

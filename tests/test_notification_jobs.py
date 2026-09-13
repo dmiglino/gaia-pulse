@@ -4,8 +4,13 @@
 se prueba lo que la persona ve: que la leche baja no genere un aviso por corrida, que
 un ítem que se vació sí vuelva a hablar, y que una despensa recién cargada no se
 convierta en una pared de notificaciones el primer día.
+
+Y la otra mitad de ese ciclo, que es la que agrega la 4.3: que el aviso **se vaya** cuando
+su sujeto sale del conjunto, y que con eso la marca de agua de `priority` se reinicie en la
+recuperación en vez de esperar a que venza la ventana de siete días.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -15,6 +20,7 @@ from app.jobs import notification_jobs
 from app.models.body_metric import BodyMetricLog
 from app.models.food import FoodItem
 from app.models.household import Household
+from app.models.meal import MealEvent, MealParticipant
 from app.models.notification import Notification
 from app.models.pantry import PantryStock
 from app.models.user import User
@@ -65,6 +71,58 @@ def _workout(
     db.add(WorkoutParticipant(workout_session_id=session.id, user_id=user.id))
     db.flush()
     return session
+
+
+def _meal(db: Session, household: Household, user: User, *, days_ago: int) -> MealEvent:
+    """Una comida del hogar con *user* como participante."""
+    event = MealEvent(
+        household_id=household.id,
+        timestamp=datetime.now(UTC) - timedelta(days=days_ago),
+        meal_type="dinner",
+    )
+    db.add(event)
+    db.flush()
+    db.add(MealParticipant(meal_event_id=event.id, user_id=user.id))
+    db.flush()
+    return event
+
+
+def _sleep_log(
+    db: Session,
+    user: User,
+    *,
+    days_ago: int,
+    hours: float | None,
+    weight: float | None = 70,
+) -> BodyMetricLog:
+    """Una medición corporal de *user*, con o sin horas de sueño y con o sin peso.
+
+    Las dos columnas son opcionales y las dos ausencias las leen por separado, así que el
+    helper tiene que poder escribir las cuatro combinaciones: sin eso no hay forma de
+    escribir "anotó que durmió y no se pesó", que es un registro que la app produce sola.
+    """
+    log = BodyMetricLog(
+        user_id=user.id,
+        timestamp=datetime.now(UTC) - timedelta(days=days_ago),
+        weight_kg=weight,
+        sleep_hours=hours,
+    )
+    db.add(log)
+    db.flush()
+    return log
+
+
+def _assert_no_silence_by_accident(caplog: pytest.LogCaptureFixture) -> None:
+    """Que el job haya callado porque no tenía nada que decir, y no porque explotó.
+
+    Cada job termina en `except Exception: logger.exception(...)`, así que un test cuya
+    única afirmación es `== []` pasa igual con un typo en un helper de mensajes o con una
+    firma de repositorio que cambió: cero notificaciones es también lo que deja una
+    excepción en la primera línea. Los tests positivos no necesitan esto —una fila con el
+    título correcto no la escribe un job roto—; los negativos sí.
+    """
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == [], f"el job falló en vez de callarse: {errors}"
 
 
 def _notifications(db: Session, category: str) -> list[Notification]:
@@ -227,6 +285,28 @@ class TestMetricReminderJob:
         notification_jobs.run_metric_reminder_notifications()
         assert _notifications(db, "metric_reminder") == []
 
+    def test_a_night_of_sleep_is_not_a_weigh_in(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """`weight_kg` es opcional, así que hay filas de medición que no son pesajes.
+
+        "Dormí 7 horas" escribe una `BodyMetricLog` con `weight_kg=NULL` — el parser acepta
+        el intent con cualquiera de los cuatro campos —, y `get_latest_for_user` la
+        devolvía como si fuera el último pesaje. Antes eso atrasaba el recordatorio; con el
+        retiro por sujeto de la 4.3 **lo borra**, y con él la marca de agua: quien anota
+        sueño cada dos días no volvía a recibir el aviso del peso nunca, y sin ruido.
+
+        El camino es el que abre esta misma sub-fase: la acción del aviso de sueño lleva a
+        la captura con "I slept " puesto.
+        """
+        notification_jobs.run_metric_reminder_notifications()
+        assert len(_notifications(db, "metric_reminder")) == 1
+
+        _sleep_log(db, diego, days_ago=0, hours=7, weight=None)
+        notification_jobs.run_metric_reminder_notifications()
+
+        assert len(_notifications(db, "metric_reminder")) == 1
+
     def test_each_member_gets_their_own(
         self, db: Session, household: Household, diego: User, rocio: User
     ) -> None:
@@ -300,6 +380,246 @@ class TestInactivityJob:
         notification_jobs.run_inactivity_notifications()
 
         assert [n.user_id for n in _notifications(db, "inactivity")] == [rocio.id]
+
+
+class TestMealReminderJob:
+    """Comer es lo más frecuente de las cuatro cosas, así que dos días sin registro ya
+    es un hueco: no es que no comieron, es que la app dejó de saber qué comen."""
+
+    def test_the_gap_is_measured_against_the_last_logged_meal(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        meal = _meal(db, household, diego, days_ago=1)
+        notification_jobs.run_meal_reminder_notifications()
+        assert _notifications(db, "meal_reminder") == []
+
+        meal.timestamp = datetime.now(UTC) - timedelta(days=3)
+        db.flush()
+        notification_jobs.run_meal_reminder_notifications()
+        told = _notifications(db, "meal_reminder")
+        assert [(n.user_id, n.priority) for n in told] == [(diego.id, 4)]
+        assert told[0].title == "No meals logged in 3 days"
+        assert told[0].related_entity_type == "user"
+        assert told[0].related_entity_id == diego.id
+
+        #: Seis días son tres tandas de dos: empeoró, así que se vuelve a hablar.
+        meal.timestamp = datetime.now(UTC) - timedelta(days=6)
+        db.flush()
+        notification_jobs.run_meal_reminder_notifications()
+        assert [n.priority for n in _notifications(db, "meal_reminder")] == [4, 6]
+
+    def test_someone_who_never_logged_a_meal_is_left_alone(
+        self, db: Session, household: Household, diego: User, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """La diferencia deliberada con los dos recordatorios viejos.
+
+        Al que nunca entrenó la app le dice algo; al que nunca anotó una comida, no. Una
+        notificación señala un agujero en una costumbre, y proponer una costumbre que nadie
+        tiene es tarea del motor de sugerencias: el día uno de la app no es una pared de
+        retos. Sin este test, poner un `first_message` "por simetría" pasa la suite.
+        """
+        notification_jobs.run_meal_reminder_notifications()
+        assert _notifications(db, "meal_reminder") == []
+        _assert_no_silence_by_accident(caplog)
+
+    def test_one_members_meals_are_not_the_others(
+        self, db: Session, household: Household, diego: User, rocio: User
+    ) -> None:
+        """La comida es del hogar y el participante es quien la comió.
+
+        Sin la mitad del participante en `get_last_meal_at`, la cena que Diego anotó solo
+        contaría como registro de Rocío y el hueco de ella quedaría tapado. Los dos tienen
+        un registro viejo para que ninguno caiga en la rama del "nunca anotó nada", que se
+        calla y haría pasar el test por el motivo equivocado.
+        """
+        _meal(db, household, diego, days_ago=1)
+        _meal(db, household, rocio, days_ago=5)
+
+        notification_jobs.run_meal_reminder_notifications()
+        assert [n.user_id for n in _notifications(db, "meal_reminder")] == [rocio.id]
+
+
+class TestSleepReminderJob:
+    def test_the_gap_is_measured_against_the_last_night_with_hours(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """`sleep_hours` es una columna opcional de la fila del peso.
+
+        Si el job leyera la última medición, alguien que se pesa todos los días y no anota
+        sueño desde marzo nunca recibiría el aviso: la fila de hoy existe, y con
+        `sleep_hours` en `NULL`. Es exactamente lo que arma este test — un pesaje de ayer
+        sin sueño, y el último sueño hace cinco días.
+        """
+        _sleep_log(db, diego, days_ago=5, hours=7.5)
+        _sleep_log(db, diego, days_ago=1, hours=None)
+
+        notification_jobs.run_sleep_reminder_notifications()
+        told = _notifications(db, "sleep_reminder")
+        assert [(n.user_id, n.priority) for n in told] == [(diego.id, 3)]
+        assert told[0].title == "No sleep logged in 5 days"
+
+    def test_a_recent_night_is_left_alone(
+        self, db: Session, household: Household, diego: User, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        _sleep_log(db, diego, days_ago=1, hours=8)
+
+        notification_jobs.run_sleep_reminder_notifications()
+        assert _notifications(db, "sleep_reminder") == []
+        _assert_no_silence_by_accident(caplog)
+
+    def test_someone_who_never_logged_sleep_is_left_alone(
+        self, db: Session, household: Household, diego: User, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        notification_jobs.run_sleep_reminder_notifications()
+        assert _notifications(db, "sleep_reminder") == []
+        _assert_no_silence_by_accident(caplog)
+
+
+class TestSubjectRetirement:
+    """Que el aviso se vaya cuando su sujeto sale del conjunto.
+
+    Es lo que le da sentido a la acción primaria de la 4.3 —tocar el aviso, hacer la cosa,
+    y que el aviso se vaya— y lo que reinicia la marca de agua de `priority` en la
+    recuperación en vez de esperar a que venza la ventana de siete días.
+    """
+
+    def test_logging_the_thing_removes_the_open_reminder(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        notification_jobs.run_metric_reminder_notifications()
+        assert len(_notifications(db, "metric_reminder")) == 1
+
+        #: Se pesó. El sujeto salió del conjunto.
+        db.add(
+            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
+        )
+        db.flush()
+        notification_jobs.run_metric_reminder_notifications()
+
+        assert _notifications(db, "metric_reminder") == []
+
+    def test_restocking_one_item_leaves_the_other_notice_alone(
+        self, db: Session, household: Household
+    ) -> None:
+        """La despensa se retira por complemento: la lista de faltantes de hoy **es** la
+        verdad, así que se borra todo `low_stock` cuyo sujeto no esté en ella.
+
+        Y el complemento tiene que ser un complemento y no un `DELETE` de la categoría:
+        reponer la leche no puede llevarse el aviso de los huevos.
+        """
+        milk = _low_item(db, household, "milk", quantity=8)
+        eggs = _low_item(db, household, "eggs", quantity=2)
+        notification_jobs.run_low_stock_notifications()
+        assert len(_notifications(db, "low_stock")) == 2
+
+        milk.current_quantity = 50
+        db.flush()
+        notification_jobs.run_low_stock_notifications()
+
+        assert [n.related_entity_id for n in _notifications(db, "low_stock")] == [eggs.id]
+
+    def test_the_escalation_watermark_resets_on_recovery(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """El motivo por el que el retiro es un `DELETE` y no una marca.
+
+        Sin el retiro, alguien que estuvo diez días sin entrenar queda con la marca de agua
+        en 6, y cuando vuelve a caer en cuatro días la app se queda muda: la severidad 5 no
+        supera al 6 que ya se dijo, y el silencio dura hasta que venza la ventana. Con el
+        retiro, volver a entrenar limpia el sujeto y el próximo hueco se anuncia de nuevo
+        desde el escalón base.
+        """
+        session = _workout(db, household, diego, days_ago=9)
+        notification_jobs.run_inactivity_notifications()
+        assert [n.priority for n in _notifications(db, "inactivity")] == [6]
+
+        session.timestamp_start = datetime.now(UTC) - timedelta(days=1)
+        db.flush()
+        notification_jobs.run_inactivity_notifications()
+        assert _notifications(db, "inactivity") == []
+
+        session.timestamp_start = datetime.now(UTC) - timedelta(days=5)
+        db.flush()
+        notification_jobs.run_inactivity_notifications()
+        assert [n.priority for n in _notifications(db, "inactivity")] == [5]
+
+    def test_it_retires_a_notice_that_was_already_read_and_dismissed(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """El retiro no mira `read_at` ni `dismissed_at`, y es a propósito.
+
+        `has_recent_for_subject` tampoco los mira —descartar es "lo vi", no "resolvelo"—,
+        así que si el retiro respetara el descarte, descartar el aviso de la leche y después
+        reponerla dejaría la marca de agua en 9: la próxima vez que se acabe, silencio.
+        """
+        notification_jobs.run_metric_reminder_notifications()
+        told = _notifications(db, "metric_reminder")[0]
+        told.read_at = datetime.now(UTC)
+        told.dismissed_at = datetime.now(UTC)
+        db.flush()
+
+        db.add(
+            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
+        )
+        db.flush()
+        notification_jobs.run_metric_reminder_notifications()
+
+        assert _notifications(db, "metric_reminder") == []
+
+    def test_a_retire_only_pass_commits(
+        self, monkeypatch: pytest.MonkeyPatch, db: Session, household: Household, diego: User
+    ) -> None:
+        """La misma trampa que la poda, y por el mismo motivo.
+
+        `retire_subject` hace `flush()`, no `commit()`, y el único que commitea es
+        `NotificationService.create` — que en una corrida donde todos se recuperaron no se
+        llama ni una vez. Contar filas después no distingue: el `flush()` ya saca la fila de
+        la vista de esta sesión, así que sacarle el `db.commit()` al driver deja la suite
+        verde y el borrado se va con el `close()` del `finally`.
+        """
+        notification_jobs.run_metric_reminder_notifications()
+        db.add(
+            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
+        )
+        db.flush()
+
+        commits: list[None] = []
+        real_commit = db.commit
+        monkeypatch.setattr(db, "commit", lambda: (commits.append(None), real_commit())[0])
+
+        notification_jobs.run_metric_reminder_notifications()
+
+        assert _notifications(db, "metric_reminder") == []
+        assert commits, "el retiro no commiteó: el borrado se iría con el `close()`"
+
+    def test_it_does_not_touch_what_a_person_wrote(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """El retiro filtra por `source_type == "job"`.
+
+        Las notificaciones de la v1 y cualquier cosa que un día escriba otro camino no son
+        del job, y el job no es quien decide que caducaron.
+        """
+        db.add(
+            Notification(
+                user_id=diego.id,
+                household_id=household.id,
+                category="metric_reminder",
+                title="Written by hand",
+                body="body",
+                source_type="manual",
+                related_entity_type="user",
+                related_entity_id=diego.id,
+            )
+        )
+        db.add(
+            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
+        )
+        db.flush()
+
+        notification_jobs.run_metric_reminder_notifications()
+
+        assert [n.title for n in _notifications(db, "metric_reminder")] == ["Written by hand"]
 
 
 class TestPruningJob:
