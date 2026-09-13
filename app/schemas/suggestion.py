@@ -27,7 +27,12 @@ class SuggestionRead(BaseModel):
 
 class SuggestionFeedback(BaseModel):
     status: Literal["accepted", "rejected", "snoozed", "dismissed"]
-    feedback_notes: str | None = None
+    #: El tope vale para los dos caminos —el formulario y la ruta JSON—: el motivo se
+    #: guarda en una columna `Text` sin límite y además viaja al `context_json` de cada
+    #: señal que se aprende de él. La ruta web recorta antes de llegar acá, así que un
+    #: pegado largo sin JS no se convierte en un 422; en la ruta JSON el 422 es la
+    #: respuesta correcta.
+    feedback_notes: str | None = Field(default=None, max_length=500)
 
 
 PreferenceSignal = Literal[

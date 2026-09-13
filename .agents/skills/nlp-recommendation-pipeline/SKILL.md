@@ -12,8 +12,14 @@ description: Use when adding an NLP intent, adjusting the confidence threshold/O
 3. Confirm the result still lands as `pending_confirmation` on an
    `NLPIngestionEvent`; never write the domain record directly from
    parsing.
-4. For recommendations: add to exactly one stage — `generators/`,
-   `filters.py`, or `scorer.py` — don't blend stages.
+4. For recommendations: add to exactly one of the four stages — candidate
+   generation (`generators/`), hard-constraint filtering (`filters.py`),
+   behavior-signal scoring (`scorer.py`), or ranking/persistence
+   (`engine.py`) — don't blend stages. "Don't offer this subject right now"
+   is stage 4, not stage 2 or 3: `engine.py` decides it against the rows it
+   is about to write (`_still_suppressed`, `_without_duplicate_subjects`).
+   A score penalty is never a suppression — `_DIVERSITY_PENALTY` lowered a
+   0.95 candidate to 0.75 and it still came out first.
 5. If the change is about *what the app learns* rather than one stage's
    behavior (a new `signal_type` or `subject_type`, decay, evidence,
    attribute or time-slot logic), it belongs in

@@ -343,7 +343,17 @@ Final scores are clamped to `[0.0, 1.0]`.
 
 ### Stage 4 — Ranking and persistence
 
-Candidates are sorted by score descending. The top-N are written as `Suggestion` rows with `status="pending"`. When the user responds (accepts/rejects), `SuggestionService.respond_to_suggestion()` updates the suggestion status and emits a new `BehaviorSignal` — closing the learning loop. It only accepts a suggestion that is still pending and that belongs to the person responding.
+Candidates are sorted by score descending, and subjects that are still suppressed are dropped before any row is written (`RecommendationEngine._still_suppressed`): a subject whose previous suggestion is still `pending`, or whose `snoozed_until` has not yet passed. This is a filter, not a score adjustment — a suppressed subject does not appear at all, at any score. The top-N of what survives are written as `Suggestion` rows with `status="pending"`.
+
+`SuggestionService.respond_to_suggestion()` records the answer. It only accepts a suggestion that is still pending and that belongs to the person responding.
+
+- **`accepted`**, **`rejected`**, and **`dismissed`** each emit one `BehaviorSignal` for the suggestion's subject — `accepted_suggestion` (**+1.0**), `rejected_suggestion` (**−1.0**), and `ignored_suggestion` (**−0.3**) respectively — closing the learning loop
+- **`snoozed`** emits none: "later" is a statement about the moment, not about the subject
+- **`snoozed`** and **`dismissed`** also set `snoozed_until` **3 days** ahead (`SuggestionService._SNOOZE_DAYS`), which is what the suppression filter above reads on the next run. Nothing has to un-snooze the row — the condition is evaluated against the clock on every run
+
+A response may also carry a free-text reason (`feedback_notes`, written in the collapsed form on the suggestion card and capped at **500 characters** in both the web route and the schema). The reason is matched against the closed vocabularies of known food names and known activity names, and every subject it names — other than the card's own subject, already recorded above — emits one `explicit_preference` signal with the same value as the response itself, so "we do not like broccoli" teaches about broccoli rather than about the wording of the card. A food is matched by any of its names and recorded under its canonical one, which matters because the catalogue convention is an English canonical with the Spanish as an alias (`["tomato", "tomate"]`) while candidates declare `canonical_name` as their subject — "no nos gusta la palta" has to reach a candidate named `avocado`. Mined subjects only move the score: they never filter a candidate, since `learning.rejected_subjects` reads `rejected_suggestion` only. `snoozed` carries no value and therefore mines nothing.
+
+At most **5** subjects are mined per reason (`SuggestionService._MAX_MINED_SUBJECTS`) — 500 characters are enough to name dozens of catalogue foods, and `behavior_signals` has no pruning job. The reason text itself is stored once, in `suggestions.feedback_notes`; no signal copies it — a mined one records `{"mined_from": "feedback_notes"}`, the card's own one records `{"reason_written": true}` — and both point back at the row through `source_entity_id`, so deleting the reason deletes it. The sign is one per sentence, so "we do not like broccoli, we prefer chicken" records **−1.0** for both; that is tolerable precisely because mined subjects order rather than filter.
 
 Household-scoped suggestions (pantry/shopping) skip user-level filtering and are stored with `scope_type="household"`.
 

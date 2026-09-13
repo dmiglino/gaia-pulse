@@ -379,6 +379,36 @@ def _extract_exercises(text: str) -> list[ExerciseRef]:
     return found
 
 
+def find_known_activities(text: str) -> list[str]:
+    """Los nombres canónicos de actividad que aparecen en *text*, sin duplicados.
+
+    Público —el único de este módulo además de `parse`— porque el aprendizaje necesita
+    reconocer una actividad dentro de una frase que **no** es una captura: el motivo de
+    texto libre con el que se rechaza una sugerencia ("hoy no, el yoga nos aburre"). Lo que se
+    reutiliza es el matcher exacto de `_EXERCISE_MAP`, que compara contra nombres conocidos
+    con `\\b`; lo que deliberadamente **no** se reutiliza es `_parse_preference`, que después
+    de sacar la negación se queda con las tres primeras palabras y por lo tanto de *"no es
+    para nosotros"* deduciría una actividad llamada "para nosotros".
+
+    El límite que hereda de ese mapa, y que conviene saber al leer los nombres que salen:
+    **las claves están en inglés**, así que de una frase en castellano solo aparecen las que
+    se escriben igual en los dos idiomas. Son bastantes, porque el castellano rioplatense
+    toma prestados estos nombres —"yoga", "pilates", "spinning", "crossfit", "cardio",
+    "running", "hiit", "zumba", "core", "gym"— pero la contracara es la que importa: lo que
+    la casa escribiría en castellano y el mapa **no** conoce no aparece. *"Odio correr"*,
+    *"caminar"*, *"pesas"*, *"natación"* no devuelven nada. Ensanchar el mapa cambiaría
+    también lo que reconoce una captura, así que no se hace de contrabando acá; la 4.5
+    reemplaza esta lista fija por `ExerciseType`, que es donde los nombres ya viven en la
+    base.
+
+    Devuelve solo el nombre, no el `ExerciseRef`: el grupo muscular que `_EXERCISE_MAP`
+    también sabe queda afuera a propósito, porque deducir de una frase un veto a un grupo
+    muscular entero es un salto que el texto no autoriza —generalizar es tarea del nivel
+    atributo, con su propia vara de evidencia—.
+    """
+    return [exercise.name for exercise in _extract_exercises(text)]
+
+
 def _infer_workout_type(text: str, exercises: list[ExerciseRef]) -> str | None:
     tl = text.lower()
     for kw, wtype in _WORKOUT_TYPE_MAP.items():

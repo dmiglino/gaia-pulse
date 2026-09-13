@@ -60,6 +60,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
+from app.nlp import rules
 from app.repositories.food_repo import FoodRepository
 from app.repositories.suggestion_repo import BehaviorSignalRepository
 
@@ -290,6 +291,79 @@ def candidate_subject(candidate: dict[str, Any]) -> tuple[str, str] | None:
     return subject_key(str(subject_type), str(subject_name))
 
 
+def food_vocabulary(db: Session) -> dict[str, str]:
+    """Los nombres de alimento contra los que se busca un sujeto dentro de una frase.
+
+    La contraparte de `attribute_index` para el matcher de texto: la consulta vive acá y no
+    en el servicio que la necesita, por la misma razón —quien lee señales pide el
+    vocabulario a este módulo, así que hay un solo lugar donde mirar qué se compara contra
+    qué—. Es el catálogo completo, incluidos los alimentos sin categoría; el por qué está en
+    `FoodRepository.known_names`, y ahí también está por qué es un mapa nombre → canónico y
+    no una lista de nombres.
+    """
+    return FoodRepository(db).known_names()
+
+
+def subjects_in_text(text: str, *, foods: Mapping[str, str]) -> list[tuple[str, str]]:
+    """Los sujetos que *text* menciona por su nombre, en la forma de `subject_key`.
+
+    Sirve para leer el motivo de texto libre de un rechazo: *"no me gusta el brócoli"* tiene
+    que enseñar sobre el brócoli y no sobre el título de la sugerencia, que es lo único que
+    el feedback sabía mirar hasta acá.
+
+    Dos vocabularios, los dos **cerrados**: los alimentos que el catálogo conoce
+    (`food_vocabulary`) y las actividades que el parser de reglas conoce
+    (`rules.find_known_activities`). Cerrados es la decisión de diseño entera. La
+    alternativa —quedarse con las palabras de la frase, que es lo que hace
+    `rules._parse_preference`— inventa sujetos: de *"no es para nosotros"* saldría un
+    alimento llamado "para nosotros", y una vez grabado nadie lo borra y nunca matchea nada.
+    Si un nombre no está en ningún catálogo, la frase simplemente no enseña, que es el error
+    barato: la sugerencia igual quedó rechazada por su propio sujeto.
+
+    El match es de frase entera y de la más larga primero, y cada coincidencia se **consume**
+    del texto: sin eso, "queso crema" grabaría también un rechazo de "queso", que es un
+    alimento distinto y probablemente sí querido.
+
+    **Se busca por cualquiera de sus nombres y se graba por el canónico.** El sujeto que
+    declaran los candidatos es `food.canonical_name`, así que grabar el alias que matcheó
+    —"palta" cuando el catálogo dice `avocado`— escribía una señal que ningún candidato iba a
+    encontrar nunca: aprendida y no leída, y justamente en el caso normal de una casa que
+    escribe en castellano sobre un catálogo en inglés. De ahí que *foods* sea el mapa
+    nombre → canónico de `food_vocabulary` y no una lista.
+
+    La dirección de esta dependencia —el recomendador usa el NLP— es la que corresponde y no
+    hace ciclo: `app/nlp/` no importa nada de `app/recommendations/`.
+    """
+    haystack = f" {normalize_subject(text)} "
+    if not haystack.strip():
+        return []
+
+    found: list[tuple[str, str]] = []
+    canonical_by_name: dict[str, str] = {}
+    for name, canonical in foods.items():
+        normalized = normalize_subject(name)
+        if normalized:
+            canonical_by_name[normalized] = canonical
+    for name in sorted(canonical_by_name, key=len, reverse=True):
+        needle = f" {name} "
+        if needle in haystack:
+            haystack = haystack.replace(needle, "  ")
+            key = subject_key("food", canonical_by_name[name])
+            #: Dos alias del mismo alimento en la misma frase —"ni palta ni aguacate"— son
+            #: un solo sujeto, no dos señales del mismo peso.
+            if key not in found:
+                found.append(key)
+
+    #: Las actividades se buscan sobre el texto original: el matcher de reglas trae su propio
+    #: `\b` y sus nombres son de una palabra o dos sin tildes, así que normalizar antes no
+    #: aporta nada y perdería los guiones de "pull-ups".
+    for activity in rules.find_known_activities(text):
+        key = subject_key("exercise", activity)
+        if key not in found:
+            found.append(key)
+    return found
+
+
 def _slot(value: Any) -> str | None:
     """*value* como franja horaria conocida, o `None`. Ver `MEAL_SLOTS`."""
     slot = str(value or "").strip().lower()
@@ -344,7 +418,8 @@ def record_signal(
     mismo sujeto se cuenten como dos.
 
     Un nombre vacío devuelve `None` en vez de grabar: una señal sin sujeto es una fila que
-    ocupa lugar, entra en la ventana de 30 días y no puede matchear nada.
+    ocupa lugar, entra en la ventana de lectura (`SIGNAL_HORIZON_DAYS`) y no puede matchear
+    nada.
 
     *user_id* siempre, nunca `household_id`: el aprendizaje es por persona porque Diego y
     Rocío no tienen los mismos gustos, y porque es la regla 4 de `AGENTS.md`.

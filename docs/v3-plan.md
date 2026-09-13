@@ -1335,23 +1335,131 @@ ejercicios esperan la 4.5)
       **ningún test afirma hoy ese comportamiento**. Va con la 4.5, junto con el
       `UserContext`, que es donde el generador se reescribe de todos modos.
 
-**4.4.7 — El "no" que hoy se pierde**
+**4.4.7 — El "no" que hoy se pierde** ✅ hecho
 
-- [ ] `snoozed` guarda `value=0.0` y no entra ni en la lista positiva ni en la negativa:
+- [x] `snoozed` guardaba `value=0.0` y no entraba ni en la lista positiva ni en la negativa:
       **escrito y jamás leído**; y `dismissed` guarda `-0.3` y cae en la negativa, así que
-      hoy **"posponer" actúa como rechazo**. `snoozed` pasa a ser una supresión acotada en el
+      **"posponer" actuaba como rechazo**. `snoozed` es ahora una supresión acotada en el
       tiempo vía `snoozed_until`. **Corrección:** ese campo existía en `Notification`, no en
-      `Suggestion`; en `Suggestion` lo agrega la `0003` del prerrequisito, junto con las dos
-      columnas de sujeto. Del lado del aprendizaje el prerrequisito ya hizo su parte:
-      `snoozed` no escribe ninguna señal (antes escribía la fila con `value=0.0`, que no se
-      leía) y `dismissed` escribe −0.3 que **baja el score sin borrar la tarjeta**. Lo que
-      falta acá es la supresión temporal en sí y la ruta que la escriba.
-- [x] El motivo de texto libre —que hoy muere en `notes`— viaja ya en el `context_json` de la
-      señal (`{"reason": ...}`), así que la 4.4.7 lo puede leer sin volver a buscar la
-      sugerencia. Lo que falta es pasarlo por el matcher de reglas
-      que ya existe en `app/nlp/rules.py` contra los nombres conocidos de alimentos y
-      actividades, para extraer el sujeto real de la queja: *"no me gusta el brócoli"* debe
-      enseñar sobre el brócoli, no sobre el título de la sugerencia.
+      `Suggestion`; en `Suggestion` lo agregó la `0003` del prerrequisito, junto con las dos
+      columnas de sujeto. Del lado del aprendizaje el prerrequisito ya había hecho su parte:
+      `snoozed` no escribe ninguna señal y `dismissed` escribe −0.3 que **baja el score sin
+      borrar la tarjeta**. Lo que faltaba acá era la supresión temporal en sí y la ruta que la
+      escriba, y es lo que se hizo.
+- [x] **Suprimir es un filtro en la generación, no un ajuste de score — y esa distinción es
+      todo el punto de la 4.4.7.** Hasta acá lo único que reservaba un sujeto era una fila en
+      `pending`, así que "Ahora no" *despendía* la fila: el sujeto quedaba libre, y en la corrida
+      siguiente del job volvía a escribirse la misma tarjeta con el score apenas más bajo por
+      diversidad (−0.045 después de multiplicar por la confianza). El gesto de la persona producía
+      exactamente lo que quería evitar. Ahora `RecommendationEngine._still_suppressed()` es
+      `or_(status == "pending", snoozed_until > ahora)` y se evalúa **antes de persistir**, no
+      sobre el ranking.
+- [x] **Qué respuestas callan al sujeto, y por qué solo esas dos.** `snoozed` es supresión pura
+      —no escribe señal— y `dismissed` escribe −0.3 *y* suprime: las dos dicen "no ahora", y lo
+      que las separa es lo que dicen **además**. `accepted` no suprime porque el candidato ya se
+      cumplió y puede volver a proponerse. `rejected` no lo necesita: `learning.rejected_subjects`
+      lo saca de la lista mientras el "no" conserve la mitad de su peso —90 días de vida media—,
+      que es muchísimo más que cualquier ventana.
+- [x] **`_SNOOZE_DAYS = 3` tiene piso y techo, y los dos importan.** El job de sugerencias corre
+      dos veces por día a hora local fija —7:40 y 18:40, `scheduler._SCHEDULE`, desde la 4.1—,
+      así que una ventana más corta que el hueco entre dos corridas (11 h) sería **invisible**;
+      y tiene que quedar por debajo de los 7 días de la penalización por diversidad
+      (`scorer._RECENT_SUGGESTION_DAYS`), que así queda como el escalón siguiente: primero el
+      sujeto no aparece, después aparece pero más abajo, y al final vuelve a competir de igual a
+      igual. **No hace falta ningún job que resucite nada**: la condición se evalúa contra el
+      reloj en cada corrida, así que el sujeto se destraba solo.
+- [x] El motivo de texto libre —que moría en `notes`— ahora **se lee**: se pasa por el matcher de
+      nombres conocidos —el catálogo de alimentos (`FoodRepository.known_names`, con alias y sin
+      filtrar por categoría, porque los alimentos sin categoría son justamente los que creó
+      `get_or_create` con lo que la casa escribió) y las actividades de `app/nlp/rules.py`— y se
+      graba una señal por cada nombre encontrado. *"No me gusta el brócoli"* sobre una tarjeta
+      titulada "Cená algo verde" enseña sobre **el brócoli**, no sobre las cosas verdes. La frase
+      en sí sigue viviendo en un solo lugar, `suggestions.feedback_notes`; ninguna señal la copia
+      (ver el punto de los límites de seguridad).
+- [x] **El matcher busca nombres, no interpreta la frase.** Vocabulario cerrado, frase completa
+      con espacios alrededor (así "té" no aparece dentro de "tenemos"), del más largo al más corto
+      y **consumiendo** cada coincidencia (así "queso crema" no enseña además sobre "queso"). Y
+      deliberadamente **no** reusa `_parse_preference`, que se queda con `" ".join(words[:3])` y
+      de *"no es para nosotros, el yoga nos aburre"* inventaría el sujeto "para nosotros"; la
+      función nueva `rules.find_known_activities` recorre el mismo `_EXERCISE_RE` anclado que ya
+      existía.
+- [x] **Se busca por cualquiera de sus nombres y se graba por el canónico**, y esto no es un
+      detalle: el catálogo se escribe con el canónico en inglés y el castellano como alias
+      —`FoodItem.aliases_json`, `["tomato", "tomate"]`— y los candidatos declaran su sujeto con
+      `food.canonical_name`. Con un vocabulario de nombres planos, *"no nos gusta la palta"*
+      grababa una señal sobre `palta` que ningún candidato llamado `avocado` iba a encontrar
+      nunca: **aprendida y jamás leída**, y justo en el caso normal de una casa que escribe en
+      castellano, no en un borde. Por eso `FoodRepository.known_names` devuelve un mapa
+      nombre → canónico —los canónicos se escriben último, así que un nombre que es canónico de
+      uno y alias de otro se resuelve a sí mismo— y `learning.subjects_in_text` graba el canónico.
+      Con dedup: *"ni palta ni aguacate"* es un sujeto, no dos observaciones del mismo peso.
+- [x] **El signo lo pone la respuesta, y lo minado nunca veta.** Una señal `explicit_preference`
+      por sujeto minado, con el mismo valor que la respuesta (−1.0 un rechazo, −0.3 un descarte,
+      y positivo si el motivo viene junto a un "sí" por la ruta JSON) — no una perilla nueva: un
+      "no" tibio nombrando el brócoli es un "no" tibio al brócoli. Y como
+      `learning.rejected_subjects` solo mira `rejected_suggestion`, un sujeto minado **baja el
+      score y jamás filtra**: leer texto libre puede equivocarse, y el costo de equivocarse
+      ordenando es que algo salga tercero, el de equivocarse filtrando es que no salga nunca y
+      nadie entienda por qué. Hay un test que existe para que eso siga siendo gratis.
+- [x] **El sujeto de la propia tarjeta se saltea** —ya lo grabó el bloque de arriba, nombrarlo en
+      el motivo no lo hace pesar el doble—, pero **la minería corre antes del chequeo de sujeto**:
+      una fila anterior a la `0003` no tiene sujeto propio que grabar y antes no aprendía nada;
+      ahora, si la persona escribió por qué, eso sí se aprende. Y **`snoozed` no mina**, que
+      también es a propósito: "más tarde" es una afirmación sobre *el momento*, no sobre la cosa
+      —"hoy no, comimos brócoli al mediodía" explica la demora—, y leerlo como un veto sería
+      inventar una opinión que nadie dio. El formulario de la tarjeta manda `rejected` justamente
+      para no depender de esa distinción.
+- [x] **Dónde se escribe el motivo:** un `<details>` colapsado en la tarjeta de sugerencia
+      (`suggestions/partials/list.html`) — el único lugar de la app que puede mandar
+      `feedback_notes`— que postea `status=rejected` a la ruta que ya existía. **Dos guardas de
+      largo, no una:** la ruta web recorta a 500 (así un pegado largo sin JS no se convierte en un
+      422 para una persona) y el schema tiene `max_length=500` (así la ruta JSON contesta el 422
+      que le corresponde). El `maxlength` del input dice lo mismo, y estas dos son las que lo
+      hacen cierto: `feedback_notes` es una columna `Text` sin tope, y HTMX manda el formulario
+      sin validar `maxlength` del lado del cliente.
+- [x] **Tres límites que puso la revisión de seguridad, los tres sobre el mismo eje: cuánto de
+      una frase personal se copia y a dónde.** (1) `_MAX_MINED_SUBJECTS = 5`: el largo del texto
+      no acota el trabajo —500 caracteres alcanzan para nombrar decenas de alimentos del
+      catálogo, y sin tope una sola respuesta escribía decenas de filas en `behavior_signals`,
+      una tabla sin poda, repetible a la velocidad de un POST—; y una frase que nombra veinte
+      cosas no es una preferencia sobre veinte cosas. (2) **Ninguna señal copia el motivo**, ni la
+      minada (`context={"mined_from": "feedback_notes"}`) ni la de la propia tarjeta
+      (`{"reason_written": True}`): las dos guardan un marcador y nada más. Copiarlo en la de la
+      tarjeta parecía gratis —una sola fila, no una por sujeto—, pero el problema no es la
+      multiplicidad sino la retención: `behavior_signals` no tiene job de poda, así que la frase
+      que la persona escribió se quedaba para siempre en una segunda tabla y **borrar
+      `feedback_notes` no la borraba**. Queda una sola vez, en la fila a la que apunta
+      `source_entity_id`, que es donde se puede borrar. (3) **El sujeto minado con su signo va a DEBUG,
+      no a INFO**: producción corre en INFO (`app/main.py`), así que un `docker compose logs`
+      mostraba los gustos alimentarios y de entrenamiento de la casa sin permiso sobre la base.
+      El INFO que queda lleva solo la cuenta, que es la convención del repo.
+- [x] **Dos límites que quedan escritos en vez de descubrirse.** El signo es uno para toda la
+      frase, así que *"no nos gusta el brócoli, preferimos el pollo"* graba −1.0 para los dos:
+      separarlos pide leer el alcance de la negación, que es la interpretación que este matcher
+      no hace, y se aguanta porque lo minado ordena y no filtra —el pollo baja un puesto y
+      vuelve a subir con la primera compra o comida que lo confirme—. Y el vocabulario de
+      actividades es de **claves en inglés** (`rules._EXERCISE_MAP`), así que de una frase en
+      castellano solo salen los nombres que se escriben igual en los dos idiomas: son varios,
+      porque el castellano rioplatense los toma prestados —"yoga", "pilates", "spinning",
+      "crossfit", "cardio", "running", "hiit", "zumba"—, pero lo que la casa escribiría en
+      castellano y el mapa no tiene no aparece: *"odio correr"*, *"caminar"*, *"pesas"* no
+      enseñan nada hoy. Ensancharlo se hace en la 4.5, donde `ExerciseType` reemplaza esa
+      lista fija de todos modos y los nombres salen de la base.
+- [x] 31 tests nuevos: 18 en `test_learning_signals.py` (el matcher solo —nombre largo que se
+      come al corto, nombre desconocido que no enseña nada, nombre escondido dentro de otra
+      palabra, la actividad que el parser viejo hubiera inventado, el vocabulario que incluye lo
+      que la casa inventó y devuelve el canónico de cada nombre, el alias que enseña sobre el
+      canónico, los dos nombres del mismo alimento que son un solo sujeto— el camino del servicio
+      incluida una frase en castellano que llega a un candidato nombrado en inglés, y el tope de
+      cinco sujetos por motivo), 9 en
+      `test_recommendations.py`
+      (`TestNotNowMeansNotNow`: que posponer escriba una ventana y no solo conteste la fila, que
+      la ventana dure más que un ciclo del job y menos que el escalón de diversidad, que el sujeto
+      no vuelva a ofrecerse, que al vencer vuelva a competir, que aceptar no calle nada, que
+      rechazar se apoye en el filtro y no en la ventana, y **que el silencio del otro miembro no
+      sea el tuyo** — la regla 4 de `AGENTS.md` del lado de la lectura, incluida la lista de
+      compras del household), y 4 en `test_web_pages_populated.py` (el formulario como escritor
+      real, el recorte en el borde, y el 422 de la ruta JSON).
 
 **4.4.8 — Que se pueda ver y corregir lo aprendido**
 
@@ -1409,6 +1517,13 @@ ejercicios esperan la 4.5)
 - [ ] Mapear los valores de enum a etiquetas traducibles en vez de `|title`.
 - [ ] Plurales con `ngettext`.
 - [ ] Sacar el glifo de `_('✓ Confirm & Save')`.
+- [ ] **Los `msgid` que las fases 3 y 4 agregaron y que no tienen entrada en el `.po`.** No
+      son plantillas sin `_()` —esas son las dos de arriba—: son llamadas correctas cuyo
+      texto castellano nunca se escribió, así que `gettext` devuelve el inglés y no falla
+      nada, que es justamente por lo que se pasan de largo. La 4.4.7 dejó cinco
+      (`Prefer to say why?`, `What put you off?`, `e.g. we do not like broccoli`, el `hint`
+      del campo, y el `aria-label` `Not for us, with this reason`). Se buscan comparando los
+      `_()` de `app/templates/` contra el catálogo, no de memoria.
 - [ ] Recompilar el catálogo `es_AR` (`_ensure_mo_compiled` ya recompila `.po`→`.mo` al
       arrancar).
 
@@ -1483,9 +1598,21 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       dos idiomas que el parser acepta, y qué conviene escribir para que una comida quede
       con su hora (que es lo que le enseña *cuándo* te gusta algo).
 - [ ] **Cómo aprende y cómo enseñarle**: qué pasa cuando aceptás, cuando descartás y cuando
-      posponés una sugerencia; por qué un solo toque es una pista y seis son una regla; por
+      posponés una sugerencia —y que desde la 4.4.7 "Ahora no" calla el tema por tres días en
+      vez de contar como un "no"—; por qué un solo toque es una pista y seis son una regla; por
       qué un "no" caduca; y que rechazar tres verduras le enseña algo sobre la cuarta. Es la
       sección que convierte la 4.4 en algo que se puede usar a propósito en vez de sufrir.
+- [ ] **Decirle por qué**, que es la forma más rápida de enseñarle y la menos evidente: el
+      "¿Preferís decir por qué?" de la tarjeta (4.4.7). Que conviene **nombrar la comida o la
+      actividad** —"no nos gusta el brócoli", no "no nos convence"—, porque la app busca en esa
+      frase los nombres que conoce y aprende sobre ellos en lugar de sobre cómo estaba redactada
+      la tarjeta; y que si el nombre no le suena, la frase no le enseña nada y no pasa nada malo.
+      Dos cosas más que conviene decir en la guía porque se notan al usarla: que **una frase corta
+      enseña mejor que una lista** —de un motivo se aprenden hasta cinco cosas, y un signo por
+      frase, así que "no nos gusta el brócoli, preferimos el pollo" baja los dos—, y que de las
+      actividades entiende las que se dicen igual en inglés y en castellano (yoga, pilates,
+      spinning, crossfit, cardio, running, hiit, zumba) pero **no** las que solo se dicen en
+      castellano ("correr", "caminar", "pesas"), hasta que la 4.5 las saque de la base.
 - [ ] **Cómo leer una sugerencia**: el "¿por qué esta sugerencia?", qué significa el
       porcentaje de confianza, y qué **no** significa (no es una recomendación médica).
 - [ ] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
@@ -1594,10 +1721,10 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4 |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 |
 |---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **459 passed** |
-| `ruff check .` | 292 findings | **288** | **250** |
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** |
+| `ruff check .` | 292 findings | **288** | **256** |
 | `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** |
 | `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** |
 | `sync_agent_assets.py --check` | ok | ok | ok |
@@ -1605,7 +1732,15 @@ checkpoint reporta el número, no una impresión:
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
 pendiente. Los números de la última columna se midieron con la forma `.venv/bin/python -m`
-sobre el árbol de `393ec82`.
+sobre el árbol con la 4.4.7 aplicada.
+
+> **`ruff` no baja monótonamente, y conviene saber por qué antes de leer un alza como un
+> daño.** De 250 en `393ec82` pasó a 252 con la 4.4.6 y a 256 con la 4.4.7: las 4 nuevas
+> son todas `UP017` (`datetime.UTC` en lugar de `datetime.timezone.utc`) en
+> `engine.py`, `suggestion_service.py` y `test_recommendations.py`, o sea código nuevo
+> escrito con la forma que esos mismos archivos ya usaban en cada línea vecina. La regla
+> aplica a todo el repo y su corrección es el barrido pendiente, no un arreglo local que
+> dejaría un archivo con dos convenciones de la misma cosa.
 
 > `alembic check` **no corre localmente**: no hay PostgreSQL en la máquina
 > (`connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection

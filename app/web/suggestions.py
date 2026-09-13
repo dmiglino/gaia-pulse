@@ -105,10 +105,18 @@ def suggestion_feedback(
         # request mal formada y le corresponde un 4xx, no una página.
         return _invalid(request, _("Invalid feedback status: %(status)s.", status=status))
 
+    # El motivo se recorta acá y no en el servicio, por el mismo criterio que
+    # `item_name` en `save_preference`: es el borde donde entra texto de un formulario.
+    # `feedback_notes` es una columna `Text` sin tope y además viaja al `context_json` de
+    # cada señal minada, así que sin recorte un solo POST escribe filas de cualquier
+    # tamaño. 500 caracteres es holgado para "no nos gusta el brócoli" — el `maxlength`
+    # del input dice lo mismo, y esto es lo que lo hace cierto.
+    reason = feedback_notes.strip()[:500]
+
     svc = SuggestionService(db)
     suggestion = svc.respond_to_suggestion(
         suggestion_id,
-        SuggestionFeedback(status=status, feedback_notes=feedback_notes or None),
+        SuggestionFeedback(status=status, feedback_notes=reason or None),
         current_user.id,
         current_user.household_id,
     )

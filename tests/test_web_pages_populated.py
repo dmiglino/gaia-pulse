@@ -950,3 +950,106 @@ def test_learned_preferences_are_not_raw_database_keys(
     assert "Alimento" in body
     for raw in (">food<", ">possible_sometimes<", "possible_sometimes"):
         assert raw not in body, raw
+
+
+def test_the_card_offers_somewhere_to_write_why(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """`feedback_notes` existía en la columna, en el schema y en el `Form`, y ninguna
+    plantilla lo mandaba nunca.
+
+    El único camino que podía llevar un motivo era la ruta JSON, o sea nadie. Con el
+    motivo minado contra los nombres conocidos, no ofrecer dónde escribirlo dejaría un
+    lector sin escritor — el defecto que toda la fase 4.4 viene arreglando.
+    """
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+    body = authenticated_client.get("/suggestions/").text
+
+    assert 'name="feedback_notes"' in body
+    #: El `id` lleva el id de la fila: hay una tarjeta por sugerencia en la misma página, y
+    #: un `for=` que apunta a dos inputs con el mismo id no asocia ninguno.
+    assert f'id="reason-{pending.id}"' in body
+    #: Y el tope del input dice lo mismo que el recorte de la ruta y el del schema.
+    assert 'maxlength="500"' in body
+
+
+def test_a_reason_written_on_the_card_teaches_about_what_it_names(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """El camino completo desde el formulario, que es el que la persona usa.
+
+    Antes de la 4.4.7, este POST grababa una sola señal —la del sujeto de la tarjeta— y
+    el texto quedaba guardado sin que nada lo leyera.
+    """
+    from app.models.food import FoodItem
+    from app.models.signal import BehaviorSignal
+
+    db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+    db.flush()
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+
+    resp = authenticated_client.post(
+        f"/suggestions/{pending.id}/feedback",
+        data={"status": "rejected", "feedback_notes": "no nos gusta el brócoli"},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200, resp.status_code
+
+    learned = {
+        (s.entity_type, s.entity_name): s
+        for s in db.query(BehaviorSignal).filter(BehaviorSignal.user_id == diego.id)
+    }
+    #: El sujeto de la tarjeta, que es a lo que la persona dijo no...
+    assert ("exercise", "walking") in learned
+    #: ...y el alimento que nombró, que es de lo que habló.
+    assert learned[("food", "brocoli")].signal_type == "explicit_preference"
+
+
+def test_a_pasted_wall_of_text_is_trimmed_at_the_boundary(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """El `maxlength` del input no vale sin el recorte del servidor.
+
+    `feedback_notes` es una columna `Text` sin tope, así que sin esto un solo POST —o un
+    pegado que el navegador no frena, porque el `maxlength` del input no se valida del
+    lado del cliente en un submit de HTMX— escribe filas de cualquier tamaño. Y el largo
+    no es solo almacenamiento: el motivo se mina contra el catálogo entero
+    (`SuggestionService._record_reason_signals`), y ahí el tope de sujetos acota el
+    trabajo pero no el texto. La ruta recorta a los mismos 500 que declara el schema, así
+    que el camino sin JS no se convierte en un 422.
+    """
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+
+    resp = authenticated_client.post(
+        f"/suggestions/{pending.id}/feedback",
+        data={"status": "rejected", "feedback_notes": "  " + "brócoli " * 200},
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 200, resp.status_code
+
+    db.refresh(pending)
+    assert pending.feedback_notes is not None
+    assert len(pending.feedback_notes) == 500
+    #: Y sin el espacio inicial: se recorta después de `strip()`, no antes.
+    assert not pending.feedback_notes.startswith(" ")
+
+
+def test_the_json_route_refuses_a_reason_over_the_cap(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """La otra mitad del tope, en la superficie que no tiene un formulario que recorte.
+
+    La ruta web recorta y contesta 200 porque del otro lado hay una persona con un textarea;
+    `/api/v1` no tiene ninguna, así que un motivo más largo que la columna es una request mal
+    formada y le corresponde el 422 de siempre. Un solo `max_length` en el schema cubre los
+    dos caminos.
+    """
+    pending = db.query(Suggestion).filter(Suggestion.scope_user_id == diego.id).one()
+    resp = authenticated_client.post(
+        f"/api/v1/suggestions/{pending.id}/feedback",
+        json={"status": "rejected", "feedback_notes": "x" * 501},
+    )
+    assert resp.status_code == 422, resp.text
+
+    db.refresh(pending)
+    assert pending.status == "pending"

@@ -22,13 +22,16 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.models.food import FoodItem
 from app.models.household import Household
 from app.models.signal import BehaviorSignal
+from app.models.suggestion import Suggestion
 from app.models.user import User
 from app.recommendations import learning
 from app.recommendations.scorer import score_candidates
 from app.schemas.meal import MealEventCreate, MealItemCreate, MealParticipantCreate
 from app.schemas.pantry import PurchaseItem, PurchaseRequest
+from app.schemas.suggestion import SuggestionFeedback
 from app.schemas.workout import (
     WorkoutExerciseCreate,
     WorkoutParticipantCreate,
@@ -36,6 +39,7 @@ from app.schemas.workout import (
 )
 from app.services.meal_service import MealService
 from app.services.pantry_service import PantryService
+from app.services.suggestion_service import SuggestionService
 from app.services.workout_service import WorkoutService
 
 APP_ROOT = Path(__file__).resolve().parent.parent / "app"
@@ -467,6 +471,351 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
         #: Doscientos días son casi diez semividas de una señal implícita: lo que queda es
         #: ruido a nivel del redondeo del score, no una preferencia.
         assert scored[1]["_score"] < 0.501
+
+
+class TestReadingTheReasonSomeoneWrote:
+    """El matcher de la 4.4.7: qué sujeto sale de una frase escrita a mano.
+
+    Es una función pura y por eso se prueba sin base: recibe el texto y el vocabulario, y
+    la única decisión que toma es contra qué nombre conocido coincide. Lo que estos tests
+    fijan es que **no invente**: el motivo es texto libre y de una lectura equivocada sale
+    una preferencia que la persona nunca declaró.
+    """
+
+    @staticmethod
+    def _vocab(*names: str) -> dict[str, str]:
+        """El vocabulario de un catálogo donde cada nombre es su propio canónico.
+
+        La forma real la arma `FoodRepository.known_names`, que mapea cada alias al canónico
+        de su alimento; para los tests que no son sobre alias, cada nombre se mapea a sí
+        mismo, que es lo que hace un catálogo sin alias.
+        """
+        return {name: name for name in names}
+
+    def test_the_named_food_is_what_comes_out_and_not_the_wording(self) -> None:
+        assert learning.subjects_in_text(
+            "no nos gusta el brócoli", foods=self._vocab("brócoli", "queso", "lentejas")
+        ) == [("food", "brocoli")]
+
+    def test_an_alias_teaches_about_the_canonical_name_and_not_about_itself(self) -> None:
+        """El caso normal de esta casa, y el que se aprendía sin poder leerse.
+
+        El catálogo se escribe con el canónico en inglés y el castellano como alias
+        —`FoodItem.aliases_json` documenta `["tomato", "tomate"]`— y los candidatos declaran
+        su sujeto con `canonical_name`. Grabar el alias que matcheó dejaba la señal de "palta"
+        esperando un candidato llamado "palta" que ningún generador escribe nunca.
+        """
+        assert learning.subjects_in_text(
+            "no nos gusta la palta", foods={"avocado": "avocado", "palta": "avocado"}
+        ) == [("food", "avocado")]
+
+    def test_two_names_of_the_same_food_are_one_subject(self) -> None:
+        """Decir "ni palta ni aguacate" es una opinión sobre un alimento, no sobre dos.
+
+        Sin el dedup, la misma frase escribía dos señales del mismo peso sobre el mismo
+        sujeto y el aprendizaje leía dos observaciones donde hubo una.
+        """
+        assert learning.subjects_in_text(
+            "ni palta ni aguacate",
+            foods={"avocado": "avocado", "palta": "avocado", "aguacate": "avocado"},
+        ) == [("food", "avocado")]
+
+    def test_a_longer_name_swallows_the_shorter_one_inside_it(self) -> None:
+        """ "Queso crema" no puede enseñar además que no gusta el queso.
+
+        El match consume lo que encontró; sin eso, quien escribe el nombre más específico
+        que el catálogo conoce se lleva de regalo un rechazo del genérico, que es una
+        opinión más amplia que la que dio.
+        """
+        assert learning.subjects_in_text(
+            "el queso crema no nos va", foods=self._vocab("queso", "queso crema")
+        ) == [("food", "queso crema")]
+
+    def test_a_name_the_catalogue_does_not_know_teaches_nothing(self) -> None:
+        """El vocabulario es cerrado, y esa es la diferencia con `_parse_preference`.
+
+        Un matcher abierto —"quedate con las palabras que siguen a la negación"— convierte
+        cualquier frase en un sujeto: de *"no, gracias"* saldría un alimento llamado
+        "gracias", con su señal, su decaimiento y su lugar en el panel de lo aprendido.
+        """
+        assert learning.subjects_in_text("no, gracias", foods=self._vocab("brócoli")) == []
+
+    def test_a_name_hidden_inside_a_longer_word_is_not_a_match(self) -> None:
+        """El match es de frase entera: "té" no está en "tenemos".
+
+        Sin el padding de espacios, los nombres cortos del catálogo —"té", "ajo", "sal"—
+        coincidirían dentro de media docena de palabras corrientes y toda la casa
+        terminaría con preferencias sobre el té por haber escrito "no tenemos tiempo".
+        """
+        assert learning.subjects_in_text("no tenemos tiempo", foods=self._vocab("té")) == []
+
+    def test_an_activity_is_found_where_the_old_parser_would_have_invented_one(
+        self,
+    ) -> None:
+        """La razón por la que el matcher de reglas se reutiliza y `_parse_preference` no.
+
+        `_parse_preference` saca la negación y se queda con las tres primeras palabras, así
+        que de esta frase deduciría algo llamado "para nosotros". El matcher exacto encuentra
+        lo que la frase realmente nombra, y no encuentra nada cuando no nombra nada.
+        """
+        from app.nlp import rules
+
+        assert rules.find_known_activities("no es para nosotros, el yoga nos aburre") == ["yoga"]
+        assert learning.subjects_in_text("no es para nosotros, el yoga nos aburre", foods={}) == [
+            ("exercise", "yoga")
+        ]
+
+    def test_a_food_and_an_activity_in_the_same_sentence_are_both_learned(self) -> None:
+        assert set(
+            learning.subjects_in_text(
+                "el brócoli no, y el running tampoco", foods=self._vocab("brócoli")
+            )
+        ) == {("food", "brocoli"), ("exercise", "running")}
+
+    def test_an_empty_reason_is_not_a_subject(self) -> None:
+        assert learning.subjects_in_text("   ", foods=self._vocab("brócoli")) == []
+
+    def test_the_vocabulary_includes_the_foods_the_house_invented(
+        self, db: Session, banana: FoodItem
+    ) -> None:
+        """Un alimento sin categoría entra al vocabulario del matcher.
+
+        Es la única diferencia con `attribute_index`, y es deliberada: los alimentos sin
+        categoría son justamente los que creó `get_or_create` con lo que la casa escribió en
+        una captura. Dejarlos afuera haría que la app no reconozca los nombres que la propia
+        persona usa. Para generalizar la categoría hace falta; para leer "brócoli" en una
+        frase, no.
+        """
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g", aliases_json=["brocoli"]))
+        db.flush()
+
+        vocabulary = learning.food_vocabulary(db)
+        assert vocabulary["brócoli"] == "brócoli"
+        #: El alias también entra, y apunta al canónico: es lo que hace que la señal minada
+        #: de una frase en castellano se encuentre con el candidato que el generador declara.
+        assert vocabulary["brocoli"] == "brócoli"
+        assert banana.canonical_name in vocabulary
+
+
+class TestWhatTheReasonTeaches:
+    """El otro extremo: la respuesta a una sugerencia con un motivo escrito.
+
+    Hasta la 4.4.7 el motivo se guardaba en `feedback_notes` y ahí terminaba, así que
+    *"no me gusta el brócoli"* sobre una tarjeta titulada "Cená algo verde" enseñaba que
+    no gustan las cosas verdes. Estos tests son sobre el camino completo: el texto entra
+    por el servicio y sale como señales con el sujeto correcto.
+    """
+
+    @staticmethod
+    def _card(db: Session, diego: User, **overrides: Any) -> Suggestion:
+        defaults: dict[str, Any] = {
+            "scope_type": "user",
+            "household_id": diego.household_id,
+            "scope_user_id": diego.id,
+            "category": "meal",
+            "subject_type": "food",
+            "subject_name": "acelga",
+            "title": "Cená algo verde",
+            "text": "Una acelga saltada.",
+            "rationale": "Variedad.",
+            "source_type": "rule",
+            "status": "pending",
+        }
+        defaults.update(overrides)
+        card = Suggestion(**defaults)
+        db.add(card)
+        db.flush()
+        return card
+
+    @staticmethod
+    def _respond(db: Session, diego: User, card: Suggestion, status: str, reason: str) -> None:
+        SuggestionService(db).respond_to_suggestion(
+            card.id,
+            SuggestionFeedback(status=status, feedback_notes=reason),
+            diego.id,
+            diego.household_id,
+        )
+
+    def test_the_reason_names_the_subject_and_the_title_does_not(
+        self, db: Session, diego: User
+    ) -> None:
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "rejected", "no nos gusta el brócoli")
+
+        learned = {(s.entity_type, s.entity_name): s for s in _signals(db, diego)}
+        #: Lo de la tarjeta se sigue grabando —la persona sí dijo no a *esta* tarjeta—, y
+        #: además ahora se graba de qué habló.
+        assert ("food", "acelga") in learned
+        brocoli = learned[("food", "brocoli")]
+        assert brocoli.signal_type == "explicit_preference"
+        assert float(brocoli.value) == -1.0
+        #: Con `source_type="explicit"`, o sea 90 días de semivida: lo dijo con palabras.
+        assert brocoli.source_type == "explicit"
+        #: Queda de dónde salió la señal, no una copia de la frase: el motivo ya está una vez
+        #: en `suggestions.feedback_notes` y `source_entity_id` apunta ahí. Copiarlo en cada
+        #: señal minada multiplicaba la misma oración personal en una tabla que nadie poda.
+        assert brocoli.context_json == {"mined_from": "feedback_notes"}
+        assert brocoli.source_entity_type == "suggestion"
+        assert brocoli.source_entity_id == card.id
+
+    def test_naming_the_cards_own_subject_does_not_count_it_twice(
+        self, db: Session, diego: User
+    ) -> None:
+        db.add(FoodItem(canonical_name="acelga", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "rejected", "la acelga no")
+
+        acelga = [s for s in _signals(db, diego) if s.entity_name == "acelga"]
+        assert len(acelga) == 1
+        assert acelga[0].signal_type == "rejected_suggestion"
+
+    def test_a_soft_no_mines_softly(self, db: Session, diego: User) -> None:
+        """El peso sale de la respuesta y no de una perilla nueva.
+
+        Un "ahora no" que nombra el brócoli es un "ahora no" al brócoli: −0.3, lo mismo que
+        graba el botón. Que el motivo pese siempre −1.0 haría que escribir por qué sea más
+        duro que rechazar, lo cual castiga justamente a quien se tomó el trabajo de explicar.
+        """
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "dismissed", "hoy no, el brócoli nos empachó")
+
+        (brocoli,) = [s for s in _signals(db, diego) if s.entity_name == "brocoli"]
+        assert float(brocoli.value) == -0.3
+
+    def test_a_later_is_not_an_opinion_about_what_it_names(self, db: Session, diego: User) -> None:
+        """`snoozed` no mina, y está escrito que es a propósito.
+
+        "Más tarde" habla del momento, no de la cosa. Un motivo al lado de un "más tarde"
+        —"hoy no, comimos brócoli al mediodía"— explica la demora; leerlo como un veto
+        inventaría una opinión que nadie dio. La supresión de ese gesto vive en
+        `snoozed_until`, no en una señal.
+        """
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "snoozed", "hoy no, comimos brócoli al mediodía")
+
+        assert _signals(db, diego) == []
+
+    def test_a_card_without_a_subject_still_learns_from_the_words(
+        self, db: Session, diego: User
+    ) -> None:
+        """Las filas anteriores a la `0003` no tienen sujeto, pero el motivo sí.
+
+        Por eso el minado se lee antes del chequeo de sujeto y no después: al final del
+        método, responder una de esas filas con un motivo escrito no enseñaba nada de nada.
+        """
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego, subject_type=None, subject_name=None)
+
+        self._respond(db, diego, card, "rejected", "no nos gusta el brócoli")
+
+        (brocoli,) = _signals(db, diego)
+        assert (brocoli.entity_type, brocoli.entity_name) == ("food", "brocoli")
+
+    def test_a_mined_no_lowers_the_score_but_never_vetoes(self, db: Session, diego: User) -> None:
+        """La decisión central: una lectura de texto libre ordena, no prohíbe.
+
+        `learning.rejected_subjects` solo mira `rejected_suggestion`, así que esto sale
+        gratis — y el test existe para que siga saliendo gratis. El costo de equivocarse
+        ordenando es que algo salga tercero; el de equivocarse filtrando es que no salga
+        nunca y nadie entienda por qué.
+        """
+        from app.recommendations.filters import apply_signal_constraints
+
+        db.add(FoodItem(canonical_name="brócoli", base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "rejected", "no nos gusta el brócoli")
+
+        signals = _signals(db, diego)
+        candidate = {
+            "title": "Brócoli al horno",
+            "confidence": 0.5,
+            "category": "meal",
+            "subject_type": "food",
+            "subject_name": "brócoli",
+        }
+
+        assert apply_signal_constraints([candidate], signals) == [candidate]
+        (scored,) = score_candidates([candidate], diego, signals, [])
+        assert scored["_score"] < 0.5
+
+    def test_a_reason_in_spanish_reaches_a_candidate_named_in_english(
+        self, db: Session, diego: User
+    ) -> None:
+        """El camino completo del caso que se aprendía sin poder leerse nunca.
+
+        El catálogo se escribe con el canónico en inglés y el castellano como alias, y los
+        candidatos declaran su sujeto con `canonical_name`. Mientras la señal se grababa con
+        el alias que matcheó, escribir *"no nos gusta la palta"* dejaba una fila sobre "palta"
+        y el candidato "avocado" seguía saliendo igual de arriba: aprendido y no leído.
+        """
+        db.add(FoodItem(canonical_name="avocado", base_unit="g", aliases_json=["palta"]))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "rejected", "no nos gusta la palta")
+
+        signals = _signals(db, diego)
+        (mined,) = [s for s in signals if s.signal_type == "explicit_preference"]
+        assert (mined.entity_type, mined.entity_name) == ("food", "avocado")
+
+        candidate = {
+            "title": "Tostadas con palta",
+            "confidence": 0.5,
+            "category": "meal",
+            "subject_type": "food",
+            "subject_name": "avocado",
+        }
+        (scored,) = score_candidates([candidate], diego, signals, [])
+        assert scored["_score"] < 0.5
+
+    def test_a_reason_that_names_everything_teaches_at_most_five_things(
+        self, db: Session, diego: User
+    ) -> None:
+        """El tope de sujetos por motivo, que no está por desconfianza sino por costo.
+
+        El largo del texto no acota el trabajo: 500 caracteres alcanzan para nombrar decenas
+        de alimentos del catálogo, y sin tope una sola respuesta escribía decenas de filas en
+        `behavior_signals` —una tabla sin poda— repetible a la velocidad de un POST. El test
+        no fija *cuáles* cinco quedan: el orden del matcher es por nombre más largo primero,
+        que es un detalle de cómo se evita que "queso crema" grabe "queso", no una promesa.
+        """
+        catalogo = [
+            "brócoli",
+            "coliflor",
+            "berenjena",
+            "zapallo",
+            "remolacha",
+            "espinaca",
+            "zanahoria",
+            "morrón",
+        ]
+        for name in catalogo:
+            db.add(FoodItem(canonical_name=name, base_unit="g"))
+        db.flush()
+        card = self._card(db, diego)
+
+        self._respond(db, diego, card, "rejected", "no queremos " + ", ".join(catalogo))
+
+        signals = _signals(db, diego)
+        mined = [s for s in signals if s.signal_type == "explicit_preference"]
+        assert len(mined) == SuggestionService._MAX_MINED_SUBJECTS
+        #: Y la respuesta en sí sigue enseñando sobre su propio sujeto: el tope acota lo
+        #: minado, no lo que la persona respondió.
+        own = [s.entity_name for s in signals if s.signal_type == "rejected_suggestion"]
+        assert own == ["acelga"]
 
 
 def _string_constants_outside_the_vocabulary() -> set[str]:

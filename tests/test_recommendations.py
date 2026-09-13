@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core import clock
 from app.core.config import get_settings
 from app.models.food import FoodItem
 from app.models.household import Household
@@ -1010,6 +1011,211 @@ class TestSignalConstraints:
         running = next(c for c in scored if "running" in c["title"].lower())
         # Biking has diversity penalty (recently shown), running does not
         assert running["_score"] > biking["_score"]
+
+
+class TestNotNowMeansNotNow:
+    """La 4.4.7: que "Ahora no" produzca silencio y no una repetición.
+
+    Antes de esto, la única cosa que reservaba el lugar de un sujeto era una sugerencia
+    **pendiente**. Posponer respondía la fila, o sea la sacaba de `pending`, así que el job
+    —7:40 y 18:40 locales, `scheduler._SCHEDULE`— volvía a escribir la misma tarjeta con el
+    score apenas más bajo por la señal de descarte. El botón prometía silencio y entregaba la
+    misma cosa en la corrida siguiente, o sea el mismo día.
+
+    Los dos lados se prueban por separado porque son dos módulos: el servicio escribe
+    `snoozed_until` y el motor lo lee al decidir qué persiste.
+    """
+
+    @staticmethod
+    def _card(db: Session, user: User, **overrides: Any) -> Any:
+        from app.models.suggestion import Suggestion
+
+        defaults: dict[str, Any] = {
+            "scope_type": "user",
+            "household_id": user.household_id,
+            "scope_user_id": user.id,
+            "category": "activity",
+            "subject_type": "exercise",
+            "subject_name": "biking",
+            "title": "Salí en bici",
+            "text": "30 minutos.",
+            "rationale": "Te gusta.",
+            "source_type": "rule",
+            "status": "pending",
+        }
+        defaults.update(overrides)
+        card = Suggestion(**defaults)
+        db.add(card)
+        db.flush()
+        return card
+
+    @staticmethod
+    def _respond(db: Session, user: User, card: Any, status: str) -> None:
+        from app.schemas.suggestion import SuggestionFeedback
+        from app.services.suggestion_service import SuggestionService
+
+        SuggestionService(db).respond_to_suggestion(
+            card.id, SuggestionFeedback(status=status), user.id, user.household_id
+        )
+
+    @staticmethod
+    def _engine() -> Any:
+        from app.recommendations.engine import RecommendationEngine
+
+        return RecommendationEngine()
+
+    def test_postponing_writes_a_window_instead_of_just_answering_the_row(
+        self, db: Session, diego: User
+    ) -> None:
+        from app.services.suggestion_service import SuggestionService
+
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "snoozed")
+
+        assert card.status == "snoozed"
+        assert card.snoozed_until is not None
+        #: `as_utc` y no una comparación directa: el servicio commitea, así que el valor
+        #: vuelve leído de la base, y SQLite —la base de los tests— no guarda el offset.
+        #: En Postgres la columna es `timestamptz` y vuelve aware. Es una diferencia de la
+        #: base de prueba, no del código, y `as_utc` existe justamente para no repetir el
+        #: `.replace(tzinfo=...)` que en Postgres *corre* el instante en vez de convertirlo.
+        remaining = clock.as_utc(card.snoozed_until) - datetime.now(timezone.utc)
+        assert remaining > timedelta(days=SuggestionService._SNOOZE_DAYS - 0.01)
+
+    def test_the_window_outlasts_a_job_cycle_and_stays_under_the_diversity_step(
+        self,
+    ) -> None:
+        """Los dos bordes de `_SNOOZE_DAYS`, que es un número y necesita defensa.
+
+        Por debajo del hueco entre dos corridas del job la ventana sería invisible —la
+        tarjeta volvería a escribirse igual—, y por encima de la ventana de diversidad se
+        saltaría el escalón siguiente: la idea es que el sujeto primero no aparezca, después
+        aparezca más abajo, y al final vuelva a competir de igual a igual.
+
+        El piso se **deriva del horario** en vez de escribirse a mano: el job corre a horas
+        locales fijas (`scheduler._SCHEDULE`, desde la 4.1) y no cada N horas, así que un
+        comentario con un intervalo se desactualiza en silencio la próxima vez que el horario
+        cambie. Lo que tiene que superar la ventana es el hueco **más largo** entre dos
+        corridas, que es el peor caso para que el silencio se note.
+        """
+        from app.jobs.scheduler import _SCHEDULE
+        from app.services.suggestion_service import SuggestionService
+
+        hours = sorted(int(h) for h in _SCHEDULE["suggestion_generation"][0].split(","))
+        gaps = [b - a for a, b in zip(hours, hours[1:], strict=False)]
+        gaps.append(24 - hours[-1] + hours[0])
+
+        assert timedelta(days=SuggestionService._SNOOZE_DAYS) > timedelta(hours=max(gaps))
+        assert SuggestionService._SNOOZE_DAYS < scorer._RECENT_SUGGESTION_DAYS
+
+    def test_a_postponed_subject_is_not_offered_again(self, db: Session, diego: User) -> None:
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "snoozed")
+
+        engine = self._engine()
+        suppressed = engine._suppressed_subjects_for_user(db, diego.id)
+        assert ("exercise", "biking") in suppressed
+
+        candidates = [
+            _candidate("Salí en bici de nuevo", "exercise", "biking"),
+            _candidate("Salí a correr", "exercise", "running"),
+        ]
+        kept = engine._without_duplicate_subjects(candidates, suppressed, 10)
+        assert [c["subject_name"] for c in kept] == ["running"]
+
+    def test_when_the_window_expires_the_subject_competes_again(
+        self, db: Session, diego: User
+    ) -> None:
+        """No hace falta ningún job que "resucite" nada: se compara con el reloj.
+
+        La fila se queda en `snoozed` para siempre y el sujeto se destraba solo cuando
+        `snoozed_until` queda en el pasado. Un job de rehabilitación sería una pieza más que
+        puede no correr, y el estado que dejaría es el que esta consulta ya deduce.
+        """
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "snoozed")
+        card.snoozed_until = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.flush()
+
+        engine = self._engine()
+        assert engine._suppressed_subjects_for_user(db, diego.id) == set()
+        #: Y cuando vuelve, vuelve más abajo: la penalización por diversidad de los 7 días
+        #: es el escalón siguiente, y esa fila sigue estando entre las recientes.
+        candidate = _candidate("Salí en bici", "exercise", "biking", confidence=0.8)
+        (scored,) = score_candidates([candidate], diego, [], [card])
+        assert scored["_score"] < 0.8
+
+    def test_a_pending_suggestion_still_holds_the_place_of_its_subject(
+        self, db: Session, diego: User
+    ) -> None:
+        """La mitad que ya existía antes de la 4.4.7, y que no se perdió al agregar la otra."""
+        self._card(db, diego)
+        assert ("exercise", "biking") in self._engine()._suppressed_subjects_for_user(db, diego.id)
+
+    def test_accepting_does_not_silence_anything(self, db: Session, diego: User) -> None:
+        """Aceptar no suprime: el candidato ya se cumplió y puede volver a proponerse.
+
+        Es la diferencia con las otras dos respuestas. Salir en bici hoy porque la app lo
+        sugirió es la mejor razón para que lo vuelva a sugerir la semana que viene.
+        """
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "accepted")
+
+        assert card.snoozed_until is None
+        assert self._engine()._suppressed_subjects_for_user(db, diego.id) == set()
+
+    def test_rejecting_leans_on_the_filter_and_not_on_the_window(
+        self, db: Session, diego: User
+    ) -> None:
+        """`rejected` no necesita ventana porque tiene algo mucho más largo.
+
+        `learning.rejected_subjects` lo saca de la lista mientras el "no" conserve la mitad
+        de su peso —90 días de semivida—, así que una ventana de 3 días encima de eso no
+        agregaría nada. Lo que este test fija es que la elección fue esa y no un olvido.
+        """
+        from app.recommendations.filters import apply_signal_constraints
+
+        card = self._card(db, diego)
+        self._respond(db, diego, card, "rejected")
+        assert card.snoozed_until is None
+
+        from app.models.signal import BehaviorSignal
+
+        signals = db.query(BehaviorSignal).filter(BehaviorSignal.user_id == diego.id).all()
+        candidate = _candidate("Salí en bici", "exercise", "biking")
+        assert apply_signal_constraints([candidate], signals) == []
+
+    def test_the_other_members_silence_is_not_yours(
+        self, db: Session, diego: User, rocio: User
+    ) -> None:
+        """Regla 4 de `AGENTS.md`, en el lado de la lectura.
+
+        Rocío y Diego comparten `household_id`, así que una consulta que se olvide del
+        `scope_user_id` deja que el "ahora no" de una persona calle las sugerencias de la
+        otra — el mismo bug que tenía el `or_` de las notificaciones.
+        """
+        card = self._card(db, rocio, scope_user_id=rocio.id)
+        self._respond(db, rocio, card, "snoozed")
+
+        engine = self._engine()
+        assert engine._suppressed_subjects_for_user(db, rocio.id) == {("exercise", "biking")}
+        assert engine._suppressed_subjects_for_user(db, diego.id) == set()
+
+    def test_a_personal_snooze_does_not_silence_the_households_shopping_list(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """La contraparte: la consulta de hogar filtra además por `scope_type`.
+
+        Las sugerencias personales también llevan `household_id`, así que sin esa condición
+        una tarjeta personal pospuesta bloquearía la de despensa del mismo sujeto — que es
+        de la casa y de nadie en particular.
+        """
+        card = self._card(db, diego, category="meal", subject_type="food", subject_name="leche")
+        self._respond(db, diego, card, "snoozed")
+
+        engine = self._engine()
+        assert engine._suppressed_subjects_for_household(db, household.id) == set()
+        assert engine._suppressed_subjects_for_user(db, diego.id) == {("food", "leche")}
 
 
 class TestMealWindow:

@@ -131,6 +131,45 @@
       {%- endfor %}
     </div>
 
+    {#- El motivo, que hasta acá no había forma de escribir. `feedback_notes` existe en la
+        columna, en el schema y en el `Form` de la ruta, y **ninguna plantilla lo mandaba
+        nunca**: el único camino que podía llevar un motivo era la ruta JSON. Con el motivo
+        minado contra los nombres conocidos (`SuggestionService._record_reason_signals`),
+        no ofrecer dónde escribirlo dejaría un lector sin escritor — el defecto que toda
+        esta fase viene arreglando.
+
+        Va en un `<details>` cerrado y no en la fila de botones porque es el camino menos
+        frecuente: responder tiene que seguir siendo un toque, y escribir por qué es algo
+        que se hace cuando la sugerencia molestó lo suficiente. Y manda `rejected`, no
+        `dismissed`: quien se toma el trabajo de escribir "no nos gusta el brócoli" no está
+        diciendo "más tarde".
+
+        Sin JS es un `<form>` que navega y vuelve con el flash; con HTMX intercambia la
+        tarjeta como los otros tres. El `id` del input lleva el id de la fila porque hay
+        una tarjeta por sugerencia en la misma página y un `for=` que apunta a dos inputs
+        no asocia ninguno. -#}
+    <details class="mt-3">
+      <summary class="inline-flex items-center gap-1.5 text-xs font-medium text-ink-subtle hover:text-ink transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden focus-visible:ring-2 focus-visible:ring-brand-500 rounded-chip">
+        {{ ic.icon('pencil', 'w-3.5 h-3.5') }}
+        {{ _('Prefer to say why?') }}
+      </summary>
+      <form method="post" action="/suggestions/{{ s.id }}/feedback"
+            class="mt-2.5 p-3.5 rounded-control bg-card-alt space-y-2.5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        <input type="hidden" name="status" value="rejected" />
+        {{ ui.field(_('What put you off?'), 'feedback_notes',
+                    id='reason-' ~ s.id,
+                    placeholder=_('e.g. we do not like broccoli'),
+                    hint=_('Name a food or an activity and GaiaPulse learns about that, instead of about the wording of this card.'),
+                    attrs='maxlength="500"') }}
+        {{ ui.btn(_('Not for us'), tone='danger-soft', size='sm', icon='x',
+                  aria_label=_('Not for us, with this reason'),
+                  attrs='hx-post="/suggestions/' ~ s.id ~ '/feedback"
+                         hx-vals=\'{"status": "rejected"}\'
+                         hx-target="#suggestion-' ~ s.id ~ '" hx-swap="outerHTML"') }}
+      </form>
+    </details>
+
   </div>
   {%- endfor %}
   {%- else %}

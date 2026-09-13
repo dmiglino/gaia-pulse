@@ -17,6 +17,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
@@ -111,9 +112,9 @@ class RecommendationEngine:
         )
 
         # ── Persist top-N as Suggestion records ────────────────────────
-        pending = self._pending_subjects_for_user(db, user.id)
+        suppressed = self._suppressed_subjects_for_user(db, user.id)
         created: list[Suggestion] = []
-        for item in self._without_duplicate_subjects(ranked, pending, limit):
+        for item in self._without_duplicate_subjects(ranked, suppressed, limit):
             suggestion = self._make_user_suggestion(user, item)
             db.add(suggestion)
             created.append(suggestion)
@@ -151,9 +152,9 @@ class RecommendationEngine:
         candidates = pantry_generator.generate(db, household.id, limit=limit * 2)
 
         # For household suggestions we skip user-specific filtering
-        pending = self._pending_subjects_for_household(db, household.id)
+        suppressed = self._suppressed_subjects_for_household(db, household.id)
         created: list[Suggestion] = []
-        for item in self._without_duplicate_subjects(candidates, pending, limit):
+        for item in self._without_duplicate_subjects(candidates, suppressed, limit):
             suggestion = self._make_household_suggestion(household, item)
             db.add(suggestion)
             created.append(suggestion)
@@ -215,13 +216,32 @@ class RecommendationEngine:
             .all()
         )
 
-    def _pending_subjects_for_user(self, db: Session, user_id: int) -> set[tuple[str, str]]:
-        """Subjects that already have a pending suggestion for this user."""
+    @staticmethod
+    def _still_suppressed() -> Any:
+        """La condición de "este sujeto no se vuelve a ofrecer todavía".
+
+        Dos casos, y el segundo es la 4.4.7: una sugerencia **pendiente** ocupa el lugar de
+        su sujeto —no tiene sentido ofrecer dos veces lo mismo sin haber recibido respuesta—,
+        y una respondida con "no ahora" lo ocupa hasta que se vence su `snoozed_until`.
+
+        Sin la segunda mitad, posponer *destrababa* el sujeto: la fila dejaba de estar
+        `pending`, así que la corrida siguiente del job —7:40 o 18:40 locales, ver
+        `scheduler._SCHEDULE`— volvía a escribir la misma tarjeta, con la única diferencia de
+        los −0.045 que le baja la señal de descarte. El botón "Ahora no" prometía silencio y
+        entregaba una repetición.
+        """
+        return or_(
+            Suggestion.status == "pending",
+            Suggestion.snoozed_until > datetime.now(tz=timezone.utc),
+        )
+
+    def _suppressed_subjects_for_user(self, db: Session, user_id: int) -> set[tuple[str, str]]:
+        """Subjects this user should not be offered right now. Ver `_still_suppressed`."""
         rows = (
             db.query(Suggestion.subject_type, Suggestion.subject_name)
             .filter(
                 Suggestion.scope_user_id == user_id,
-                Suggestion.status == "pending",
+                self._still_suppressed(),
                 Suggestion.subject_type.isnot(None),
                 Suggestion.subject_name.isnot(None),
             )
@@ -229,10 +249,10 @@ class RecommendationEngine:
         )
         return {learning.subject_key(t, n) for t, n in rows}
 
-    def _pending_subjects_for_household(
+    def _suppressed_subjects_for_household(
         self, db: Session, household_id: int
     ) -> set[tuple[str, str]]:
-        """Subjects that already have a pending household-scoped suggestion.
+        """Lo mismo para las sugerencias de scope household. Ver `_still_suppressed`.
 
         Filtra por `scope_type` además de por household: las sugerencias personales de
         Diego y Rocío también llevan `household_id`, y sin esa condición una tarjeta de
@@ -243,7 +263,7 @@ class RecommendationEngine:
             .filter(
                 Suggestion.household_id == household_id,
                 Suggestion.scope_type == "household",
-                Suggestion.status == "pending",
+                self._still_suppressed(),
                 Suggestion.subject_type.isnot(None),
                 Suggestion.subject_name.isnot(None),
             )
@@ -254,7 +274,7 @@ class RecommendationEngine:
     @staticmethod
     def _without_duplicate_subjects(
         ranked: list[dict[str, Any]],
-        already_pending: set[tuple[str, str]],
+        already_suppressed: set[tuple[str, str]],
         limit: int,
     ) -> list[dict[str, Any]]:
         """Take up to *limit* candidates, at most one per subject.
@@ -263,15 +283,16 @@ class RecommendationEngine:
         control de repetición era la penalización de diversidad del scorer, que es un
         ajuste de score y no un filtro: un candidato de confianza 0.95 bajaba a 0.75 y
         seguía saliendo primero, así que cada corrida del job escribía otra vez la misma
-        sugerencia. Con esto, mientras una siga pendiente no se genera otra del mismo
-        sujeto —y la penalización de diversidad queda para lo ya respondido, que sí puede
-        volver a aparecer pero más abajo.
+        sugerencia. Con esto, mientras el sujeto siga suprimido —pendiente de respuesta, o
+        pospuesto— no se genera otra del mismo sujeto, y la penalización de diversidad queda
+        para cuando la supresión se vence: entonces sí puede volver a aparecer, pero más
+        abajo.
 
         El corte por `limit` se aplica **después** del dedup, no antes: recortar primero
         habría devuelto menos de `limit` sugerencias cada vez que el tope se llenaba de
         duplicados, que es justamente el caso frecuente.
         """
-        seen = set(already_pending)
+        seen = set(already_suppressed)
         kept: list[dict[str, Any]] = []
         for item in ranked:
             if len(kept) >= limit:
@@ -283,7 +304,7 @@ class RecommendationEngine:
             if subject is not None:
                 if subject in seen:
                     logger.debug(
-                        "Skipping candidate %r: subject %s already pending.",
+                        "Skipping candidate %r: subject %s still suppressed.",
                         item.get("title"),
                         subject,
                     )

@@ -19,15 +19,18 @@ Las dos son nullable: las filas que ya existen no tienen sujeto y no se puede in
 uno a partir del título — inventarlo es el bug. Se quedan sin enseñar nada, que es lo
 correcto, y se van con el tiempo.
 
-`snoozed_until` es de la 4.4.7: hoy `snoozed` graba una señal de valor 0.0 que no entra
-ni en la lista positiva ni en la negativa —escrita y jamás leída—, y "posponer" termina
-actuando como rechazo porque comparte el `signal_type` con `dismissed`. La columna existe
-en `notifications` desde la `0001` y **no** en `suggestions`, que es donde hace falta.
+`snoozed_until` es para la 4.4.7. Antes de ella `snoozed` grababa una señal de valor 0.0
+que no entraba ni en la lista positiva ni en la negativa —escrita y jamás leída—, y
+"posponer" terminaba actuando como rechazo. La columna existía en `notifications` desde la
+`0001` y **no** en `suggestions`, que es donde hacía falta: la 4.4.7 la usa para acotar el
+silencio en el tiempo en vez de convertirlo en una opinión.
 
-Sin índice nuevo a propósito: la consulta que se agrega —las sugerencias pendientes de
-una persona con este sujeto— ya entra por el índice de `status`, y en una casa de dos
-personas la tabla se cuenta en cientos de filas. Un índice compuesto acá sería peso sin
-lectura que lo pague (regla 6 de `AGENTS.md`).
+Sin índice nuevo a propósito, y conviene ser preciso sobre el motivo. La consulta que la
+4.4.7 agrega no es una igualdad sobre `status`: es `or_(status == "pending", snoozed_until
+> ahora)`, una disyunción con un lado sobre una columna sin índice, así que el índice de
+`status` **no** la cubre. Lo que sostiene la decisión es el tamaño: en una casa de dos
+personas la tabla se cuenta en cientos de filas y el plan es un scan de todos modos. Un
+índice compuesto acá sería peso sin lectura que lo pague (regla 6 de `AGENTS.md`).
 """
 
 from typing import Sequence, Union
