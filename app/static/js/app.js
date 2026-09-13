@@ -124,10 +124,13 @@ window.showToast = function (message, type = 'info', duration = 4000) {
 };
 
 // ─── Barra de progreso global ────────────────────────────────────────────────
-// `#htmx-indicator` (en `base.html`) era markup muerto: la regla que lo muestra es
-// `.htmx-request .htmx-indicator`, que necesita un *ancestro* con `.htmx-request`,
-// y ningún `hx-*` lo nombra por `hx-indicator`. Se cablea acá contando requests en
-// vuelo, así que dos pedidos superpuestos no apagan la barra antes de tiempo.
+// `#htmx-indicator` (en `base.html`) casi nunca se encendía: la regla que lo muestra
+// es `.htmx-request .htmx-indicator`, que necesita un *ancestro* con `.htmx-request`,
+// y de los once `hx-indicator` de la app solo uno lo nombra (el "Refresh" de
+// `suggestions/index.html`); los otros diez apuntan a spinners locales. Se cablea acá
+// contando requests en vuelo, así que dos pedidos superpuestos no apagan la barra
+// antes de tiempo. `app.css` tiene además `.htmx-request.htmx-indicator`, que cubre
+// los dos caminos: el que marca HTMX por `hx-indicator` y el que marcamos nosotros.
 let inFlight = 0;
 
 function progressBar() {

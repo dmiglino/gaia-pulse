@@ -58,11 +58,14 @@
 {%- endmacro %}
 
 {% block body %}
-  {#- Barra de progreso global de HTMX. En la v1 era markup muerto: la única regla
-      que la mostraba es `.htmx-request .htmx-indicator`, que exige un **ancestro**
-      con `.htmx-request`, y este div está al tope del <body> sin que ningún `hx-*`
-      lo nombre por `hx-indicator` (los 10 que existen apuntan a spinners locales).
-      Ahora la cablea `app.js` contando requests en vuelo.
+  {#- Barra de progreso global de HTMX. En la v1 era markup muerto para casi todo:
+      la única regla que la mostraba es `.htmx-request .htmx-indicator`, que exige un
+      **ancestro** con `.htmx-request`, y este div está al tope del <body>. Solo el
+      "Refresh" de `suggestions/index.html` la nombra por `hx-indicator` (los otros
+      diez apuntan a spinners locales), así que el resto de la app no la encendía
+      nunca. Ahora la cablea `app.js` contando requests en vuelo, y `app.css` agrega
+      `.htmx-request.htmx-indicator` para que los dos caminos —el `hx-indicator` de
+      suggestions y el marcado propio de `app.js`— la muestren igual.
 
       El contenedor de toasts no está acá a propósito: lo crea `app.js`, y el
       `<div id="toast-container">` que tenía la v1 era markup muerto (nadie
