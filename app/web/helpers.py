@@ -133,6 +133,33 @@ templates.env.filters["local_time"] = local_time
 # esto no rompe nada de lo escrito hasta acá.
 templates.env.globals["ui"] = templates.env.get_template("components/ui.html").module
 templates.env.globals["ic"] = templates.env.get_template("components/icons.html").module
+# `dm`: cómo se muestran los valores de enum de la base (tipo de comida, contexto,
+# cantidades). Va con los otros dos porque el mismo rótulo aparece en el Home, en la
+# lista, en el detalle y en el historial.
+templates.env.globals["dm"] = templates.env.get_template("components/domain.html").module
+
+
+def query_int(raw: str | None) -> int | None:
+    """Un parámetro de query numérico que puede llegar vacío.
+
+    Los filtros de las pantallas son un `<form method="get">`, y un formulario manda
+    **todos** sus campos, también los que el usuario dejó en blanco: `?user_id=` es
+    "todo el hogar", no un error. Con `user_id: int | None` FastAPI responde 422 a
+    esa misma URL, así que la conversión se hace acá.
+    """
+    if raw is None or not raw.strip().lstrip("-").isdigit():
+        return None
+    return int(raw)
+
+
+def query_date(raw: str | None) -> date | None:
+    """Un `<input type="date">` que puede llegar vacío o con basura, por lo mismo."""
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 def get_template_context(request: Request, db: Session, current_user: User) -> dict:

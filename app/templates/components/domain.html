@@ -1,0 +1,70 @@
+{#
+  Cómo se muestran los valores de enum que guarda la base.
+
+  El problema que resuelve: las columnas guardan strings en inglés y en minúscula
+  (`meal_type='breakfast'`, `context='restaurant'`), y las plantillas los mostraban
+  con `{{ event.meal_type | title }}` o, en el mejor caso, con
+  `{{ _(event.meal_type | title) }}` — que le pide al catálogo un msgid que ningún
+  `pybabel extract` puede encontrar, porque no es un literal. Resultado: los enums
+  se veían siempre en inglés, y el color de cada tipo de comida estaba escrito de
+  nuevo (y distinto) en cada pantalla que los mostraba.
+
+  Acá el valor de la base se traduce contra literales de verdad y se le asigna un
+  tono una sola vez, así que Home, la lista de comidas, el detalle y el historial
+  dicen lo mismo con el mismo color.
+
+  Uso: los macros son globals del entorno (`app/web/helpers.py`), igual que `ui` e
+  `ic`, así que no hace falta ningún `{% import %}`:
+
+      {{ dm.meal_badge(meal.meal_type) }}
+      {{ dm.quantity(item.quantity, item.unit) }}
+
+  Un valor que no esté en el mapa cae en un rótulo genérico en vez de romper: la
+  columna es un `String(30)` sin restricción, así que el NLP puede escribir
+  cualquier cosa ahí.
+#}
+
+{% import 'components/ui.html' as ui %}
+
+
+{#- ── Tipo de comida ──────────────────────────────────────────────────────────
+    Los tonos siguen el arco del día (mañana ámbar, mediodía azul, noche violeta)
+    y `snack` queda en verde por descarte, no por semántica. -#}
+{% macro meal_type_label(meal_type) -%}
+{%- set labels = {
+  'breakfast': _('Breakfast'), 'lunch': _('Lunch'), 'dinner': _('Dinner'),
+  'snack': _('Snack'), 'other': _('Meal'),
+} -%}
+{{- labels.get(meal_type, _('Meal')) -}}
+{%- endmacro %}
+
+
+{% macro meal_badge(meal_type, size='sm') -%}
+{%- set tones = {'breakfast': 'warn', 'lunch': 'info', 'dinner': 'brand', 'snack': 'ok'} -%}
+{{ ui.badge(meal_type_label(meal_type), tone=tones.get(meal_type, 'neutral'), size=size) }}
+{%- endmacro %}
+
+
+{#- ── Dónde se comió ──────────────────────────────────────────────────────────
+    Devuelve solo el texto: quien llama decide si lo pone al lado de un ícono, en
+    una tarjeta o en una lista. -#}
+{% macro meal_context_label(context) -%}
+{%- set labels = {
+  'home': _('At home'), 'outside': _('Out'), 'travel': _('Travelling'),
+  'restaurant': _('Restaurant'), 'other': _('Somewhere else'),
+} -%}
+{{- labels.get(context, context | title) -}}
+{%- endmacro %}
+
+
+{#- ── Cantidad ────────────────────────────────────────────────────────────────
+    `quantity` es `Numeric`, así que llega como `Decimal`: sin esto una porción de
+    2 se mostraba como "2.00". Los enteros se muestran enteros y el resto con un
+    decimal, que es toda la precisión que tiene sentido en "1.5 kg de pollo". -#}
+{% macro quantity(value, unit=None) -%}
+{%- if value is not none -%}
+{%- set num = value | float -%}
+{{- num | int if num == num | int else num | round(1) -}}
+{%- if unit %} {{ unit }}{% endif -%}
+{%- endif -%}
+{%- endmacro %}

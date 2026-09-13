@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -82,13 +82,24 @@ class MealService:
         limit: int = 20,
         offset: int = 0,
         user_id: int | None = None,
+        on_date: date | None = None,
     ) -> list[MealEvent]:
+        """Las comidas del hogar, de la más nueva a la más vieja.
+
+        `on_date` filtra un solo día: el repositorio ya sabía filtrar por rango, pero
+        la pantalla de comidas no tenía forma de pedirlo — su filtro de fecha mandaba
+        un parámetro que la ruta no leía.
+        """
         return self.meal_repo.get_household_meals(
-            household_id, limit=limit, offset=offset, user_id=user_id
+            household_id,
+            limit=limit,
+            offset=offset,
+            user_id=user_id,
+            start_date=on_date,
+            end_date=on_date,
         )
 
     def get_today_meals(self, household_id: int) -> list[MealEvent]:
-        from datetime import date
         return self.meal_repo.get_today_meals(household_id, date.today())
 
     def get_meal(self, meal_id: int) -> MealEvent | None:

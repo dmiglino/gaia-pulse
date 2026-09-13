@@ -1,43 +1,76 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Meals') }}{% endblock %}
+{% block title %}{{ dm.meal_type_label(meal.meal_type) }}{% endblock %}
+
+{#- El detalle de una comida. Hasta ahora era una pantalla sin puertas: ninguna
+    plantilla enlazaba `GET /meals/{id}` (la tarjeta de la lista ya lo hace) y encima
+    buscaba a cada participante recorriendo `users` y comparando ids, cuando
+    `MealParticipant.user` es una relación — con el efecto de que un participante que
+    ya no está en el hogar desaparecía de la pantalla sin dejar rastro.
+
+    Los ️🕐 y 📍 que hacían de iconografía salen: el resto de la app usa Heroicons y
+    un emoji no se puede teñir con los tokens del tema. -#}
 
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-2xl mx-auto space-y-5">
-  <div class="flex items-center gap-4">
-    <a href="/meals" class="text-slate-400 hover:text-slate-600">←</a>
-    <h1 class="text-xl font-bold text-slate-900">{{ _(meal.meal_type|title) }} · {{ meal.timestamp.strftime('%b %d, %Y') }}</h1>
-  </div>
+<div class="px-4 py-6 md:px-8 max-w-2xl mx-auto">
 
-  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 space-y-4">
-    <div class="flex gap-3 flex-wrap text-sm text-slate-500">
-      <span>🕐 {{ meal.timestamp.strftime('%H:%M') }}</span>
-      <span>📍 {{ meal.context|title }}</span>
+  {{ ui.page_header(dm.meal_type_label(meal.meal_type),
+                    subtitle=meal.timestamp | local_date('full'),
+                    icon='meal', tone='food',
+                    back='/meals', back_label=_('Meals')) }}
+
+  {% call ui.card() %}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-ink-muted">
+      <span class="inline-flex items-center gap-1.5">
+        {{ ic.icon('clock', 'w-4 h-4') }}<span class="tabular-nums">{{ meal.timestamp | local_time }}</span>
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        {{ ic.icon('map-pin', 'w-4 h-4') }}{{ dm.meal_context_label(meal.context) }}
+      </span>
     </div>
-    {% if meal.notes %}<p class="text-sm text-slate-600 italic">{{ meal.notes }}</p>{% endif %}
 
-    {% for participant in meal.participants %}
-    <div class="border-t border-slate-50 pt-4">
-      {% for u in users %}{% if u.id == participant.user_id %}
-      <div class="flex items-center gap-2 mb-2">
-        <span class="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style="background:{{ u.avatar_color }}">{{ u.name[0] }}</span>
-        <span class="font-medium text-slate-800 text-sm">{{ u.name }}</span>
-        {% if participant.portion_label %}<span class="text-xs text-slate-400">({{ participant.portion_label }})</span>{% endif %}
+    {%- if meal.notes %}
+    <p class="mt-3 text-sm text-ink">{{ meal.notes }}</p>
+    {%- endif %}
+
+    <div class="mt-5 space-y-5">
+      {% for participant in meal.participants %}
+      <div class="{{ 'pt-5 border-t border-line' if not loop.first else '' }}">
+        <div class="flex items-center gap-2 mb-2.5">
+          {{ ui.attribution(participant.user) }}
+          {%- if participant.portion_label %}
+          {{ ui.badge(participant.portion_label, tone='neutral', size='sm') }}
+          {%- endif %}
+        </div>
+
+        {% if participant.items_consumed %}
+        <ul class="space-y-1.5 list-none m-0 p-0">
+          {% for item in participant.items_consumed %}
+          <li class="flex items-baseline gap-2 text-sm text-ink">
+            {{ ui.dot(tone='food', class='mt-1.5') }}
+            <span>{{ item.normalized_free_text_name | title }}</span>
+            <span class="text-xs text-ink-subtle tabular-nums">
+              {%- if item.quantity %}{{ dm.quantity(item.quantity, item.unit) }}{% endif -%}
+              {%- if item.estimated_grams %} (~{{ dm.quantity(item.estimated_grams, 'g') }}){% endif -%}
+            </span>
+            {%- if item.preparation %}
+            <span class="text-xs text-ink-subtle">· {{ item.preparation }}</span>
+            {%- endif %}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-ink-subtle">{{ _('No items recorded') }}</p>
+        {% endif %}
+
+        {%- if participant.notes %}
+        <p class="mt-2 text-xs text-ink-subtle">{{ participant.notes }}</p>
+        {%- endif %}
       </div>
-      {% endif %}{% endfor %}
-
-      <ul class="space-y-1">
-        {% for item in participant.items_consumed %}
-        <li class="text-sm text-slate-700 flex items-baseline gap-2">
-          <span class="text-slate-400">·</span>
-          <span>{{ item.normalized_free_text_name|title }}</span>
-          {% if item.quantity %}<span class="text-xs text-slate-400">{{ item.quantity }}{% if item.unit %} {{ item.unit }}{% endif %}</span>{% endif %}
-          {% if item.estimated_grams %}<span class="text-xs text-slate-400">(~{{ item.estimated_grams }}g)</span>{% endif %}
-          {% if item.preparation %}<span class="text-xs text-slate-400">· {{ item.preparation }}</span>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
+      {% else %}
+      <p class="text-sm text-ink-subtle">{{ _('No participants recorded.') }}</p>
+      {% endfor %}
     </div>
-    {% endfor %}
-  </div>
+  {% endcall %}
+
 </div>
 {% endblock %}

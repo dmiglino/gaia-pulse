@@ -1,0 +1,44 @@
+{#- La lista de comidas: el fragmento que HTMX intercambia y que `meals/index.html`
+    incluye en la primera carga.
+
+    Antes no existía: el filtro y el "cargar más" apuntaban a `GET /meals`, que
+    devuelve la **página entera**, con `hx-target="#meal-list"` — es decir, metían un
+    documento HTML completo (con su `<head>`, su sidebar y su barra inferior) dentro
+    de un `<div>` de la página que ya estaba abierta. Ahora la ruta responde este
+    parcial cuando la llamada viene de HTMX, igual que hace `pantry`.
+
+    El botón de "cargar más" se reemplaza a sí mismo (`hx-target="this"` +
+    `outerHTML`) con la página siguiente, así que la lista crece de una y no queda
+    un botón muerto arriba del nuevo bloque. Los filtros viajan en cada tanda por
+    `hx-include`, o "cargar más" ignoraría el filtro activo. -#}
+
+{% if meal_events %}
+{% for event in meal_events %}
+{% include 'meals/partials/meal_card.html' %}
+{% endfor %}
+
+{%- if has_more %}
+{% set more_attrs %}hx-get="/meals?offset={{ next_offset }}" hx-include="#meal-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#meals-spinner"{% endset %}
+<div class="flex justify-center pt-1">
+  {{ ui.btn(_('Load more'), tone='secondary', type='button', icon_right='chevron-down', attrs=more_attrs) }}
+</div>
+{%- endif %}
+
+{% elif offset %}
+{#- Se pidió una página que ya no tiene filas (la lista cambió entre dos clicks).
+    No hay nada que mostrar y tampoco es un error que valga un cartel. -#}
+{% else %}
+{% call ui.card(padding='') %}
+  {%- if filters_active %}
+  {{ ui.empty_state(_('No meals match these filters'),
+      text=_('Try another day, or look at the whole household.'),
+      icon='filter', tone='food',
+      action_label=_('Clear filters'), action_href='/meals') }}
+  {%- else %}
+  {{ ui.empty_state(_('No meals logged yet'),
+      text=_('Describe a meal in your own words on the Capture screen and it lands here.'),
+      icon='meal', tone='food',
+      action_label=_('Log first meal'), action_href='/capture?prefill=meal') }}
+  {%- endif %}
+{% endcall %}
+{% endif %}

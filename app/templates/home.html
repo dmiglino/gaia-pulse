@@ -108,7 +108,6 @@
       La atribución va con avatares y no con "2 people": en un hogar de dos, *quién*
       comió es la información, y la cuenta ya está en la métrica de arriba. De paso
       desaparecen los plurales cableados a mano. -#}
-  {% set meal_tone = {'breakfast': 'warn', 'lunch': 'info', 'dinner': 'brand', 'snack': 'ok'} %}
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
     {% call ui.card() %}
@@ -117,8 +116,7 @@
       <ul class="list-none m-0 p-0">
         {% for meal in today_meals[:3] %}
         <li class="flex items-center gap-3 py-2.5 border-t border-line first:border-t-0 first:pt-0">
-          {{ ui.badge(_(meal.meal_type | title) if meal.meal_type else _('Meal'),
-                      tone=meal_tone.get(meal.meal_type, 'neutral'), size='sm') }}
+          {{ dm.meal_badge(meal.meal_type) }}
           {%- if meal.timestamp %}
           <span class="text-xs text-ink-subtle tabular-nums">{{ meal.timestamp | local_time }}</span>
           {%- endif %}
