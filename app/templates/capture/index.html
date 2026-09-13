@@ -2,141 +2,152 @@
 
 {% block title %}{{ _('Capture') }}{% endblock %}
 
+{#
+  El flujo central: una frase en lenguaje natural entra, y el parser decide si eso es
+  una comida, un entrenamiento, un pesaje o una compra.
+
+  Lo que cambia en la v3, además del barrido a tokens y macros:
+
+  - **Los chips ya no escriben oraciones enteras.** Cuatro botones metían frases
+    completas en inglés (`'We had pasta for dinner'`, `'My weight this morning is
+    74.5 kg'`): un toque de más y quedaba registrada una cena que nadie comió, con un
+    peso inventado. Ahora insertan el mismo *comienzo* de frase que usan las acciones
+    rápidas del Home (`prefillMap`) y dejan el cursor listo para que la persona la
+    termine. Un solo mapa para los dos caminos.
+  - **El spinner del botón existía y no podía verse jamás**: era un `htmx-indicator`,
+    y `app.css` solo lo muestra bajo `.htmx-request` — pero este flujo no usa HTMX
+    para parsear, usa `fetch`. Ahora el estado es de Alpine (`parsing`).
+  - **Un texto de más de 2000 caracteres inyectaba el JSON del 422 de FastAPI** en la
+    página: el JS pegaba la respuesta y *después* miraba `resp.ok`. Ahora un fallo no
+    inyecta nada y muestra un aviso traducido.
+  - **Los botones del preview no funcionaban.** El fragmento se inserta con
+    `innerHTML` desde un `fetch`, y HTMX solo cablea los nodos que insertó él, así
+    que el Confirmar y el Descartar no tenían ningún handler. Se resuelve con
+    `htmx.process()` sobre el contenedor recién llenado.
+  - Los cinco textos en inglés que el componente de Alpine tenía cableados pasan por
+    el catálogo con el patrón `_('…') | tojson`, que sí es extraíble por pybabel.
+#}
+
 {% block content %}
+{#- Los mismos cuatro comienzos de frase que el `prefillMap` del componente y que las
+    acciones rápidas del Home. El `key` es lo que viaja en `?prefill=`. -#}
+{% set openers = [
+    {'key': 'meal',    'label': _('Meal'),    'icon': 'meal',     'tone': 'food'},
+    {'key': 'workout', 'label': _('Workout'), 'icon': 'bolt',     'tone': 'move'},
+    {'key': 'weight',  'label': _('Weight'),  'icon': 'trend-up', 'tone': 'body'},
+    {'key': 'pantry',  'label': _('Pantry'),  'icon': 'pantry',   'tone': 'stock'}
+] %}
+
 <div class="px-4 py-6 md:px-8 max-w-2xl mx-auto"
      x-data="captureApp()"
      x-init="init()">
 
-  <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold text-slate-800">{{ _('Capture') }}</h1>
-    <p class="text-sm text-slate-500 mt-0.5">{{ _('Tell me what happened — I\'ll figure out the rest') }}</p>
-  </div>
+  {{ ui.page_header(
+       _('Capture'),
+       subtitle=_('Tell me what happened in your own words — I work out the rest.'),
+       icon='microphone') }}
 
-  <!-- Quick shortcut chips -->
-  <div class="mb-4">
-    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">{{ _('Quick shortcuts') }}</p>
-    <div class="flex flex-wrap gap-2">
-      <button type="button"
-        @click="prefillText('We had pasta for dinner')"
-        class="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8.25v-1.5m0 1.5c-1.355 0-2.697.056-4.024.166C6.845 8.51 6 9.473 6 10.608v2.513m6-4.87c1.355 0 2.697.056 4.024.166C17.155 8.51 18 9.473 18 10.608v2.513m-3-4.87v-1.5m-6 4.5v-1.5m12 1.5v-1.5m-12 1.5v7.5m0 0h12"/></svg>
-        {{ _('Log Meal') }}
-      </button>
-      <button type="button"
-        @click="prefillText('I did 30 minutes of running this morning')"
-        class="inline-flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
-        {{ _('Log Workout') }}
-      </button>
-      <button type="button"
-        @click="prefillText('I bought 2 kg of chicken, a bag of rice and some tomatoes')"
-        class="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
-        {{ _('Add Purchase') }}
-      </button>
-      <button type="button"
-        @click="prefillText('My weight this morning is 74.5 kg')"
-        class="inline-flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-700 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors">
-        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75z"/></svg>
-        {{ _('Update Weight') }}
-      </button>
-    </div>
-  </div>
+  {% call ui.card(class='space-y-5') %}
 
-  <!-- Main capture card -->
-  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    {#- ── Texto ──────────────────────────────────────────────────────────────── -#}
+    {% call ui.field_wrap(
+         _('What happened?'), 'capture-text',
+         hint=_('Name %(names)s and I will work out who did what.',
+                names=users | map(attribute='display_name') | join(' / ')) if users else None) %}
+      <textarea id="capture-text" name="text" rows="4"
+                x-model="captureText"
+                class="{{ ui.INPUT_CLASS }} resize-none leading-relaxed"
+                placeholder="{{ _('e.g. we had pasta for dinner · I ran for 30 min · bought 1 kg of oats') }}"></textarea>
+    {% endcall %}
 
-    <!-- Text input section -->
-    <div class="px-5 pt-5">
-      <label for="capture-text" class="block text-sm font-semibold text-slate-700 mb-2">
-        {{ _('What happened today?') }}
-      </label>
-      <textarea
-        id="capture-text"
-        name="text"
-        x-model="captureText"
-        rows="4"
-        class="w-full resize-none border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors bg-slate-50 focus:bg-white leading-relaxed"
-        placeholder="e.g. 'We had pasta for dinner' or 'Diego rode a bike for 30 min' or 'Bought 1kg of oats'"
-      ></textarea>
-      <p class="text-xs text-slate-400 mt-1.5">{{ _('You can mention both Diego and Rocío by name. The AI will figure out who did what.') }}</p>
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wide text-ink-subtle mb-2">
+        {{ _('Or start from one of these') }}
+      </p>
+      <div class="flex flex-wrap gap-2">
+        {% for opener in openers %}
+        {#- `attrs` lleva solo la clave literal de la lista de arriba, nunca dato del
+            request: ver la regla de `attrs` en `components/ui.html`. -#}
+        {{ ui.btn(opener.label, tone='subtle', size='sm', icon=opener.icon, type='button',
+                  attrs='@click="prefillOpener(\'' ~ opener.key ~ '\')"') }}
+        {% endfor %}
+      </div>
     </div>
 
-    <!-- Divider with OR label -->
-    <div class="px-5 py-4 flex items-center gap-3">
-      <div class="flex-1 h-px bg-slate-100"></div>
-      <span class="text-xs font-medium text-slate-400">{{ _('or use voice') }}</span>
-      <div class="flex-1 h-px bg-slate-100"></div>
+    {#- ── Voz ────────────────────────────────────────────────────────────────── -#}
+    <div class="flex items-center gap-3" aria-hidden="true">
+      <span class="flex-1 h-px bg-line"></span>
+      <span class="text-xs font-medium text-ink-subtle">{{ _('or say it out loud') }}</span>
+      <span class="flex-1 h-px bg-line"></span>
     </div>
 
-    <!-- Voice input section -->
-    <div class="px-5 pb-5">
-      <div class="bg-slate-50 rounded-xl border border-slate-200 p-4">
-        <div class="flex items-center gap-4">
-
-          <!-- Record button -->
-          <button
-            type="button"
-            @click="toggleRecording()"
-            :class="isRecording ? 'bg-rose-500 hover:bg-rose-600 shadow-rose-200 animate-pulse' : 'bg-brand-500 hover:bg-brand-600 shadow-brand-200'"
-            class="flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500">
-            <svg x-show="!isRecording" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/>
-            </svg>
-            <svg x-show="isRecording" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+    <div class="rounded-card bg-card-alt border border-line p-4">
+      <div class="flex items-center gap-4">
+        <button type="button" @click="toggleRecording()"
+                :aria-pressed="isRecording"
+                aria-label="{{ _('Record a voice note') }}"
+                :class="isRecording ? 'bg-danger-solid animate-pulse' : 'bg-brand-solid'"
+                class="flex-shrink-0 w-12 h-12 rounded-pill flex items-center justify-center text-white shadow-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:ring-brand-500">
+          <span x-show="!isRecording">{{ ic.icon('microphone', 'w-5 h-5') }}</span>
+          <span x-show="isRecording" x-cloak>
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <rect x="6" y="6" width="12" height="12" rx="2"/>
             </svg>
-          </button>
+          </span>
+        </button>
 
-          <div class="flex-1">
-            <p class="text-sm font-medium text-slate-700" x-text="recordingStatus"></p>
-            <p class="text-xs text-slate-400 mt-0.5" x-show="!isRecording && !hasAudio">{{ _('Tap the mic to start recording') }}</p>
-            <p class="text-xs text-slate-400 mt-0.5" x-show="isRecording">{{ _('Recording… tap to stop') }}</p>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-ink" x-text="recordingStatus" x-show="recordingStatus"></p>
+          <p class="text-xs text-ink-muted" x-show="!isRecording && !hasAudio">{{ _('Tap the mic to start.') }}</p>
+          <p class="text-xs text-ink-muted" x-show="isRecording" x-cloak>{{ _('Tap again to stop.') }}</p>
 
-            <!-- Audio playback -->
-            <template x-if="hasAudio && audioURL">
-              <div class="mt-2 flex items-center gap-2">
-                <audio :src="audioURL" controls class="h-8 w-full" style="max-width:200px"></audio>
-                <button type="button" @click="clearAudio()" class="text-xs text-rose-500 hover:text-rose-600 font-medium">{{ _('Remove') }}</button>
-              </div>
-            </template>
-          </div>
+          <template x-if="hasAudio && audioURL">
+            <div class="mt-2 flex items-center gap-2">
+              <audio :src="audioURL" controls class="h-8 w-full" style="max-width:200px"></audio>
+              {{ ui.btn(_('Remove'), tone='ghost', size='sm', icon='trash', type='button',
+                        attrs='@click="clearAudio()"') }}
+            </div>
+          </template>
+        </div>
 
-          <!-- Waveform indicator while recording -->
-          <div x-show="isRecording" class="flex items-end gap-0.5 h-6">
-            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:40%;animation-delay:0ms"></div>
-            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:80%;animation-delay:80ms"></div>
-            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:60%;animation-delay:160ms"></div>
-            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:100%;animation-delay:240ms"></div>
-            <div class="w-1 bg-rose-400 rounded-full animate-bounce" style="height:70%;animation-delay:320ms"></div>
-          </div>
+        {#- Cinco barras que rebotan mientras graba. `aria-hidden`: lo que hay que
+            anunciar es el estado, y eso ya lo dice `recordingStatus`. -#}
+        <div x-show="isRecording" x-cloak class="flex items-end gap-0.5 h-6" aria-hidden="true">
+          {% for height, delay in [(40, 0), (80, 80), (60, 160), (100, 240), (70, 320)] %}
+          <span class="w-1 bg-danger-solid rounded-pill animate-bounce"
+                style="height:{{ height }}%;animation-delay:{{ delay }}ms"></span>
+          {% endfor %}
         </div>
       </div>
     </div>
 
-    <!-- Parse button -->
-    <div class="px-5 pb-5">
-      <button
-        type="button"
-        @click="parseAndPreview()"
-        :disabled="!captureText.trim() && !hasAudio"
-        :class="(!captureText.trim() && !hasAudio) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-brand-600 hover:shadow-lg hover:shadow-brand-300/40'"
-        class="w-full flex items-center justify-center gap-2 bg-brand-500 text-white font-semibold py-3.5 px-6 rounded-xl transition-all shadow-md shadow-brand-200/50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-      >
-        <svg id="parse-spinner" class="animate-spin htmx-indicator w-4 h-4" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/>
-        </svg>
-        {{ _('Parse & Preview') }}
-      </button>
-    </div>
+    {#- ── Parsear ────────────────────────────────────────────────────────────── -#}
+    <button type="button" @click="parseAndPreview()"
+            :disabled="parsing || (!captureText.trim() && !hasAudio)"
+            class="w-full inline-flex items-center justify-center gap-2 py-3.5 px-6 rounded-control
+                   bg-brand-solid text-white text-base font-semibold shadow-md transition-all
+                   hover:brightness-95 focus:outline-none focus-visible:ring-2
+                   focus-visible:ring-offset-2 focus-visible:ring-offset-surface
+                   focus-visible:ring-brand-500 disabled:opacity-50 disabled:pointer-events-none">
+      <span x-show="!parsing">{{ ic.icon('sparkles', 'w-5 h-5') }}</span>
+      <span x-show="parsing" x-cloak class="animate-spin">{{ ic.icon('refresh', 'w-5 h-5') }}</span>
+      <span x-text="parsing ? labels.reading : labels.review"></span>
+    </button>
+  {% endcall %}
+
+  {#- Mientras el `fetch` está en vuelo. Antes esto era una cadena de HTML con un SVG
+      adentro que el JS inyectaba en `#preview-area`; acá es marcado normal que Alpine
+      muestra y esconde. -#}
+  <div x-show="parsing" x-cloak class="mt-5 flex justify-center py-8" role="status">
+    <span class="sr-only">{{ _('Reading what you wrote…') }}</span>
+    <span class="animate-spin text-brand-500" aria-hidden="true">{{ ic.icon('refresh', 'w-6 h-6') }}</span>
   </div>
 
-  <!-- Preview area (HTMX target) -->
+  <div x-show="parseFailed" x-cloak class="mt-5">
+    {{ ui.notice(_('I could not read that. Try again, or shorten it and write it in the box.'),
+                 tone='danger') }}
+  </div>
+
   <div id="preview-area" class="mt-5"></div>
 
 </div>
@@ -152,35 +163,54 @@ function captureApp() {
     audioURL: null,
     audioBlob: null,
     recordingStatus: '',
+    parsing: false,
+    parseFailed: false,
     mediaRecorder: null,
     audioChunks: [],
 
+    // Los textos que el componente escribe en el DOM. Iban cableados en inglés acá
+    // adentro, invisibles para `pybabel extract`; `| tojson` los deja pasar por el
+    // catálogo y además los escapa como literal JS.
+    labels: {
+      review:    {{ _('Review before saving') | tojson }},
+      reading:   {{ _('Reading…') | tojson }},
+      ready:     {{ _('Voice note ready') | tojson }},
+      recording: {{ _('Recording…') | tojson }},
+      micDenied: {{ _('I could not reach the microphone. Allow access and try again.') | tojson }},
+    },
+
+    // Comienzos de frase, no oraciones enteras: la persona la termina, así que un
+    // envío de más nunca puede registrar algo que no pasó. En inglés porque es lo
+    // que matchea el parser de reglas. Es el mismo mapa que consumen los chips de
+    // esta pantalla y el `?prefill=` de las acciones rápidas del Home.
+    prefillMap: {
+      meal:    'We had ',
+      workout: 'I did ',
+      pantry:  'I bought ',
+      weight:  'My weight today is ',
+    },
+
     init() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const prefill = urlParams.get('prefill');
-      // Openers, not full sentences: the user finishes the phrase, so a stray
-      // submit can never record something that did not happen. English because
-      // that is what the rule-based parser matches on.
-      const prefillMap = {
-        meal:    'We had ',
-        workout: 'I did ',
-        pantry:  'I bought ',
-        weight:  'My weight today is ',
-      };
-      if (prefill && prefillMap[prefill] && !this.captureText) {
-        this.captureText = prefillMap[prefill];
-        this.$nextTick(() => {
-          const el = document.getElementById('capture-text');
-          if (!el) return;
-          el.focus();
-          el.setSelectionRange(el.value.length, el.value.length);
-        });
+      const prefill = new URLSearchParams(window.location.search).get('prefill');
+      if (prefill && this.prefillMap[prefill] && !this.captureText) {
+        this.captureText = this.prefillMap[prefill];
+        this.$nextTick(() => this.focusEnd());
       }
     },
 
-    prefillText(text) {
-      this.captureText = text;
-      document.getElementById('capture-text')?.focus();
+    prefillOpener(key) {
+      const opener = this.prefillMap[key];
+      if (!opener) return;
+      this.captureText = opener;
+      this.parseFailed = false;
+      this.$nextTick(() => this.focusEnd());
+    },
+
+    focusEnd() {
+      const el = document.getElementById('capture-text');
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
     },
 
     async toggleRecording() {
@@ -203,15 +233,15 @@ function captureApp() {
           this.audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
           this.audioURL = URL.createObjectURL(this.audioBlob);
           this.hasAudio = true;
-          this.recordingStatus = 'Recording ready';
+          this.recordingStatus = this.labels.ready;
           stream.getTracks().forEach(t => t.stop());
         };
         this.mediaRecorder.start(200);
         this.isRecording = true;
-        this.recordingStatus = 'Recording…';
+        this.recordingStatus = this.labels.recording;
       } catch (err) {
         console.error('Microphone error:', err);
-        window.showToast('Could not access microphone. Please allow microphone permission.', 'error');
+        window.showToast(this.labels.micDenied, 'error');
       }
     },
 
@@ -231,12 +261,12 @@ function captureApp() {
     },
 
     async parseAndPreview() {
-      if (!this.captureText.trim() && !this.hasAudio) return;
+      if (this.parsing || (!this.captureText.trim() && !this.hasAudio)) return;
 
       const previewArea = document.getElementById('preview-area');
-      if (previewArea) {
-        previewArea.innerHTML = '<div class="flex justify-center py-8"><svg class="animate-spin w-6 h-6 text-brand-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
-      }
+      if (previewArea) previewArea.innerHTML = '';
+      this.parsing = true;
+      this.parseFailed = false;
 
       try {
         const formData = new FormData();
@@ -251,20 +281,28 @@ function captureApp() {
           formData.append('text', this.captureText);
         }
 
-        const resp = await fetch(endpoint, {
-          method: 'POST',
-          body: formData,
-        });
-        const html = await resp.text();
-        if (previewArea) previewArea.innerHTML = html;
+        const resp = await fetch(endpoint, { method: 'POST', body: formData });
 
+        // Mirar `resp.ok` **antes** de inyectar. Al revés, un texto de más de 2000
+        // caracteres pegaba el `{"detail": [...]}` del 422 de FastAPI en la página.
         if (!resp.ok) {
-          window.showToast('Could not parse the input. Please try again.', 'error');
+          this.parseFailed = true;
+          return;
+        }
+
+        const html = await resp.text();
+        if (previewArea) {
+          previewArea.innerHTML = html;
+          // HTMX solo cablea los nodos que insertó él. Sin esto, el Confirmar y el
+          // Descartar del preview son botones sin ningún handler.
+          window.htmx?.process(previewArea);
         }
       } catch (err) {
         console.error('Parse error:', err);
-        window.showToast('Something went wrong. Please try again.', 'error');
+        this.parseFailed = true;
         if (previewArea) previewArea.innerHTML = '';
+      } finally {
+        this.parsing = false;
       }
     },
   };

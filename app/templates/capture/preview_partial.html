@@ -1,112 +1,210 @@
+{#
+  Lo que el parser entendió, antes de guardarlo. Es la única pantalla de la app donde
+  el usuario confirma escritura, así que lo que muestre tiene que ser exactamente lo
+  que se va a escribir.
+
+  Cuatro cosas que antes no cumplía:
+
+  1. **Atribución.** Imprimía la clave cruda del intent (`{{ user_key|capitalize }}` →
+     "Rocio", "Both") y esa clave no era necesariamente la persona a la que el
+     servicio le iba a anotar el dato: `user_map` estaba keyeado con acento y la clave
+     venía sin él, así que la comida de Rocío se guardaba a nombre de Diego. Ahora esta
+     plantilla **no resuelve claves**: recibe personas ya resueltas en
+     `intent_targets`, que sale del mismo `NLPService.resolve_intent_targets` con el
+     que `confirm_event` decide a quién le escribe. Es la única forma de que la
+     pantalla de consentimiento no pueda prometer algo distinto de lo que se guarda.
+  2. **Lo que no se puede atribuir se dice.** Una clave que no es de nadie del hogar,
+     o un `both` en un pesaje (un solo número no se reparte entre dos personas), no se
+     guarda — y acá se avisa **antes** de confirmar, en vez de mostrar avatares de dos
+     personas sobre una escritura que va a una sola o a ninguna.
+  3. **El porcentaje.** Decía "Confianza: 72%" pelado, que se lee como "72% de que
+     esto te haga bien". Es cuánto confía en *haber entendido la frase*, y ahora lo
+     dice con palabras y con una leyenda.
+  4. **El fallback.** Un `intent_type` fuera del mapa volcaba el JSON del intent en
+     pantalla. Ahora hay una tarjeta que se puede leer, y `mixed` — que es un tipo
+     real, no un imprevisto — tiene su propio texto.
+
+  Se elimina también el `x-data="{ editing: false }"` de cada tarjeta: nada lo leía
+  nunca — la edición inline de los intents queda explícitamente fuera de v3.
+#}
+
+{#- `targets` es `{clave del intent: [personas]}`, ya resuelto en Python. Una lista
+    vacía es "esta clave no se puede atribuir"; un dict vacío es "este intent no lleva
+    persona" (el stock es del hogar, no de nadie).
+
+    `show_people=false` lo usa la comida, que muestra a cada quien al lado de lo que
+    comió y no necesita repetir la misma fila de avatares abajo. -#}
+{%- macro intent_attribution(targets, intent_type, show_people=true) -%}
+  {%- set people = targets.values() | sum(start=[]) | unique | list -%}
+  {%- if people and show_people -%}
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs text-ink-subtle">{{ _('For') }}</span>
+      {% for person in people %}{{ ui.attribution(person) }}{% endfor %}
+    </div>
+  {%- elif not people and targets -%}
+    {#- Hubo claves y ninguna resolvió: esto no se va a guardar, y hay que decirlo
+        acá, que es donde todavía se puede corregir la frase. -#}
+    <p class="flex items-start gap-1.5 text-xs text-warn-ink">
+      {{ ic.icon('warning', 'w-3.5 h-3.5 mt-px flex-shrink-0') }}
+      <span>{{ _('I could not tell whose this is, so I will not save it. Name the person and try again.') }}</span>
+    </p>
+  {%- elif intent_type in ('add_stock', 'consume_stock') -%}
+    <p class="flex items-center gap-1.5 text-xs text-ink-subtle">
+      {{ ic.icon('pantry', 'w-3.5 h-3.5') }}{{ _('Shared pantry') }}
+    </p>
+  {%- endif -%}
+{%- endmacro -%}
+
+
 {% if error %}
-<div class="rounded-xl bg-rose-50 border border-rose-200 p-4 text-rose-700 text-sm">
-  <p class="font-semibold">{{ _('Could not parse input') }}</p>
-  <p>{{ error }}</p>
-</div>
+{{ ui.notice(error, tone='danger', title=_('Could not read that')) }}
+
 {% elif nlp_event and intents %}
 <div class="space-y-4" id="nlp-preview">
-  <div class="flex items-center gap-2 text-sm text-slate-500">
-    <span class="inline-flex items-center gap-1 rounded-full bg-indigo-100 text-indigo-700 px-2.5 py-0.5 text-xs font-medium">
-      {{ nlp_event.parser_layer|upper if nlp_event.parser_layer else "PARSED" }}
-    </span>
-    {% if nlp_event.parse_confidence %}
-    <span>{{ _('Confidence:') }} <strong>{{ (nlp_event.parse_confidence * 100)|int }}%</strong></span>
-    {% endif %}
-    {% if nlp_event.input_type == "audio" and nlp_event.transcription %}
-    <span class="text-slate-400">· {{ _('Transcribed:') }} "{{ nlp_event.transcription[:80] }}{% if nlp_event.transcription|length > 80 %}…{% endif %}"</span>
-    {% endif %}
-  </div>
 
-  <div class="text-sm font-medium text-slate-700">{{ _("Here's what I understood:") }}</div>
+  {#- Cabecera: qué tan bien entendió, cómo lo entendió, y la leyenda que aclara de
+      qué habla el porcentaje. La leyenda no es decorativa: es lo que evita que el
+      número se lea como un juicio sobre la comida. -#}
+  {% set confidence = nlp_event.parse_confidence or 0 %}
+  {% call ui.card(padding='p-4', class='space-y-2') %}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ ui.badge(
+           dm.parse_confidence_label(confidence) ~ ' · ' ~ (confidence * 100) | int ~ '%',
+           tone='ok' if confidence >= 0.8 else ('warn' if confidence >= 0.5 else 'danger'),
+           icon='sparkles', size='sm') }}
+      {{ ui.badge(dm.parser_layer_label(nlp_event.parser_layer), tone='neutral', size='sm') }}
+    </div>
+    <p class="text-xs text-ink-muted">
+      {{ _('That percentage is how sure I am that I read your sentence right — not whether the numbers are correct. Have a look before saving.') }}
+    </p>
+    {% if nlp_event.input_type == 'audio' and nlp_event.transcription %}
+    <p class="flex items-start gap-1.5 text-xs text-ink-subtle">
+      {{ ic.icon('microphone', 'w-3.5 h-3.5 mt-0.5 flex-shrink-0') }}
+      <span>{{ _('Heard:') }} “{{ nlp_event.transcription[:120] }}{% if nlp_event.transcription | length > 120 %}…{% endif %}”</span>
+    </p>
+    {% endif %}
+  {% endcall %}
 
+  <h2 class="text-sm font-semibold text-ink">{{ _("Here's what I understood") }}</h2>
+
+  {% set all_targets = intent_targets or [] %}
   {% for intent in intents %}
-  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" x-data="{ editing: false }">
-    <div class="flex items-start justify-between gap-2">
-      <div class="flex-1">
-        {% set type = intent.intent_type %}
-        <span class="inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold mb-2
-          {% if type == 'log_meal' %}bg-emerald-100 text-emerald-700
-          {% elif type == 'log_workout' %}bg-blue-100 text-blue-700
-          {% elif type == 'log_body_metric' %}bg-violet-100 text-violet-700
-          {% elif type == 'add_stock' %}bg-amber-100 text-amber-700
-          {% elif type == 'consume_stock' %}bg-orange-100 text-orange-700
-          {% elif type == 'update_preference' %}bg-pink-100 text-pink-700
-          {% else %}bg-slate-100 text-slate-700{% endif %}">
-          {{ type|replace('_', ' ')|title }}
-        </span>
+  {% set type = intent.intent_type %}
+  {#- Las personas de *este* intent, alineadas por posición con `intents`. -#}
+  {% set targets = all_targets[loop.index0] if all_targets | length > loop.index0 else {} %}
+  {% call ui.card(padding='p-4') %}
+    <div class="flex items-start gap-3">
+      {{ dm.intent_icon(type) }}
+      <div class="flex-1 min-w-0 space-y-1.5">
+        {{ dm.intent_badge(type) }}
 
-        {# Render a human-readable summary per intent type #}
         {% if type == 'add_stock' %}
-          <p class="text-slate-800 text-sm">
-            {{ _('Adding to pantry:') }}
+          <p class="text-sm text-ink">
             {% for item in intent.get('items', []) %}
-            <strong>{{ item.get('quantity', '?') }} {{ item.get('unit', 'unit') }} {{ item.get('food_name', item.get('name', '?')) }}</strong>{% if not loop.last %}, {% endif %}
+            <strong class="font-semibold">{{ item.get('food_name', item.get('name', '?')) }}</strong>
+            <span class="text-ink-muted">{{ dm.quantity(item.get('quantity'), item.get('unit')) }}</span>{% if not loop.last %}<span class="text-ink-subtle"> · </span>{% endif %}
+            {% endfor %}
+          </p>
+
+        {% elif type == 'consume_stock' %}
+          <p class="text-sm text-ink">
+            {% for item in intent.get('items', []) %}
+            <strong class="font-semibold">{{ item.get('food_name', item.get('name', '?')) }}</strong>
+            <span class="text-ink-muted">{{ dm.quantity(item.get('quantity'), item.get('unit')) }}</span>{% if not loop.last %}<span class="text-ink-subtle"> · </span>{% endif %}
             {% endfor %}
           </p>
 
         {% elif type == 'log_meal' %}
-          <p class="text-slate-800 text-sm">
-            {{ _('Logging') }} <strong>{{ intent.get('meal_type', 'meal') }}</strong>:
-            {% for user_key, items in intent.get('items_per_user', {}).items() %}
-            <span class="font-medium capitalize">{{ user_key }}</span>
-            {% for item in items %}
-            <strong>{{ item.get('food_name', '?') }}</strong>{% if item.get('qty') %} ({{ item.qty }}{% if item.get('unit') %} {{ item.unit }}{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
-            {% endfor %}{% if not loop.last %}; {% endif %}
-            {% endfor %}
-          </p>
+          <p class="text-sm text-ink-muted">{{ dm.meal_type_label(intent.get('meal_type')) }}{% if intent.get('context') %} · {{ dm.meal_context_label(intent.get('context')) }}{% endif %}</p>
+          {#- Cada grupo de la comida con **su** gente al lado. El `else` imprime la
+              clave cruda a propósito: cuando no se resolvió a nadie, la pantalla no
+              tiene que afirmar una persona (antes decía "Los dos" para *cualquier*
+              clave que no encontrara, incluido un nombre ajeno al hogar). -#}
+          {% for user_key, items in intent.get('items_per_user', {}).items() %}
+          {% set eaters = targets.get(user_key, []) %}
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            {% if eaters %}
+              {% for eater in eaters %}{{ ui.attribution(eater, size='xs') }}{% endfor %}
+            {% else %}
+              <span class="font-semibold text-warn-ink">{{ user_key }}</span>
+            {% endif %}
+            <span class="text-ink">{% for item in items %}{{ item.get('food_name', '?') }}{% if item.get('qty') %} <span class="text-ink-muted">({{ dm.quantity(item.qty, item.get('unit')) }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+          </div>
+          {% endfor %}
 
         {% elif type == 'log_workout' %}
-          <p class="text-slate-800 text-sm">
-            {{ _('Logging workout') }}: <strong>{{ intent.get('workout_type', 'workout') }}</strong>
-            {% if intent.get('duration_minutes') %}({{ intent.duration_minutes }} {{ _('min') }}){% endif %}
-            {% if intent.get('location') %}@ <strong>{{ intent.location }}</strong>{% endif %}
+          <p class="text-sm text-ink">
+            <strong class="font-semibold">{{ dm.workout_type_label(intent.get('workout_type')) }}</strong>
+            {% if intent.get('duration_minutes') %}<span class="text-ink-muted">· {{ intent.duration_minutes }} {{ _('min') }}</span>{% endif %}
+            {% if intent.get('location') %}<span class="text-ink-muted">· {{ intent.location }}</span>{% endif %}
           </p>
           {% if intent.get('exercises') %}
-          <p class="text-xs text-slate-500 mt-1">{{ intent.exercises|map(attribute='name')|join(', ') if intent.exercises and intent.exercises[0] is mapping else intent.exercises|join(', ') }}</p>
+          <p class="text-xs text-ink-muted">
+            {% for ex in intent.exercises %}{{ ex.get('name', '?') if ex is mapping else ex }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </p>
           {% endif %}
 
         {% elif type == 'log_body_metric' %}
-          <p class="text-slate-800 text-sm">
-            {{ _('Logging body metric') }} — <span class="font-medium capitalize">{{ intent.get('user_key', 'you') }}</span>:
-            {% if intent.get('weight_kg') %}<strong>{{ intent.weight_kg }} {{ _('kg') }}</strong>{% endif %}
-            {% if intent.get('body_fat_pct') %} · <strong>{{ intent.body_fat_pct }}% {{ _('Body Fat') }}</strong>{% endif %}
-            {% if intent.get('waist_cm') %} · <strong>{{ intent.waist_cm }} {{ _('cm') }} {{ _('Waist') }}</strong>{% endif %}
-          </p>
+          <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm text-ink">
+            {% if intent.get('weight_kg') %}<span><strong class="font-semibold">{{ intent.weight_kg }}</strong> {{ _('kg') }}</span>{% endif %}
+            {% if intent.get('body_fat_pct') %}<span><strong class="font-semibold">{{ intent.body_fat_pct }}%</strong> {{ _('body fat') }}</span>{% endif %}
+            {% if intent.get('waist_cm') %}<span><strong class="font-semibold">{{ intent.waist_cm }}</strong> {{ _('cm waist') }}</span>{% endif %}
+            {% if intent.get('sleep_hours') %}<span><strong class="font-semibold">{{ intent.sleep_hours }}</strong> {{ _('h of sleep') }}</span>{% endif %}
+          </div>
 
         {% elif type == 'update_preference' %}
-          <p class="text-slate-800 text-sm">
-            {{ _('Setting preference') }} — <span class="font-medium capitalize">{{ intent.get('user_key', 'you') }}</span>:
-            <strong>{{ intent.get('preference_signal', 'signal') }}</strong> — {{ intent.get('item_name', '?') }}
+          <p class="flex flex-wrap items-center gap-2 text-sm text-ink">
+            {{ dm.preference_signal_badge(intent.get('preference_signal', intent.get('signal'))) }}
+            <span class="font-semibold">{{ intent.get('item_name', '?') }}</span>
+            <span class="text-xs text-ink-subtle">{{ dm.preference_type_label(intent.get('item_type')) }}</span>
           </p>
 
+        {% elif type == 'mixed' %}
+          {#- `mixed` es un tipo real (`app/nlp/rules.py`, y el adaptador del LLM manda
+              ahí lo que no reconoce), y el badge ya dice "varias cosas a la vez": el
+              texto genérico de abajo lo contradecía. Esto no se guarda. -#}
+          <p class="text-sm text-ink-muted">
+            {{ _('I heard more than one thing here and could not separate them. Nothing will be saved from this part — try logging them one at a time.') }}
+          </p>
+          {% if intent.get('raw_span') %}
+          <p class="text-xs text-ink-subtle italic">“{{ intent.raw_span }}”</p>
+          {% endif %}
+
         {% else %}
-          <p class="text-slate-500 text-sm italic">{{ intent | tojson }}</p>
+          {#- Antes esta rama volcaba `{{ intent | tojson }}`: el dict del parser, con
+              sus claves internas, en la cara del usuario. El `raw_span` es el pedazo
+              de *su* frase que originó este intent, que sí le dice algo. -#}
+          <p class="text-sm text-ink-muted">
+            {{ _('I picked something up here but could not tell what to do with it. Discard and try saying it another way.') }}
+          </p>
+          {% if intent.get('raw_span') %}
+          <p class="text-xs text-ink-subtle italic">“{{ intent.raw_span }}”</p>
+          {% endif %}
         {% endif %}
+
+        {{ intent_attribution(targets, type, show_people=(type != 'log_meal')) }}
       </div>
     </div>
-  </div>
+  {% endcall %}
   {% endfor %}
 
-  <div class="flex gap-3 pt-2">
-    <button
-      hx-post="/capture/confirm/{{ nlp_event.id }}"
-      hx-target="#nlp-preview"
-      hx-swap="outerHTML"
-      class="flex-1 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
-      {{ _('✓ Confirm & Save') }}
-    </button>
-    <button
-      hx-post="/capture/discard/{{ nlp_event.id }}"
-      class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-      {{ _('Discard') }}
-    </button>
+  <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
+    {#- El Discard no tenía `hx-target` ni `hx-swap`: caía en el default de HTMX
+        (`innerHTML` sobre el botón mismo), así que el fragmento de descarte se
+        renderizaba adentro del botón que lo disparó y el preview quedaba entero
+        debajo. Los dos botones apuntan al mismo lugar que reemplazan. -#}
+    {{ ui.btn(_('Discard'), tone='subtle', icon='x',
+              attrs='hx-post="/capture/discard/' ~ nlp_event.id ~ '" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
+    {{ ui.btn(_('Confirm & Save'), tone='primary', icon='check', block=true, class='sm:flex-1',
+              attrs='hx-post="/capture/confirm/' ~ nlp_event.id ~ '" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
   </div>
 
-  <p class="text-xs text-slate-400">{{ _('You said:') }} "{{ nlp_event.original_input }}"</p>
+  <p class="text-xs text-ink-subtle">{{ _('You said:') }} “{{ nlp_event.original_input }}”</p>
 </div>
 
 {% else %}
-<div class="text-center py-8 text-slate-400 text-sm">
-  <p>{{ _('No intents detected. Try rephrasing your input.') }}</p>
-</div>
+{{ ui.empty_state(
+     title=_('I could not make anything of that'),
+     text=_('Try naming what happened and who was involved — for example, who ate what, or how long the workout was.'),
+     icon='question', tone='warn') }}
 {% endif %}

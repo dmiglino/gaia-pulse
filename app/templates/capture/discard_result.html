@@ -1,4 +1,11 @@
-<div class="rounded-xl bg-slate-50 border border-slate-200 p-4 text-center space-y-2">
-  <p class="text-sm text-slate-600">{{ _('Input discarded. Nothing was saved.') }}</p>
-  <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('← Log something new') }}</a>
-</div>
+{#- `discarded` es el retorno de `NLPService.discard_event`, que es `False` cuando el
+    evento no existe o es de otra persona. Antes la ruta lo tiraba y esta plantilla
+    afirmaba el descarte siempre — decía "no se guardó nada" sobre algo que nunca
+    tocó. Ahora las dos respuestas son distintas. -#}
+{% if discarded %}
+{% call ui.notice(_('Nothing was saved.'), tone='info', icon='trash', title=_('Discarded')) %}
+  {{ ui.btn(_('Log something else'), href='/capture/', tone='subtle', size='sm', icon='plus') }}
+{% endcall %}
+{% else %}
+{{ ui.notice(_('That capture is no longer available.'), tone='danger') }}
+{% endif %}

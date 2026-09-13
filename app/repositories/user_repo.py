@@ -14,7 +14,14 @@ class UserRepository(BaseRepository[User]):
         return self.db.scalar(stmt)
 
     def get_household_users(self, household_id: int) -> list[User]:
-        stmt = select(User).where(User.household_id == household_id, User.is_active.is_(True))
+        #: `ORDER BY` explícito: sin él el orden de las filas es el que quiera el motor,
+        #: y este listado alimenta selects de persona y la resolución de los intents del
+        #: NLP. Un orden que cambia entre corridas es un dato distinto cada vez.
+        stmt = (
+            select(User)
+            .where(User.household_id == household_id, User.is_active.is_(True))
+            .order_by(User.id)
+        )
         return list(self.db.scalars(stmt).all())
 
     def get_by_name_key(self, name_key: str, household_id: int) -> User | None:

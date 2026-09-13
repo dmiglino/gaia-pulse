@@ -6,6 +6,7 @@ and the LLM adapter (Layer 2).  All models use Python 3.12 type hints.
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,24 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 UserKey = Literal["diego", "rocio", "both"]
+
+
+def normalize_user_key(name: str) -> str:
+    """Reduce a person's name to the key the intents speak in.
+
+    `UserKey` is accent-free ASCII (`"rocio"`), and `rules.py` emits exactly that
+    when the text names her. But `User.name` in the database is `"Rocío"`, so a map
+    keyed on the raw first name (`"rocío"`) never matched the key the parser wrote
+    — and `_execute_intent` then silently attributed her meal to whoever came first
+    in the household, or fell back to the person who typed the sentence.
+
+    Both sides of that lookup go through here, so the key is the same string on
+    each: first name, lowercased, combining marks dropped.
+    """
+    first = name.strip().split()[0] if name.strip() else ""
+    decomposed = unicodedata.normalize("NFKD", first.lower())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
 
 PreferenceSignal = Literal["likes", "dislikes", "impossible", "avoid", "preferred"]
 

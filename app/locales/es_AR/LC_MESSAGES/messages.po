@@ -1311,3 +1311,282 @@ msgstr "Respuesta guardada."
 
 msgid "For the household"
 msgstr "Para la casa"
+
+# ── Captura en lenguaje natural (v3, fase 3) ──
+# La pantalla del flujo central y su preview de confirmación. Los textos del JS del
+# componente entran acá porque pasan por `_('…') | tojson`, que sí es extraíble.
+
+msgid "Tell me what happened in your own words — I work out the rest."
+msgstr "Contame qué pasó con tus palabras — del resto me encargo yo."
+
+msgid "What happened?"
+msgstr "¿Qué pasó?"
+
+msgid "Name %(names)s and I will work out who did what."
+msgstr "Nombrá a %(names)s y yo deduzco quién hizo qué."
+
+msgid "e.g. we had pasta for dinner · I ran for 30 min · bought 1 kg of oats"
+msgstr "ej. cenamos fideos · corrí 30 min · compré 1 kg de avena"
+
+msgid "Or start from one of these"
+msgstr "O arrancá por una de estas"
+
+msgid "or say it out loud"
+msgstr "o decilo en voz alta"
+
+msgid "Record a voice note"
+msgstr "Grabar una nota de voz"
+
+msgid "Tap the mic to start."
+msgstr "Tocá el micrófono para empezar."
+
+msgid "Tap again to stop."
+msgstr "Tocá de nuevo para parar."
+
+msgid "Reading what you wrote…"
+msgstr "Leyendo lo que escribiste…"
+
+msgid "I could not read that. Try again, or shorten it and write it in the box."
+msgstr "No pude leer eso. Probá de nuevo, o acortalo y escribilo en el cuadro."
+
+msgid "Review before saving"
+msgstr "Revisar antes de guardar"
+
+msgid "Reading…"
+msgstr "Leyendo…"
+
+msgid "Voice note ready"
+msgstr "Nota de voz lista"
+
+msgid "I could not reach the microphone. Allow access and try again."
+msgstr "No pude acceder al micrófono. Permití el acceso y probá de nuevo."
+
+# ── Preview: qué se entendió y a quién se le va a anotar ──
+
+msgid "That percentage is how sure I am that I read your sentence right — not whether the numbers are correct. Have a look before saving."
+msgstr "Ese porcentaje es qué tan seguro estoy de haber entendido tu frase — no de que los números estén bien. Mirá antes de guardar."
+
+msgid "Understood clearly"
+msgstr "Se entendió bien"
+
+msgid "Mostly understood"
+msgstr "Se entendió casi todo"
+
+msgid "Worth checking"
+msgstr "Conviene revisarlo"
+
+msgid "Read from the wording"
+msgstr "Leído de las palabras"
+
+msgid "Read by the assistant"
+msgstr "Leído por el asistente"
+
+msgid "Wording plus assistant"
+msgstr "Palabras más asistente"
+
+msgid "Heard:"
+msgstr "Escuché:"
+
+msgid "For"
+msgstr "Para"
+
+msgid "Both of you"
+msgstr "Los dos"
+
+msgid "Shared pantry"
+msgstr "Despensa compartida"
+
+msgid "body fat"
+msgstr "de grasa corporal"
+
+msgid "cm waist"
+msgstr "cm de cintura"
+
+msgid "h of sleep"
+msgstr "h de sueño"
+
+msgid "Purchase"
+msgstr "Compra"
+
+msgid "Used from the pantry"
+msgstr "Usado de la despensa"
+
+msgid "Preference"
+msgstr "Preferencia"
+
+msgid "Several things at once"
+msgstr "Varias cosas a la vez"
+
+msgid "Something else"
+msgstr "Otra cosa"
+
+msgid "Confirm & Save"
+msgstr "Confirmar y guardar"
+
+msgid "Could not read that"
+msgstr "No pude leer eso"
+
+msgid "I picked something up here but could not tell what to do with it. Discard and try saying it another way."
+msgstr "Acá capté algo pero no supe qué hacer con eso. Descartalo y probá decirlo de otra manera."
+
+msgid "I could not make anything of that"
+msgstr "No pude sacar nada de eso"
+
+msgid "Try naming what happened and who was involved — for example, who ate what, or how long the workout was."
+msgstr "Probá nombrando qué pasó y quién estuvo — por ejemplo, quién comió qué, o cuánto duró el entrenamiento."
+
+# ── Resultado de guardar o descartar ──
+
+msgid "Saved"
+msgstr "Guardado"
+
+msgid "Saved, with some gaps"
+msgstr "Guardado, con algunos huecos"
+
+msgid "%(num)d thing recorded."
+msgid_plural "%(num)d things recorded."
+msgstr[0] "%(num)d cosa registrada."
+msgstr[1] "%(num)d cosas registradas."
+
+msgid "%(num)d part could not be saved."
+msgid_plural "%(num)d parts could not be saved."
+msgstr[0] "%(num)d parte no se pudo guardar."
+msgstr[1] "%(num)d partes no se pudieron guardar."
+
+msgid "%(num)d item added to the pantry."
+msgid_plural "%(num)d items added to the pantry."
+msgstr[0] "%(num)d ítem agregado a la despensa."
+msgstr[1] "%(num)d ítems agregados a la despensa."
+
+msgid "%(num)d item taken from the pantry."
+msgid_plural "%(num)d items taken from the pantry."
+msgstr[0] "%(num)d ítem sacado de la despensa."
+msgstr[1] "%(num)d ítems sacados de la despensa."
+
+msgid "logged for %(num)d person."
+msgid_plural "logged for %(num)d people."
+msgstr[0] "registrado para %(num)d persona."
+msgstr[1] "registrado para %(num)d personas."
+
+msgid "saved for %(name)s."
+msgstr "guardado para %(name)s."
+
+msgid "I will keep it in mind for suggestions."
+msgstr "Lo voy a tener en cuenta para las sugerencias."
+
+msgid "nothing to do with this one."
+msgstr "nada que hacer con esto."
+
+msgid "not saved. Try logging this one on its own."
+msgstr "no se guardó. Probá registrar esto solo."
+
+msgid "I could not find anything to save in that. Nothing was written."
+msgstr "No encontré nada para guardar ahí. No se escribió nada."
+
+msgid "Log something else"
+msgstr "Registrar otra cosa"
+
+msgid "Back to today"
+msgstr "Volver a hoy"
+
+msgid "Discarded"
+msgstr "Descartado"
+
+msgid "Nothing was saved."
+msgstr "No se guardó nada."
+
+# ── Respuestas de las rutas de captura (camino sin JS y errores) ──
+
+msgid "That capture is no longer available."
+msgstr "Esa captura ya no está disponible."
+
+msgid "Nothing to save — nothing was understood."
+msgstr "Nada para guardar — no se entendió nada."
+
+msgid "Saved."
+msgstr "Guardado."
+
+msgid "Some of it could not be saved."
+msgstr "Parte de eso no se pudo guardar."
+
+msgid "Discarded. Nothing was saved."
+msgstr "Descartado. No se guardó nada."
+
+# ── Lo que no se puede atribuir, y lo que no se guardó ──
+
+msgid "I could not tell whose this is, so I will not save it. Name the person and try again."
+msgstr "No pude saber de quién es esto, así que no lo voy a guardar. Nombrá a la persona y probá de nuevo."
+
+msgid "I heard more than one thing here and could not separate them. Nothing will be saved from this part — try logging them one at a time."
+msgstr "Acá escuché más de una cosa y no pude separarlas. De esta parte no se va a guardar nada — probá registrarlas de a una."
+
+msgid "Nothing was saved"
+msgstr "No se guardó nada"
+
+msgid "None of it could be saved."
+msgstr "Nada de eso se pudo guardar."
+
+msgid "I read the sentence, but there was nothing in it I could record."
+msgstr "Leí la frase, pero no había nada en ella que pudiera registrar."
+
+msgid "not saved: I could not tell whose this is."
+msgstr "no se guardó: no pude saber de quién es esto."
+
+msgid "I could not hear that. Try recording again, or write it instead."
+msgstr "No pude escuchar eso. Probá grabar de nuevo, o escribilo."
+
+msgid "None of that could be saved."
+msgstr "Nada de eso se pudo guardar."
+
+# ── Perfil: niveles de actividad y los rótulos de sus campos ──
+# Los cinco niveles y sus glosas los comparten el perfil y el paso 3 del
+# onboarding (`dm.activity_level_label` / `dm.activity_level_hint`). "Sedentary"
+# y "Very active" ya estaban más arriba.
+
+msgid "Light"
+msgstr "Liviano"
+
+msgid "Moderate"
+msgstr "Moderado"
+
+msgid "Active"
+msgstr "Activo"
+
+msgid "Not set"
+msgstr "Sin definir"
+
+msgid "Desk job, little walking"
+msgstr "Trabajo de escritorio, casi sin caminar"
+
+msgid "Some walking, 1 workout a week"
+msgstr "Algo de caminata, 1 entrenamiento por semana"
+
+msgid "2 to 3 workouts a week"
+msgstr "2 a 3 entrenamientos por semana"
+
+msgid "4 to 5 workouts a week"
+msgstr "4 a 5 entrenamientos por semana"
+
+msgid "Daily training or physical job"
+msgstr "Entrenamiento diario o trabajo físico"
+
+msgid "Weight goal"
+msgstr "Peso objetivo"
+
+msgid "Leave the target empty if you just want to keep track."
+msgstr "Dejá el objetivo vacío si solo querés llevar el registro."
+
+msgid "Dietary restrictions"
+msgstr "Restricciones alimentarias"
+
+msgid "Separate with commas. Suggestions with these are filtered out, never just ranked lower."
+msgstr "Separalas con comas. Las sugerencias que las incluyan se descartan, no bajan de puesto."
+
+msgid "Impossible activities"
+msgstr "Actividades imposibles"
+
+msgid "Separate with commas. These will never be suggested."
+msgstr "Separalas con comas. Estas nunca se van a sugerir."
+
+msgid "Profile saved."
+msgstr "Perfil guardado."

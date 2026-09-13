@@ -1,8 +1,12 @@
 """Tests for NLPService: confirm/discard flow, edge cases, intent execution."""
+
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.body_metric import BodyMetricLog
 from app.models.household import Household
+from app.models.meal import MealParticipant
 from app.models.nlp import NLPIngestionEvent
 from app.models.user import User
 from app.services.nlp_service import NLPService
@@ -33,9 +37,7 @@ class TestConfirmEvent:
 
         svc = NLPService(db)
         # Rocío tries to confirm Diego's event
-        result = svc.confirm_event(
-            event_id=event.id, user_id=rocio.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=rocio.id, household_id=household.id)
         assert "error" in result
 
     def test_confirm_empty_intents_discards_event(
@@ -53,9 +55,7 @@ class TestConfirmEvent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
         # Should not be treated as success — notice key explains it
         assert result.get("notice") is not None
@@ -86,9 +86,7 @@ class TestConfirmEvent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
         assert result.get("success") is True
         assert len(result["results"]) == 1
@@ -121,14 +119,17 @@ class TestConfirmEvent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
         assert result.get("success") is True
         db.refresh(event)
         assert event.status == "confirmed"
         assert event.responded_at is not None
+
+        #: Y la fila, que es el punto: el test miraba solo `status`, así que pasaba
+        #: igual si el pesaje no se escribía nunca o se le escribía a otra persona.
+        log = db.scalars(select(BodyMetricLog)).one()
+        assert (log.user_id, log.weight_kg) == (diego.id, 82.0)
 
     def test_confirm_with_partial_errors_reports_them(
         self, db: Session, diego: User, household: Household
@@ -159,9 +160,7 @@ class TestConfirmEvent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
         # Both intents processed; first succeeds, second is "skipped" (not error)
         assert len(result["results"]) == 2
@@ -170,9 +169,7 @@ class TestConfirmEvent:
 
 
 class TestDiscardEvent:
-    def test_discard_marks_event_discarded(
-        self, db: Session, diego: User
-    ) -> None:
+    def test_discard_marks_event_discarded(self, db: Session, diego: User) -> None:
         event = NLPIngestionEvent(
             user_id=diego.id,
             input_type="text",
@@ -191,9 +188,7 @@ class TestDiscardEvent:
         assert event.status == "discarded"
         assert event.responded_at is not None
 
-    def test_discard_wrong_user_returns_false(
-        self, db: Session, diego: User, rocio: User
-    ) -> None:
+    def test_discard_wrong_user_returns_false(self, db: Session, diego: User, rocio: User) -> None:
         event = NLPIngestionEvent(
             user_id=diego.id,
             input_type="text",
@@ -211,9 +206,7 @@ class TestDiscardEvent:
         db.refresh(event)
         assert event.status == "pending_confirmation"  # unchanged
 
-    def test_discard_nonexistent_event_returns_false(
-        self, db: Session, diego: User
-    ) -> None:
+    def test_discard_nonexistent_event_returns_false(self, db: Session, diego: User) -> None:
         svc = NLPService(db)
         ok = svc.discard_event(event_id=999999, user_id=diego.id)
         assert ok is False
@@ -246,9 +239,7 @@ class TestLogMealIntent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
         assert result.get("success") is True
         intent_result = result["results"][0]["result"]
@@ -257,7 +248,12 @@ class TestLogMealIntent:
     def test_meal_empty_items_per_user_skips_gracefully(
         self, db: Session, diego: User, household: Household
     ) -> None:
-        """Empty items_per_user should not crash and should return 0 participants."""
+        """Empty items_per_user should not crash, and must not report a save.
+
+        Devolvía ``{"participants": 0}``, que la pantalla de resultado leía como un
+        intent que escribió: tilde verde y "1 cosa registrada" sobre una comida que
+        no existe. Un intent que no tiene qué escribir se declara salteado.
+        """
         event = NLPIngestionEvent(
             user_id=diego.id,
             input_type="text",
@@ -278,10 +274,10 @@ class TestLogMealIntent:
         db.flush()
 
         svc = NLPService(db)
-        result = svc.confirm_event(
-            event_id=event.id, user_id=diego.id, household_id=household.id
-        )
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
 
-        # Event processed but 0 participants logged — no crash
+        # Event processed but nothing logged — no crash, and no claim of a save
         assert result["results"][0]["status"] == "ok"
-        assert result["results"][0]["result"]["participants"] == 0
+        assert result["results"][0]["result"] == {"skipped": "log_meal"}
+        assert result["saved_count"] == 0
+        assert list(db.scalars(select(MealParticipant)).all()) == []

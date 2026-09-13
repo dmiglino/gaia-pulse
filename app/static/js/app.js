@@ -154,18 +154,45 @@ document.addEventListener('htmx:afterRequest', function () {
 });
 
 // ─── Eventos globales de HTMX ────────────────────────────────────────────────
-document.addEventListener('htmx:afterRequest', function (evt) {
-  const xhr = evt.detail.xhr;
-  if (xhr.status >= 400) {
-    let msg = 'Something went wrong.';
-    try {
-      msg = JSON.parse(xhr.responseText)?.detail || msg;
-    } catch {}
-    showToast(msg, 'error');
+// HTMX 2 no intercambia respuestas 4xx (`responseHandling`), así que un fallo
+// que el servidor contesta *con la pantalla que hay que mostrar* — "esa captura
+// ya no existe", con el preview obsoleto todavía en el DOM — viajaba por el
+// cable y se descartaba. La única forma documentada de habilitarlo es acá, en
+// `htmx:beforeSwap`.
+//
+// El opt-in es explícito y del servidor: se hace solo cuando la respuesta trae
+// `HX-Reswap`. Una ruta que devuelve 4xx sin ese header (un 401 de la API, un
+// 500) sigue sin tocar el DOM, que es lo que corresponde.
+function isRenderableError(xhr) {
+  return Boolean(xhr && xhr.status >= 400 && xhr.getResponseHeader('HX-Reswap'));
+}
+
+document.addEventListener('htmx:beforeSwap', function (evt) {
+  if (isRenderableError(evt.detail.xhr)) {
+    evt.detail.shouldSwap = true;
+    // Sin esto HTMX igual dispara `htmx:responseError` y el fragmento entra
+    // acompañado de un toast que dice lo mismo, dos veces y en otro idioma.
+    evt.detail.isError = false;
   }
 });
 
-document.addEventListener('htmx:responseError', function () {
+document.addEventListener('htmx:afterRequest', function (evt) {
+  const xhr = evt.detail.xhr;
+  if (xhr.status < 400 || isRenderableError(xhr)) return;
+  let msg = 'Something went wrong.';
+  try {
+    msg = JSON.parse(xhr.responseText)?.detail || msg;
+  } catch (e) {
+    /* cuerpo HTML: no hay `detail` que mostrar, queda el mensaje genérico */
+  }
+  showToast(msg, 'error');
+});
+
+// `htmx:responseError` es *también* un 4xx/5xx, así que este listener duplicaba
+// el toast de arriba en cada error HTTP — y encima lo llamaba "error de red",
+// que es lo único que un 404 no es. El corte de red tiene su propio evento
+// (`htmx:sendError`, status 0, que la rama de arriba deja pasar).
+document.addEventListener('htmx:sendError', function () {
   showToast('Network error. Please try again.', 'error');
 });
 

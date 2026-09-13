@@ -254,6 +254,85 @@
 {%- endmacro %}
 
 
+{#- ── Lo que el NLP entendió ──────────────────────────────────────────────────
+    `ParsedIntent.intent_type` son las siete claves del `Literal` de
+    `app/nlp/intents.py`. El preview de captura las mostraba con
+    `type|replace('_',' ')|title` — "Log Meal", "Add Stock": nombres internos del
+    parser, en inglés, y con un mapa de colores inline de siete ramas que estrenaba
+    tres paletas que no usa ninguna otra pantalla (`pink`, `orange`, `indigo`).
+
+    Los rótulos están en tercera persona y en presente ("Comida", "Compra") porque
+    lo que la tarjeta anuncia es *qué se va a guardar*, no la acción del parser.
+    Ícono y tono son los mismos que usa el movimiento de despensa equivalente
+    (`movement_icon`), así que una compra se ve igual acá y en `/pantry/`. -#}
+{%- set INTENT_ICONS = {
+  'log_meal': 'meal', 'log_workout': 'bolt', 'log_body_metric': 'trend-up',
+  'add_stock': 'cart', 'consume_stock': 'meal', 'update_preference': 'heart',
+  'mixed': 'sparkles',
+} -%}
+{%- set INTENT_TONES = {
+  'log_meal': 'food', 'log_workout': 'move', 'log_body_metric': 'body',
+  'add_stock': 'stock', 'consume_stock': 'food', 'update_preference': 'brand',
+  'mixed': 'brand',
+} -%}
+
+
+{% macro intent_type_label(intent_type) -%}
+{%- set labels = {
+  'log_meal': _('Meal'), 'log_workout': _('Workout'),
+  'log_body_metric': _('Weigh-in'), 'add_stock': _('Purchase'),
+  'consume_stock': _('Used from the pantry'), 'update_preference': _('Preference'),
+  'mixed': _('Several things at once'),
+} -%}
+{{- labels.get(intent_type | lower if intent_type else '', _('Something else')) -}}
+{%- endmacro %}
+
+
+{% macro intent_badge(intent_type, size='sm') -%}
+{{ ui.badge(intent_type_label(intent_type),
+            tone=INTENT_TONES.get(intent_type | lower if intent_type else '', 'neutral'),
+            icon=INTENT_ICONS.get(intent_type | lower if intent_type else ''),
+            size=size) }}
+{%- endmacro %}
+
+
+{% macro intent_icon(intent_type, class='w-5 h-5') -%}
+{%- set key = intent_type | lower if intent_type else '' -%}
+{%- set tone = INTENT_TONES.get(key, 'brand') -%}
+<span class="flex-shrink-0 w-9 h-9 rounded-control flex items-center justify-center
+             bg-{{ tone }}-soft text-{{ tone }}-ink" aria-hidden="true">
+  {{ ic.icon(INTENT_ICONS.get(key, 'sparkles'), class) }}
+</span>
+{%- endmacro %}
+
+
+{#- `NLPIngestionEvent.parser_layer` es `rules`/`llm`/`combined`, y el preview lo
+    mostraba como una pastilla índigo con el valor en mayúsculas: "RULES". Es la
+    respuesta a "¿cómo entendiste esto?", y dicha así no la contesta. -#}
+{% macro parser_layer_label(layer) -%}
+{%- set labels = {
+  'rules': _('Read from the wording'),
+  'llm': _('Read by the assistant'),
+  'combined': _('Wording plus assistant'),
+} -%}
+{{- labels.get(layer | lower if layer else 'rules', _('Read from the wording')) -}}
+{%- endmacro %}
+
+
+{#- `NLPIngestionEvent.parse_confidence` es cuánto confía el parser en **haber
+    entendido la frase**, y nada más: no dice si lo que se registró es saludable ni
+    si el dato es correcto. El preview mostraba "Confianza: 72%" pelado, que invita
+    justo a la otra lectura. Las palabras van al lado del número, y quien llama pone
+    además la leyenda que explica de qué habla el porcentaje. -#}
+{% macro parse_confidence_label(confidence) -%}
+{%- set value = (confidence | float) if confidence is not none else 0.0 -%}
+{%- if value >= 0.8 -%}{{ _('Understood clearly') }}
+{%- elif value >= 0.5 -%}{{ _('Mostly understood') }}
+{%- else -%}{{ _('Worth checking') }}
+{%- endif -%}
+{%- endmacro %}
+
+
 {#- ── Preferencias aprendidas ─────────────────────────────────────────────────
     `RecommendationPreference.item_type` y `.preference_signal` se mostraban crudos
     en la tabla del perfil de sugerencias (`food`, `possible_sometimes`), que son
@@ -281,6 +360,43 @@
 {%- set key = signal | lower if signal else '' -%}
 {{ ui.badge(labels.get(key, signal | replace('_', ' ') | title),
             tone=tones.get(key, 'neutral'), size=size) }}
+{%- endmacro %}
+
+
+{#- ── Nivel de actividad base ──────────────────────────────────────────────────
+    `User.baseline_activity_level` guarda las cinco claves en minúscula que
+    escriben el onboarding y el perfil. El perfil las mostraba de **dos** formas
+    distintas en la misma pantalla — `level|replace('_',' ')|title` en el select y
+    `{{ u.baseline_activity_level }}` crudo en la lista del hogar (`very_active`) —,
+    las dos en inglés.
+
+    `ACTIVITY_LEVELS` es además el orden en que se ofrecen, de menos a más:
+    `_VALID_ACTIVITY_LEVELS` en `app/web/profile.py` valida pero no ordena, porque
+    es un `set`. -#}
+{% set ACTIVITY_LEVELS = ['sedentary', 'light', 'moderate', 'active', 'very_active'] %}
+
+
+{% macro activity_level_label(level) -%}
+{%- set labels = {
+  'sedentary': _('Sedentary'), 'light': _('Light'), 'moderate': _('Moderate'),
+  'active': _('Active'), 'very_active': _('Very active'),
+} -%}
+{{- labels.get(level | lower if level else '',
+               (level | replace('_', ' ') | title) if level else _('Not set')) -}}
+{%- endmacro %}
+
+
+{#- La misma glosa que el paso 3 del onboarding: "moderate" solo no dice nada, y es
+    el dato con el que el motor compara la semana. -#}
+{% macro activity_level_hint(level) -%}
+{%- set hints = {
+  'sedentary': _('Desk job, little walking'),
+  'light': _('Some walking, 1 workout a week'),
+  'moderate': _('2 to 3 workouts a week'),
+  'active': _('4 to 5 workouts a week'),
+  'very_active': _('Daily training or physical job'),
+} -%}
+{{- hints.get(level | lower if level else '', '') -}}
 {%- endmacro %}
 
 

@@ -1,38 +1,102 @@
-{% if notice %}
-<div class="rounded-xl bg-amber-50 border border-amber-200 p-5 text-center space-y-2">
-  <p class="font-semibold text-amber-800">{{ _('Nothing to save') }}</p>
-  <p class="text-sm text-amber-700">{{ notice }}</p>
-  <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Try again') }}</a>
-</div>
-{% elif success %}
-<div class="rounded-xl bg-emerald-50 border border-emerald-200 p-5 text-center space-y-2">
-  <div class="text-2xl">✓</div>
-  <p class="font-semibold text-emerald-800">{{ _('Saved successfully!') }}</p>
-  <div class="text-sm text-emerald-700 space-y-1">
-    {% for r in result.results %}
-    <p>{{ r.intent|replace('_', ' ')|title }}
-      {% set res = r.get('result', {}) %}
-      {% if res.get('participants') %}: {{ res.participants }} participant(s){% endif %}
-      {% if res.get('added') %}: {{ res.added }} item(s) added{% endif %}
-      {% if res.get('consumed') %}: {{ res.consumed }} item(s) consumed{% endif %}
-    </p>
-    {% endfor %}
-  </div>
-  <div class="flex gap-2 justify-center pt-2">
-    <a href="/" class="text-sm text-indigo-600 hover:underline">{{ _('← Dashboard') }}</a>
-    <span class="text-slate-300">·</span>
-    <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Log more') }}</a>
-  </div>
-</div>
+{#
+  El resultado de guardar una captura. Reemplaza el preview entero (`#nlp-preview`).
+
+  Tres cosas que arregla:
+
+  1. **Los plurales estaban escritos a mano y en inglés**: `: {{ res.added }} item(s)
+     added`. Van por `ngettext`, que es lo que el catálogo `es_AR` puede traducir.
+  2. **El nombre del intent se imprimía crudo** (`log_body_metric` → "Log Body
+     Metric"). Va por `dm.intent_type_label`.
+  3. **La rama de error volcaba `str(e)`** del `except Exception` del servicio: un
+     mensaje de Python, en inglés, posiblemente con detalle interno, en la cara del
+     usuario. Acá dice qué no se guardó y qué hacer; el detalle queda en el log del
+     servidor, que es donde sirve.
+#}
+
+{% if nothing_to_save %}
+{% call ui.notice(_('I could not find anything to save in that. Nothing was written.'),
+                  tone='warn', title=_('Nothing to save')) %}
+  {{ ui.btn(_('Try again'), href='/capture/', tone='subtle', size='sm', icon='refresh') }}
+{% endcall %}
+
 {% else %}
-<div class="rounded-xl bg-rose-50 border border-rose-200 p-5 space-y-2">
-  <p class="font-semibold text-rose-800">{{ _('Some actions could not be saved') }}</p>
-  {% for r in result.results %}
-  <div class="text-sm {% if r.status == 'ok' %}text-emerald-700{% else %}text-rose-700{% endif %}">
-    {{ r.intent|replace('_', ' ')|title }}:
-    {% if r.status == 'ok' %}✓{% else %}✗ {{ r.get('error', 'Unknown error') }}{% endif %}
+{% set results = result.get('results', []) %}
+{% set failed = results | selectattr('status', 'equalto', 'error') | list %}
+{#- `saved_count` son los intents que escribieron una fila, y no es lo mismo que
+    `results | length`: un intent salteado (`mixed`) o sin atribuir también es un
+    resultado, y contarlo daba un tilde verde con "1 cosa registrada" arriba de "nada
+    que hacer con esto". Tampoco es lo mismo que `success`, que solo dice que nada
+    falló — algo puede no fallar y no escribir nada. -#}
+{% set saved = saved_count | default(0, true) %}
+{% set all_saved = success and saved %}
+
+<div class="space-y-4" role="status">
+  {% call ui.card(class='text-center space-y-3') %}
+    <span class="mx-auto flex w-12 h-12 items-center justify-center rounded-pill
+                 {{ 'bg-ok-soft text-ok-ink' if all_saved else 'bg-warn-soft text-warn-ink' }}"
+          aria-hidden="true">
+      {{ ic.icon('check-circle' if all_saved else 'warning', 'w-7 h-7') }}
+    </span>
+    <div>
+      <p class="text-base font-semibold text-ink">
+        {%- if all_saved -%}{{ _('Saved') }}
+        {%- elif saved -%}{{ _('Saved, with some gaps') }}
+        {%- else -%}{{ _('Nothing was saved') }}
+        {%- endif -%}
+      </p>
+      <p class="text-sm text-ink-muted mt-0.5">
+        {%- if all_saved -%}
+          {{ ngettext('%(num)d thing recorded.', '%(num)d things recorded.', saved) }}
+        {%- elif saved -%}
+          {{ ngettext('%(num)d part could not be saved.', '%(num)d parts could not be saved.', failed | length) }}
+        {%- elif failed -%}
+          {{ _('None of it could be saved.') }}
+        {%- else -%}
+          {{ _('I read the sentence, but there was nothing in it I could record.') }}
+        {%- endif -%}
+      </p>
+    </div>
+
+    <ul class="text-left space-y-2 list-none m-0">
+      {% for r in results %}
+      {% set res = r.get('result') or {} %}
+      {#- Un intent sin atribuir no falló y tampoco escribió: le corresponde el mismo
+          ícono de "esto no entró" que a un error, no un tilde. -#}
+      {% set wrote = r.status == 'ok' and (res.get('added') or res.get('consumed')
+                     or res.get('participants') or res.get('user') or res.get('preference_saved')) %}
+      <li class="flex items-start gap-2.5 text-sm">
+        <span class="mt-0.5 flex-shrink-0 {{ 'text-ok-ink' if wrote else 'text-danger-ink' if r.status != 'ok' else 'text-warn-ink' }}"
+              aria-hidden="true">
+          {{ ic.icon('check' if wrote else 'x-circle', 'w-4 h-4') }}
+        </span>
+        <span class="min-w-0">
+          <strong class="font-semibold text-ink">{{ dm.intent_type_label(r.intent) }}</strong>
+          {%- if r.status != 'ok' %}
+          <span class="text-ink-muted"> — {{ _('not saved. Try logging this one on its own.') }}</span>
+          {%- elif res.get('unattributed') %}
+          <span class="text-ink-muted"> — {{ _('not saved: I could not tell whose this is.') }}</span>
+          {%- elif res.get('added') is not none %}
+          <span class="text-ink-muted"> — {{ ngettext('%(num)d item added to the pantry.', '%(num)d items added to the pantry.', res.added) }}</span>
+          {%- elif res.get('consumed') is not none %}
+          <span class="text-ink-muted"> — {{ ngettext('%(num)d item taken from the pantry.', '%(num)d items taken from the pantry.', res.consumed) }}</span>
+          {%- elif res.get('participants') is not none %}
+          <span class="text-ink-muted"> — {{ ngettext('logged for %(num)d person.', 'logged for %(num)d people.', res.participants) }}</span>
+          {%- elif res.get('user') %}
+          <span class="text-ink-muted"> — {{ _('saved for %(name)s.', name=res.user) }}</span>
+          {%- elif res.get('preference_saved') %}
+          <span class="text-ink-muted"> — {{ _('I will keep it in mind for suggestions.') }}</span>
+          {%- elif res.get('skipped') %}
+          <span class="text-ink-muted"> — {{ _('nothing to do with this one.') }}</span>
+          {%- endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% endcall %}
+
+  <div class="flex flex-col-reverse sm:flex-row gap-2">
+    {{ ui.btn(_('Log something else'), href='/capture/', tone='secondary', icon='plus') }}
+    {{ ui.btn(_('Back to today'), href='/', tone='primary', icon='home', block=true, class='sm:flex-1') }}
   </div>
-  {% endfor %}
-  <a href="/capture" class="text-sm text-indigo-600 hover:underline">{{ _('Try again') }}</a>
 </div>
 {% endif %}
