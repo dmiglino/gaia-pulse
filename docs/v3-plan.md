@@ -457,22 +457,128 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 - [ ] Detectar más ausencias además de las dos actuales (hoy solo entrenamiento y pesaje):
       comidas no registradas, sueño ausente.
 
-**4.4 — Aprendizaje anclado al sujeto, no al título**
+**4.4 — Que la app aprenda de verdad los gustos de cada uno con el uso**
+
+> Esta sub-fase creció respecto de la versión original del plan, a pedido explícito del
+> usuario: *"si es posible que la inteligencia vaya aprendiendo con el uso sobre los gustos
+> y preferencias del usuario, implementemoslo tambien"*. Lo que había acá antes era solo el
+> arreglo del bug de keying (guardar el feedback contra el sujeto y no contra el título
+> renderizado). Ese arreglo sigue siendo el **prerrequisito**, pero por sí solo no es
+> aprendizaje: la app seguiría dependiendo de que alguien toque los botones de aceptar o
+> descartar, que es la interacción más rara de todas. Los nueve puntos que siguen convierten
+> eso en un bucle de aprendizaje real.
+>
+> **Sigue fuera de alcance:** entrenar un modelo, y meter un LLM en el camino de
+> recomendación. Todo esto es aritmética determinista sobre `behavior_signals`, que ya es la
+> tabla diseñada para exactamente esto.
+
+**Prerrequisito — anclar al sujeto (el bug de keying)**
 
 - [ ] **Migración `0003`**: `subject_type` + `subject_name` en `suggestions` (la única
-      migración de todo v3).
+      migración de todo v3). `behavior_signals` **no necesita columnas nuevas**: ya tiene
+      `entity_type`, `entity_name`, `value`, `context_json` y `created_at` indexado.
 - [ ] Cada generador declara el sujeto de su candidato (alimento, actividad, grupo muscular,
       marcador, ítem de stock).
 - [ ] El feedback se guarda contra ese sujeto en lugar de `title.lower()[:200]`.
-- [ ] El scorer matchea por sujeto normalizado en vez de bolsa-de-palabras.
-- [ ] `snoozed` pasa a ser una supresión acotada en el tiempo usando `snoozed_until`, que ya
-      existe y no tiene ninguna ruta que lo escriba.
-- [ ] El motivo de texto libre se usa como señal en vez de morir en `notes`.
-- [ ] Eliminar el `record_feedback` muerto.
-- [ ] Acotar la dominancia monótona de los alimentos de todos los días, para que el loop
-      pueda empujar variedad.
+- [ ] El scorer matchea por sujeto normalizado en vez de bolsa-de-palabras, así rechazar
+      *"Time to get moving!"* deja de suprimir todo candidato que comparta 60% de esos tokens
+      cruzando categorías.
+- [ ] Eliminar el `record_feedback` muerto de `engine.py` y dejar **un solo punto de
+      escritura** de señales: nuevo `app/recommendations/learning.py` con `record_signal()` y
+      `learned_affinity(user, subject)`. Hoy las escrituras están dispersas y por eso
+      `repeated_purchase` figura en la lista positiva del scorer sin que nada lo escriba.
 - [ ] **Dedup antes de persistir**: no crear una sugerencia pendiente cuyo sujeto ya tiene
       una pendiente.
+
+**4.4.1 — Aprender de lo que hacen, no solo de lo que tocan**
+
+Hoy la única entrada real de aprendizaje son los botones de aceptar/descartar de una
+sugerencia. Un household que simplemente *usa* la app —registra comidas, entrenamientos y
+compras— no le enseña nada. Cada captura confirmada pasa a emitir señales implícitas:
+
+- [ ] Comidas: cada `MealItemConsumed` confirmado emite señal por alimento **y** por
+      `FoodItem.category`, con el `meal_type` en `context_json`.
+- [ ] Entrenamientos: `WorkoutExercise` emite señal por ejercicio y por
+      `ExerciseType.muscle_group`; el `perceived_effort` (RPE) modula el valor — lo que
+      cuesta mucho y no se repite es una señal distinta de lo que se repite solo.
+- [ ] Compras: `PantryMovement(movement_type="purchase")` emite `repeated_purchase`, que el
+      scorer **ya lee** y hoy nadie escribe.
+- [ ] Ausencia como señal débil: un alimento sugerido que no aparece en ninguna comida en N
+      días es un negativo suave, no un neutro. Es lo que distingue "no me interesa" de
+      "todavía no lo vi".
+- [ ] `source_type="implicit"` en todas estas, para poder distinguirlas de las explícitas al
+      explicar y al permitir corregir.
+
+**4.4.2 — Decaimiento temporal: lo que hace que sea aprender y no acumular**
+
+- [ ] Una señal de hace ocho meses hoy pesa exactamente igual que la de ayer, así que un
+      gusto que cambió **no se puede desaprender nunca**. El peso pasa a ser
+      `value * 0.5 ** (edad_en_días / SEMIVIDA)`, con semivida distinta por tipo: las
+      explícitas duran más que las implícitas.
+- [ ] `created_at` ya está indexado, así que esto no cuesta una migración ni un query nuevo.
+
+**4.4.3 — Confianza por sujeto: un toque no es una regla**
+
+- [ ] El boost/penalización escala con la **cantidad de observaciones** y satura, en vez de
+      ser un valor fijo: un descarte es una pista, seis descartes es una regla. Hoy un solo
+      tap accidental puede vetar un alimento para siempre.
+- [ ] Umbral mínimo de evidencia antes de que una señal filtre (en vez de solo puntuar).
+
+**4.4.4 — Aprender el atributo, no solo el nombre exacto**
+
+- [ ] Si alguien rechaza brócoli, coliflor y kale, lo aprendible es la **categoría**, y
+      `FoodItem.category` ya viene en el seed. Aprendizaje en dos niveles: el sujeto puntual
+      y su atributo (`FoodItem.category`, `ExerciseType.muscle_group`/`intensity`), con el
+      nivel de atributo exigiendo más evidencia que el puntual.
+- [ ] Con eso la app puede acertar con algo que el usuario **nunca vio antes**, que es la
+      diferencia entre recordar y aprender.
+
+**4.4.5 — Gusto con contexto horario**
+
+- [ ] `MealEvent.timestamp` y `meal_type` ya se guardan: aprender *cuándo* les gusta algo
+      (café en el desayuno, no en la cena) usando el `meal_type` que 4.4.1 mete en
+      `context_json`. Es lo que hace que las sugerencias se sientan propias y no genéricas.
+
+**4.4.6 — Separar "me gusta" de "lo comí ayer"**
+
+- [ ] Hoy `repeated_meal_choice` se escribe con `value=1.0` por ítem por comida, así que los
+      alimentos de todos los días acumulan decenas de positivos y **dominan de forma
+      monótona: el bucle empuja a repetir, no a variar**. Se parte en dos señales con
+      ventanas distintas: afinidad (estable, con decaimiento) y saciedad reciente (ventana
+      corta, supresiva).
+- [ ] Un favorito sigue siendo favorito, pero deja de aparecer tres días seguidos.
+
+**4.4.7 — El "no" que hoy se pierde**
+
+- [ ] `snoozed` guarda `value=0.0` y no entra ni en la lista positiva ni en la negativa:
+      **escrito y jamás leído**; y `dismissed` guarda `-0.3` y cae en la negativa, así que
+      hoy **"posponer" actúa como rechazo**. `snoozed` pasa a ser una supresión acotada en el
+      tiempo vía `snoozed_until`, que ya existe en el modelo y no tiene ninguna ruta que lo
+      escriba.
+- [ ] El motivo de texto libre —que hoy muere en `notes`— se pasa por el matcher de reglas
+      que ya existe en `app/nlp/rules.py` contra los nombres conocidos de alimentos y
+      actividades, para extraer el sujeto real de la queja: *"no me gusta el brócoli"* debe
+      enseñar sobre el brócoli, no sobre el título de la sugerencia.
+
+**4.4.8 — Que se pueda ver y corregir lo aprendido**
+
+- [ ] Un panel *"lo que GaiaPulse aprendió de vos"* en el perfil: positivos y negativos por
+      categoría, con **cuántas observaciones** lo respaldan, si son explícitas o inferidas, y
+      hace cuánto. Más un control para olvidar una.
+- [ ] Es la diferencia entre aprender y ser una caja negra, y es lo que lo hace confiable en
+      una casa de dos personas: si el motor deduce mal, el usuario lo ve y lo arregla en un
+      toque en vez de sufrir sugerencias raras sin saber por qué.
+- [ ] `Suggestion.evidence_summary` ya existe en el modelo y hoy nadie lo escribe: es el lugar
+      natural para guardar la explicación computada que 4.5 produce.
+
+**4.4.9 — El aprendizaje es por persona, siempre**
+
+- [ ] Toda señal se filtra por `user_id`, nunca se agrupa a nivel household — es
+      no-negociable de `AGENTS.md` y además es el punto: Diego y Rocío no tienen los mismos
+      gustos.
+- [ ] Para los candidatos de scope household (pantry y compras), se **intersecan** los
+      negativos aprendidos de los dos miembros en vez de promediarlos: un rechazo fuerte de
+      uno no puede quedar tapado por el gusto del otro.
 
 **4.5 — Razonar con los datos que ya están, y explicar de verdad**
 
@@ -492,9 +598,11 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 
 **Archivos:** `app/jobs/{scheduler,notification_jobs}.py`,
 `app/repositories/notification_repo.py`, `app/schemas/notification.py`,
-`app/services/suggestion_service.py`, `app/recommendations/{engine,scorer,filters}.py` +
-`generators/*.py`, `app/models/suggestion.py`, nuevos `app/core/clock.py` y
-`app/recommendations/context.py`, nueva revisión `alembic/versions/0003_*.py`.
+`app/services/{suggestion_service,meal_service,workout_service,pantry_service}.py`,
+`app/recommendations/{engine,scorer,filters}.py` + `generators/*.py`,
+`app/models/suggestion.py`, `app/web/profile.py` + template del panel de 4.4.8, nuevos
+`app/core/clock.py`, `app/recommendations/context.py` y
+`app/recommendations/learning.py`, nueva revisión `alembic/versions/0003_*.py`.
 
 ---
 
@@ -529,6 +637,10 @@ Usando el fixture `client` de `tests/conftest.py:51` que hoy nunca se usa:
 - [ ] Horario de silencio.
 - [ ] Dedup por sujeto.
 - [ ] Que un sujeto rechazado quede suprimido **sin arrastrar candidatos no relacionados**.
+- [ ] El bucle de aprendizaje de 4.4: que una comida registrada emita señal implícita, que
+      una señal vieja pese menos que una reciente (decaimiento), que un solo descarte **no**
+      vete un sujeto pero seis sí, que el nivel de atributo exija más evidencia que el
+      puntual, y que la señal de un miembro **no** afecte las sugerencias del otro.
 
 ---
 
