@@ -4,11 +4,19 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
 from app.services.pantry_service import PantryService
+from app.web.flash import set_flash
 from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
 
 _VALID_MOVEMENT_TYPES = {"adjustment", "purchase", "consumption", "discard"}
+
+
+def _back_to_pantry(message: str, category: str) -> RedirectResponse:
+    """Redirect to the pantry carrying a one-shot message (non-HTMX fallback)."""
+    response = RedirectResponse(url="/pantry", status_code=302)
+    set_flash(response, message, category)
+    return response
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -51,7 +59,7 @@ def pantry_adjust(
     if movement_type not in _VALID_MOVEMENT_TYPES or quantity < 0:
         if is_htmx:
             return HTMLResponse(_("Invalid stock adjustment."), status_code=400)
-        return RedirectResponse(url="/pantry", status_code=302)
+        return _back_to_pantry(_("Invalid stock adjustment."), "error")
 
     item = PantryService(db).adjust_stock_by_id(
         household_id=current_user.household_id,
@@ -63,10 +71,10 @@ def pantry_adjust(
     if item is None:
         if is_htmx:
             return HTMLResponse(_("Pantry item not found."), status_code=404)
-        return RedirectResponse(url="/pantry", status_code=302)
+        return _back_to_pantry(_("Pantry item not found."), "error")
 
     if not is_htmx:
-        return RedirectResponse(url="/pantry", status_code=302)
+        return _back_to_pantry(_("Stock updated."), "success")
 
     ctx = get_template_context(request, db, current_user)
     ctx["item"] = item

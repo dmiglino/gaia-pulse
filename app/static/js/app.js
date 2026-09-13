@@ -31,14 +31,6 @@ document.addEventListener('htmx:responseError', function(evt) {
   showToast('Network error. Please try again.', 'error');
 });
 
-// ─── Alpine.js global store ───────────────────────────────────────────────────
-document.addEventListener('alpine:init', function() {
-  Alpine.store('app', {
-    sidebarOpen: false,
-    toggleSidebar() { this.sidebarOpen = !this.sidebarOpen; }
-  });
-});
-
 // ─── Voice Recording (MediaRecorder API) ──────────────────────────────────────
 window.VoiceRecorder = function(targetInputId, statusElementId) {
   let mediaRecorder = null;

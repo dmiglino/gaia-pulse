@@ -1,5 +1,13 @@
 /* GaiaPulse — custom styles (Tailwind handles most styling via CDN) */
 
+/* Alpine: hide elements that are only meant to appear once Alpine has booted.
+   Without this rule every x-cloak element flashes unstyled on first paint. */
+[x-cloak] { display: none !important; }
+
+/* Horizontal scrollers (filter chip rows) keep the scroll, lose the scrollbar. */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
 /* Custom scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -11,6 +11,7 @@ from app.i18n import setup_jinja2_i18n
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.services.notification_service import NotificationService
+from app.web.flash import read_flashes
 
 _settings = get_settings()
 
@@ -51,8 +52,8 @@ setup_jinja2_i18n(templates.env, _settings.default_locale)
 def get_template_context(request: Request, db: Session, current_user: User) -> dict:
     """Build the base template context with household and user data.
 
-    ``base.html`` renders the notification badge on every page, so the unread
-    count belongs here rather than in each individual route.
+    ``base.html`` renders the notification badge and the flash messages on every
+    page, so both belong here rather than in each individual route.
     """
     users = UserRepository(db).get_household_users(current_user.household_id)
     unread = NotificationService(db).get_unread_count(
@@ -63,6 +64,7 @@ def get_template_context(request: Request, db: Session, current_user: User) -> d
         "current_user": current_user,
         "users": users,
         "unread_notifications_count": unread,
+        "flashes": read_flashes(request),
     }
 
 

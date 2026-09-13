@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.web.flash import FLASH_COOKIE_NAME, clear_flash
 from app.web.helpers import templates
 from app.web.router import web_router
 
@@ -47,6 +48,22 @@ def create_app() -> FastAPI:
 
     # Static files
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+    @app.middleware("http")
+    async def consume_flash(request: Request, call_next: Any) -> Any:
+        """Clear the flash cookie once a full page has rendered its message.
+
+        HTMX fragments do not include ``base.html``, so they must not eat a
+        pending flash; neither must a redirect, which is what set it.
+        """
+        response = await call_next(request)
+        if (
+            FLASH_COOKIE_NAME in request.cookies
+            and response.status_code < 300
+            and "HX-Request" not in request.headers
+        ):
+            clear_flash(response)
+        return response
 
     # API routes
     app.include_router(api_router)

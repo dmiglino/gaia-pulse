@@ -5,12 +5,28 @@ from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
 from app.schemas.suggestion import RecommendationPreferenceCreate, SuggestionFeedback
 from app.services.suggestion_service import SuggestionService
+from app.web.flash import set_flash
 from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
 
 _VALID_FEEDBACK_STATUSES = {"accepted", "rejected", "snoozed", "dismissed"}
 _VALID_PREFERENCE_SIGNALS = {"likes", "dislikes", "impossible", "possible_sometimes", "avoid", "preferred"}
+
+
+def _redirect_with_flash(url: str, message: str, category: str) -> RedirectResponse:
+    """Redirect to *url* carrying a one-shot message (non-HTMX fallback)."""
+    response = RedirectResponse(url=url, status_code=302)
+    set_flash(response, message, category)
+    return response
+
+
+def _back_to_suggestions(message: str, category: str) -> RedirectResponse:
+    return _redirect_with_flash("/suggestions", message, category)
+
+
+def _back_to_profile(message: str, category: str) -> RedirectResponse:
+    return _redirect_with_flash("/profile", message, category)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -29,7 +45,7 @@ def generate_suggestions(request: Request, current_user: CurrentUser, db: DB) ->
     svc.generate_for_user(current_user, limit=10)
 
     if not request.headers.get("HX-Request"):
-        return RedirectResponse(url="/suggestions", status_code=302)
+        return _back_to_suggestions(_("Suggestions refreshed."), "success")
 
     ctx = get_template_context(request, db, current_user)
     ctx["suggestions"] = svc.get_pending(current_user.id, current_user.household_id)
@@ -62,7 +78,7 @@ def suggestion_feedback(
             "suggestions/partials/dismissed.html",
             {"request": request, "suggestion_id": suggestion_id},
         )
-    return RedirectResponse(url="/suggestions", status_code=302)
+    return _back_to_suggestions(_("Response saved."), "success")
 
 
 @router.post("/preferences")
@@ -80,7 +96,9 @@ def save_preference(
                 "components/flash_messages.html",
                 {"request": request, "messages": [{"type": "error", "text": _("Invalid signal: %(signal)s.", signal=preference_signal)}]},
             )
-        return RedirectResponse(url="/profile", status_code=302)
+        return _back_to_profile(
+            _("Invalid signal: %(signal)s.", signal=preference_signal), "error"
+        )
 
     item_name = item_name.strip()[:200]
     item_type = item_type.strip()[:40]
@@ -99,4 +117,4 @@ def save_preference(
             "components/flash_messages.html",
             {"request": request, "messages": [{"type": "success", "text": _("Preference saved.")}]},
         )
-    return RedirectResponse(url="/profile", status_code=302)
+    return _back_to_profile(_("Preference saved."), "success")
