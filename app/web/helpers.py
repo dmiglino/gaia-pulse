@@ -64,6 +64,22 @@ templates.env.globals["locale"] = _settings.default_locale
 templates.env.globals["now"] = local_now
 setup_jinja2_i18n(templates.env, _settings.default_locale)
 
+# Los macros de la v3, disponibles en toda plantilla sin `{% import %}`.
+#
+# `{% import %}` **no se hereda**: un `{% import 'components/ui.html' as ui %}` en
+# `base.html` no existe dentro de los bloques de los hijos, así que sin esto las 29
+# plantillas tendrían que repetir las mismas dos líneas y una olvidada sería un
+# `UndefinedError` en tiempo de request (no en el arranque). Como globals, `ui.card()`
+# y `ic.icon()` resuelven en cualquier plantilla, incluidos los parciales de HTMX y
+# las páginas de error, que reciben un contexto de solo `{"request": request}`.
+#
+# Va **después** de `setup_jinja2_i18n`: `.module` ejecuta el cuerpo del template una
+# vez, y ese cuerpo usa `_()` en los docstrings de los macros. Los `{% import %}` que
+# ya existen en las plantillas siguen funcionando y ganan por scope local, así que
+# esto no rompe nada de lo escrito hasta acá.
+templates.env.globals["ui"] = templates.env.get_template("components/ui.html").module
+templates.env.globals["ic"] = templates.env.get_template("components/icons.html").module
+
 
 def get_template_context(request: Request, db: Session, current_user: User) -> dict:
     """Build the base template context with household and user data.

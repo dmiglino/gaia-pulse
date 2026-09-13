@@ -1,0 +1,178 @@
+{#
+  El <head> canónico de GaiaPulse.
+
+  Antes de la v3 había cuatro documentos HTML sueltos (`base.html`,
+  `auth/login.html`, `errors/404.html`, `errors/500.html`) con configs de
+  Tailwind divergentes o inexistentes — por eso el login usaba clases
+  `brand-*` que nunca se aplicaban y las páginas de error no tenían ni la
+  fuente ni la paleta de la app. Ahora las cuatro extienden este layout, así
+  que hay **una** config de Tailwind, **una** definición de tema y **un**
+  lugar donde agregar un `<script>`.
+
+  Los handlers de error de `app/main.py` pasan solo `{"request": request}`,
+  así que este archivo no puede depender de nada más que de los globals de
+  Jinja (`locale`, `_`).
+
+  **Cuidado al agregar cosas acá.** `/login` extiende este layout, así que todo
+  lo que se sume fuera del bloque `head_scripts` termina cargándose en la página
+  donde el usuario tipea su contraseña. Cualquier `<script>` de un tercero va
+  con versión fija y `integrity`, sin excepción; y nada que lea datos del
+  usuario puede vivir en este archivo, porque los handlers de error no los
+  tienen.
+
+  Bloques:
+    title         — el nombre de la página (el sufijo " — GaiaPulse" lo pone acá)
+    html_class    — clases del <html>
+    body_class    — clases del <body>
+    head_scripts  — HTMX + Alpine + Chart.js; las páginas de error lo vacían
+    extra_head    — <style>/<link> propios de una página
+    body          — el documento
+    extra_scripts — <script> al final del <body>
+#}<!DOCTYPE html>
+<html lang="{{ locale | replace('_', '-') }}"
+      data-theme="light"
+      class="h-full {% block html_class %}{% endblock %}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {#- Una sola meta y sin `media`: el tema efectivo lo decide localStorage, no la
+      preferencia del sistema, así que dos metas indexadas por `prefers-color-scheme`
+      dejaban la barra de direcciones en claro a quien tiene el SO en claro y eligió
+      oscuro. El valor inicial es el del tema por defecto; el script de abajo y
+      `setTheme()` en `app.js` la reescriben leyendo `--surface`, de modo que el color
+      sale del token y no de un hex copiado a mano. -#}
+  <meta name="theme-color" content="#f8fafc" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <title>{% block title %}GaiaPulse{% endblock %} — GaiaPulse</title>
+
+  {#
+    Tema, antes de pintar. Corre síncrono y a propósito no está en app.js:
+    app.js va con `defer`, así que el usuario vería un flash claro antes de
+    que se aplique el tema oscuro. `data-theme` gobierna los tokens de
+    `app.css`; la clase `dark` existe solo para los pocos casos que necesitan
+    la variante `dark:` de Tailwind (imágenes, charts).
+  #}
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('gp-theme'); } catch (e) { /* modo privado */ }
+      var theme = saved === 'dark' || saved === 'light'
+        ? saved
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    })();
+  </script>
+
+  {#
+    Tailwind (Play CDN — no hay build step, y no debe introducirse).
+
+    Versión fija + `integrity`: este `<head>` es también el de `/login`, así que
+    todo script que entre acá corre en el documento que contiene el campo de
+    contraseña. Sin SRI, quien controle el CDN —o se meta en el medio— ejecuta
+    JS ahí. Los cuatro digests son sha384 del archivo pinneado; si alguna vez se
+    sube una versión, hay que recalcularlos:
+      curl -sSL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+  #}
+  <script src="https://cdn.tailwindcss.com/3.4.16"
+          integrity="sha384-mS5Uq7sE90lgbBDN8xgf34ibEgbZo4gB3tfLY40ZRle+M188BQw8onzNHg6GUZaA"
+          crossorigin="anonymous"></script>
+  <script>
+    // Los colores no son valores fijos: son los tokens de `app.css` leídos como
+    // tripletes RGB, de modo que `bg-card`, `text-ink/70` y `border-line`
+    // cambian con el tema sin que ninguna plantilla use una clase `dark:`.
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: 'rgb(var(--surface) / <alpha-value>)',
+            card: {
+              DEFAULT: 'rgb(var(--card) / <alpha-value>)',
+              alt:     'rgb(var(--card-alt) / <alpha-value>)',
+            },
+            line: {
+              DEFAULT: 'rgb(var(--line) / <alpha-value>)',
+              strong:  'rgb(var(--line-strong) / <alpha-value>)',
+            },
+            ink: {
+              DEFAULT: 'rgb(var(--ink) / <alpha-value>)',
+              muted:   'rgb(var(--ink-muted) / <alpha-value>)',
+              subtle:  'rgb(var(--ink-subtle) / <alpha-value>)',
+            },
+            brand: {
+              50:  'rgb(var(--brand-50) / <alpha-value>)',
+              100: 'rgb(var(--brand-100) / <alpha-value>)',
+              200: 'rgb(var(--brand-200) / <alpha-value>)',
+              300: 'rgb(var(--brand-300) / <alpha-value>)',
+              400: 'rgb(var(--brand-400) / <alpha-value>)',
+              500: 'rgb(var(--brand-500) / <alpha-value>)',
+              600: 'rgb(var(--brand-600) / <alpha-value>)',
+              700: 'rgb(var(--brand-700) / <alpha-value>)',
+              800: 'rgb(var(--brand-800) / <alpha-value>)',
+              900: 'rgb(var(--brand-900) / <alpha-value>)',
+              // Alias de la escala (ver `app.css`) para que los macros puedan
+              // usar `bg-brand-soft` igual que `bg-food-soft`.
+              soft:  'rgb(var(--brand-soft) / <alpha-value>)',
+              ink:   'rgb(var(--brand-ink) / <alpha-value>)',
+              solid: 'rgb(var(--brand-solid) / <alpha-value>)',
+            },
+            // Acentos de dominio
+            food:  { soft: 'rgb(var(--food-soft) / <alpha-value>)',  ink: 'rgb(var(--food-ink) / <alpha-value>)',  solid: 'rgb(var(--food-solid) / <alpha-value>)' },
+            move:  { soft: 'rgb(var(--move-soft) / <alpha-value>)',  ink: 'rgb(var(--move-ink) / <alpha-value>)',  solid: 'rgb(var(--move-solid) / <alpha-value>)' },
+            body:  { soft: 'rgb(var(--body-soft) / <alpha-value>)',  ink: 'rgb(var(--body-ink) / <alpha-value>)',  solid: 'rgb(var(--body-solid) / <alpha-value>)' },
+            stock: { soft: 'rgb(var(--stock-soft) / <alpha-value>)', ink: 'rgb(var(--stock-ink) / <alpha-value>)', solid: 'rgb(var(--stock-solid) / <alpha-value>)' },
+            // Acentos de estado
+            ok:     { soft: 'rgb(var(--ok-soft) / <alpha-value>)',     ink: 'rgb(var(--ok-ink) / <alpha-value>)',     solid: 'rgb(var(--ok-solid) / <alpha-value>)' },
+            warn:   { soft: 'rgb(var(--warn-soft) / <alpha-value>)',   ink: 'rgb(var(--warn-ink) / <alpha-value>)',   solid: 'rgb(var(--warn-solid) / <alpha-value>)' },
+            danger: { soft: 'rgb(var(--danger-soft) / <alpha-value>)', ink: 'rgb(var(--danger-ink) / <alpha-value>)', solid: 'rgb(var(--danger-solid) / <alpha-value>)' },
+            info:   { soft: 'rgb(var(--info-soft) / <alpha-value>)',   ink: 'rgb(var(--info-ink) / <alpha-value>)',   solid: 'rgb(var(--info-solid) / <alpha-value>)' },
+          },
+          // Una escala de radios con nombre por tipo de objeto, en vez de
+          // elegir entre rounded-lg/xl/2xl a ojo en cada pantalla.
+          borderRadius: {
+            card:    '1rem',
+            control: '0.75rem',
+            chip:    '0.5rem',
+            pill:    '9999px',
+          },
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+
+  <!-- Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/css/app.css" />
+
+  {#- Alpine estaba como `alpinejs@3.x.x`, una etiqueta flotante: cada carga podía
+      traer un archivo distinto, y con eso `integrity` es imposible. Queda fijo en
+      la versión que ese rango resolvía (3.17.2). -#}
+  {% block head_scripts %}
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer
+          integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.2/dist/cdn.min.js" defer
+          integrity="sha384-lcaMFHdvRVsEXVuhit4fTnbxq6eTLm5HPdNzO7vXNZjr8HOCMouPmv4hSGF3PCJV"
+          crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer
+          integrity="sha384-e6cc9LaIG7xZ3XD5B+jtr1NhTWPQGQdRCh6xiZ+ZFUtWCpg4ycv3Sh+SkZoopvUY"
+          crossorigin="anonymous"></script>
+  {% endblock %}
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full font-sans antialiased bg-surface text-ink {% block body_class %}{% endblock %}">
+
+  {% block body %}{% endblock %}
+
+  <script src="/static/js/app.js" defer></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

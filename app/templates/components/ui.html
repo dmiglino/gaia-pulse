@@ -1,0 +1,398 @@
+{#
+  Los bloques de construcción de la interfaz.
+
+  El problema que resuelve: antes de la v3 convivían dos gramáticas de tarjeta
+  (`rounded-2xl border-slate-200` y `rounded-xl border-slate-100 shadow-sm`) y
+  cuatro radios (`rounded-lg/xl/2xl/full`) usados indistintamente para el mismo
+  tipo de objeto, porque cada pantalla se escribió copiando a la anterior. Un
+  macro convierte "¿qué radio lleva una tarjeta?" en una decisión tomada una vez.
+
+  Uso:
+    {% import 'components/ui.html' as ui %}
+
+    {% call ui.card() %}...{% endcall %}
+    {{ ui.page_header(_('Pantry'), subtitle=_('What is at home'), icon='pantry') }}
+    {{ ui.stat(_('Weight'), '72.4', unit='kg', tone='body', icon='chart-bar') }}
+    {{ ui.badge(_('Low'), tone='warn') }}
+    {{ ui.btn(_('Save'), tone='primary', icon='check') }}
+    {{ ui.avatar(current_user) }}
+    {{ ui.tabs([{'key': 'meals', 'label': _('Meals'), 'href': '/history?tab=meals'}],
+               current='meals', label=_('History sections')) }}
+
+  Cada item de `tabs` necesita `key` (es lo que se compara contra `current`),
+  `label` y `href`; `icon` y `count` son opcionales.
+
+  Los tonos son nombres de familia de token (`brand`, `ok`, `warn`, `danger`,
+  `info`, `food`, `move`, `body`, `stock`), no colores: cambiar el ámbar del
+  stock bajo se hace en `app.css`, no acá ni en las 29 pantallas. Los macros que
+  toman `tone` usan siempre los alias `-soft`/`-ink`/`-solid`, nunca un peldaño
+  de la escala, para que ninguna familia sea un caso especial. La escala cruda
+  (`brand-100`, `brand-700`) queda para donde hace falta un peldaño concreto:
+  las escaleras de `hover:` y el estado activo de la nav.
+
+  ── Regla de `attrs` ──────────────────────────────────────────────────────────
+  Varios macros aceptan `attrs`, que se emite **sin escapar** para poder pasar
+  `hx-post`, `x-on:click`, `form` o `disabled`. Por eso:
+
+      NUNCA interpoles datos del request ni de la base de datos dentro de `attrs`.
+
+  Es decir: `attrs='hx-post="/meals/' ~ meal.id ~ '/delete"'` está bien (un id
+  entero), y `attrs='hx-get="/meals?q=' ~ request.query_params.q ~ '"'` es XSS —
+  la app no tiene ninguna CSP, así que no hay segunda línea de defensa. Cuando el
+  atributo es previsible, pasalo como parámetro con nombre y dejá que el
+  autoescape haga su trabajo.
+#}
+
+{% import 'components/icons.html' as ic %}
+
+
+{#- ── Tarjeta ─────────────────────────────────────────────────────────────────
+    La superficie base. `{% call %}` en vez de un parámetro `content` para que
+    el cuerpo siga siendo HTML normal (con HTMX, Alpine y todo lo demás). -#}
+{% macro card(class='', padding='p-5', tag='div', attrs='') -%}
+<{{ tag }} class="bg-card border border-line rounded-card shadow-sm {{ padding }} {{ class }}"{% if attrs %} {{ attrs | safe }}{% endif %}>
+{{ caller() }}
+</{{ tag }}>
+{%- endmacro %}
+
+
+{#- Tarjeta que además es un enlace: el hover completo lo hace la tarjeta, no un
+    "ver más" de 12px que hay que apuntar con precisión. -#}
+{% macro card_link(href, class='', padding='p-5', attrs='') -%}
+<a href="{{ href }}" class="block bg-card border border-line rounded-card shadow-sm {{ padding }} transition-all hover:border-brand-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 {{ class }}"{% if attrs %} {{ attrs | safe }}{% endif %}>
+{{ caller() }}
+</a>
+{%- endmacro %}
+
+
+{#- Sección con título dentro de una tarjeta o de la página. -#}
+{% macro section_title(title, subtitle=None, icon=None, tone='brand') -%}
+<div class="flex items-start gap-3 mb-4">
+  {%- if icon %}
+  <span class="flex-shrink-0 w-9 h-9 rounded-control bg-{{ tone }}-soft text-{{ tone }}-ink flex items-center justify-center">
+    {{ ic.icon(icon, 'w-5 h-5') }}
+  </span>
+  {%- endif %}
+  <div class="min-w-0">
+    <h2 class="text-base font-semibold text-ink leading-tight">{{ title }}</h2>
+    {%- if subtitle %}
+    <p class="text-sm text-ink-muted mt-0.5">{{ subtitle }}</p>
+    {%- endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{#- ── Encabezado de página ─────────────────────────────────────────────────────
+    Las acciones van por `{% call %}`: casi siempre son botones con `hx-*` o
+    formularios, y meterlos como string sería peor que el copy-paste que esto
+    reemplaza. -#}
+{% macro page_header(title, subtitle=None, icon=None, tone='brand', back=None, back_label=None) -%}
+<header class="mb-6">
+  {%- if back %}
+  <a href="{{ back }}" class="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted hover:text-ink mb-3 transition-colors">
+    {{ ic.icon('chevron-left', 'w-4 h-4') }}{{ back_label or _('Back') }}
+  </a>
+  {%- endif %}
+  <div class="flex items-start justify-between gap-4 flex-wrap">
+    <div class="flex items-start gap-3 min-w-0">
+      {%- if icon %}
+      <span class="flex-shrink-0 w-11 h-11 rounded-control bg-{{ tone }}-soft text-{{ tone }}-ink flex items-center justify-center">
+        {{ ic.icon(icon, 'w-6 h-6') }}
+      </span>
+      {%- endif %}
+      <div class="min-w-0">
+        <h1 class="text-2xl font-bold text-ink tracking-tight leading-tight">{{ title }}</h1>
+        {%- if subtitle %}
+        <p class="text-sm text-ink-muted mt-1">{{ subtitle }}</p>
+        {%- endif %}
+      </div>
+    </div>
+    {%- if caller is defined %}
+    <div class="flex items-center gap-2 flex-shrink-0">{{ caller() }}</div>
+    {%- endif %}
+  </div>
+</header>
+{%- endmacro %}
+
+
+{#- ── Métrica ──────────────────────────────────────────────────────────────────
+    El número es el protagonista: etiqueta chica arriba, valor grande, unidad
+    en tamaño de texto normal para que no compita con el número. -#}
+{% macro stat(label, value, unit=None, icon=None, tone='brand', hint=None, href=None) -%}
+{%- set body %}
+  <div class="flex items-start justify-between gap-2">
+    <p class="text-xs font-medium text-ink-muted uppercase tracking-wide">{{ label }}</p>
+    {%- if icon %}
+    <span class="text-{{ tone }}-ink flex-shrink-0">{{ ic.icon(icon, 'w-4 h-4') }}</span>
+    {%- endif %}
+  </div>
+  <p class="mt-2 text-2xl font-bold text-ink tabular-nums leading-none">
+    {{ value }}{% if unit %}<span class="ml-1 text-sm font-medium text-ink-muted">{{ unit }}</span>{% endif %}
+  </p>
+  {%- if hint %}
+  <p class="mt-1.5 text-xs text-ink-subtle">{{ hint }}</p>
+  {%- endif %}
+{% endset -%}
+{%- if href -%}
+<a href="{{ href }}" class="block bg-card border border-line rounded-card shadow-sm p-4 transition-all hover:border-brand-300 hover:shadow-md">{{ body }}</a>
+{%- else -%}
+<div class="bg-card border border-line rounded-card shadow-sm p-4">{{ body }}</div>
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- ── Chip / etiqueta ──────────────────────────────────────────────────────── -#}
+{% macro badge(text, tone='brand', icon=None, size='md') -%}
+{%- set pad = 'px-2 py-0.5 text-xs' if size == 'sm' else 'px-2.5 py-1 text-xs' -%}
+{#- `brand` no lleva caso especial: sus alias `-soft`/`-ink` son exactamente
+    `brand-50`/`brand-700`, así que la rama genérica ya lo cubre. -#}
+{%- set bg = 'bg-card-alt text-ink-muted' if tone == 'neutral' else 'bg-' ~ tone ~ '-soft text-' ~ tone ~ '-ink' -%}
+<span class="inline-flex items-center gap-1 {{ pad }} rounded-chip font-semibold {{ bg }}">
+  {%- if icon %}{{ ic.icon(icon, 'w-3.5 h-3.5') }}{% endif -%}
+  {{ text }}
+</span>
+{%- endmacro %}
+
+
+{#- Un punto de color, para estados donde el texto ya dice qué pasa. -#}
+{% macro dot(tone='brand', class='') -%}
+<span class="inline-block w-2 h-2 rounded-pill bg-{{ tone }}-solid {{ class }}" aria-hidden="true"></span>
+{%- endmacro %}
+
+
+{#- ── Botón ────────────────────────────────────────────────────────────────────
+    Rinde un <a> si le pasás `href`, si no un <button>. `attrs` es el escape
+    para los atributos que no se pueden anticipar (`hx-post`, `x-on:click`,
+    `form`, `disabled`); va sin escapar a propósito porque el único que lo
+    escribe es una plantilla.
+
+    Dos cosas que muerden:
+      · `type` es `'submit'` por defecto, así que un botón de "Cancelar" dentro
+        de un <form> lo envía. Pasale `type='button'`.
+      · `size='icon'` (y cualquier llamada sin `label`) **exige** `aria_label`:
+        el `icon()` es `aria-hidden`, así que sin eso el botón no tiene nombre
+        accesible y un lector de pantalla anuncia "botón" y nada más. -#}
+{% macro btn(label=None, href=None, tone='primary', size='md', icon=None, icon_right=None, type='submit', block=false, attrs='', aria_label=None, class='') -%}
+{%- set tones = {
+  'primary':   'bg-brand-500 text-white hover:bg-brand-600 shadow-sm focus-visible:ring-brand-500',
+  'secondary': 'bg-card text-ink border border-line hover:bg-card-alt focus-visible:ring-brand-500',
+  'subtle':    'bg-brand-50 text-brand-700 hover:bg-brand-100 focus-visible:ring-brand-500',
+  'ghost':     'text-ink-muted hover:bg-card-alt hover:text-ink focus-visible:ring-brand-500',
+  'danger':    'bg-danger-solid text-white hover:brightness-95 shadow-sm focus-visible:ring-danger-solid',
+  'danger-soft': 'bg-danger-soft text-danger-ink hover:brightness-95 focus-visible:ring-danger-solid',
+  'ok':        'bg-ok-solid text-white hover:brightness-95 shadow-sm focus-visible:ring-ok-solid',
+} -%}
+{%- set sizes = {
+  'sm':   'px-3 py-1.5 text-xs gap-1.5',
+  'md':   'px-4 py-2.5 text-sm gap-2',
+  'lg':   'px-5 py-3 text-base gap-2',
+  'icon': 'p-2 gap-0',
+} -%}
+{%- set base = 'inline-flex items-center justify-center font-semibold rounded-control transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:opacity-50 disabled:pointer-events-none' -%}
+{%- set cls = base ~ ' ' ~ sizes.get(size, sizes['md']) ~ ' ' ~ tones.get(tone, tones['primary']) ~ (' w-full' if block else '') ~ ' ' ~ class -%}
+{%- set inner %}
+  {%- if icon %}{{ ic.icon(icon, 'w-4 h-4' if size in ('sm', 'icon') else 'w-5 h-5') }}{% endif -%}
+  {%- if label %}<span>{{ label }}</span>{% endif -%}
+  {%- if icon_right %}{{ ic.icon(icon_right, 'w-4 h-4') }}{% endif -%}
+{% endset -%}
+{%- if href -%}
+<a href="{{ href }}" class="{{ cls }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if attrs %} {{ attrs | safe }}{% endif %}>{{ inner }}</a>
+{%- else -%}
+<button type="{{ type }}" class="{{ cls }}"{% if aria_label %} aria-label="{{ aria_label }}"{% endif %}{% if attrs %} {{ attrs | safe }}{% endif %}>{{ inner }}</button>
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- ── Avatar ───────────────────────────────────────────────────────────────────
+    `User.avatar_color` es un hex por usuario que se elige en el perfil, así que
+    este es el único lugar del sistema donde un color va inline y no en un
+    token: es dato, no diseño. -#}
+{% macro avatar(user, size='md', ring=false) -%}
+{%- set dims = {
+  'xs': 'w-6 h-6 text-[0.65rem]',
+  'sm': 'w-7 h-7 text-xs',
+  'md': 'w-9 h-9 text-sm',
+  'lg': 'w-12 h-12 text-base',
+} -%}
+<span class="{{ dims.get(size, dims['md']) }} rounded-pill flex items-center justify-center text-white font-bold flex-shrink-0 {{ 'ring-2 ring-card' if ring else '' }}"
+      style="background-color: {{ user.avatar_color or '#6366f1' }}"
+      title="{{ user.display_name }}">{{ user.display_name[0] | upper }}</span>
+{%- endmacro %}
+
+
+{#- Avatar + nombre, el patrón de atribución ("¿de quién es este registro?"). -#}
+{% macro attribution(user, size='sm', class='') -%}
+<span class="inline-flex items-center gap-2 {{ class }}">
+  {{ avatar(user, size=size) }}
+  <span class="text-sm font-medium text-ink truncate">{{ user.display_name }}</span>
+</span>
+{%- endmacro %}
+
+
+{#- ── Tabs ─────────────────────────────────────────────────────────────────────
+    Se ven como pestañas y son navegación: cada item es un <a> que hace una carga
+    de página completa.
+
+    Por eso **no** llevan `role="tablist"`/`role="tab"`. Ese rol promete un
+    `role="tabpanel"` asociado por `aria-controls`, `tabindex` móvil y navegación
+    por flechas; nada de eso existe acá, y encima `role="tab"` *reemplaza* el rol
+    de enlace, así que la lista de enlaces del lector de pantalla dejaría de
+    encontrarlos. El patrón correcto para pestañas-que-son-navegación es
+    `<nav>` + `<ul>` + `aria-current="page"` en la activa — que además es la misma
+    gramática de "estado activo" que ya usa `nav_item` en `base.html`. -#}
+{% macro tabs(items, current, label=None) -%}
+<nav aria-label="{{ label or _('Sections') }}">
+  <ul class="flex items-center gap-1 p-1 bg-card-alt border border-line rounded-control overflow-x-auto scrollbar-hide list-none m-0">
+    {%- for item in items %}
+    {%- set active = item.key == current %}
+    <li>
+      <a href="{{ item.href }}"{% if active %} aria-current="page"{% endif %}
+         class="flex items-center gap-1.5 px-3 py-1.5 rounded-chip text-sm font-medium whitespace-nowrap transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500
+                {{ 'bg-card text-ink shadow-sm' if active else 'text-ink-muted hover:text-ink' }}">
+        {%- if item.icon %}{{ ic.icon(item.icon, 'w-4 h-4') }}{% endif -%}
+        {{ item.label }}
+        {%- if item.count is defined and item.count is not none %}
+        <span class="text-xs text-ink-subtle tabular-nums">{{ item.count }}</span>
+        {%- endif -%}
+      </a>
+    </li>
+    {%- endfor %}
+  </ul>
+</nav>
+{%- endmacro %}
+
+
+{#- ── Aviso inline ─────────────────────────────────────────────────────────────
+    Para "tu panel de sangre tiene 3 años" o "hay 4 ítems bajos": informa en el
+    lugar donde importa, en vez de mandar al usuario a otra pantalla. -#}
+{% macro notice(text, tone='info', icon=None, title=None) -%}
+{%- set icons = {'info': 'info', 'ok': 'check-circle', 'warn': 'warning', 'danger': 'alert-circle'} -%}
+{#- El ícono es `aria-hidden` y el color no se transmite, así que con un `role`
+    fijo un aviso `danger` y uno `info` son indistinguibles para un lector de
+    pantalla. `danger` pasa a `alert` para que se anuncie al aparecer — es el caso
+    del error de login. -#}
+<div class="flex items-start gap-3 p-4 rounded-card bg-{{ tone }}-soft border border-{{ tone }}-ink/15"
+     role="{{ 'alert' if tone == 'danger' else 'note' }}">
+  <span class="text-{{ tone }}-ink flex-shrink-0 mt-0.5">{{ ic.icon(icon or icons.get(tone, 'info'), 'w-5 h-5') }}</span>
+  <div class="min-w-0 text-sm">
+    {%- if title %}<p class="font-semibold text-ink">{{ title }}</p>{% endif %}
+    {#- `text-ink`, no `text-ink-muted`: gris sobre `-soft` da 4.33:1 en `danger` y
+        4.37:1 en `info` con el tema claro, abajo del 4.5:1 de AA. El fondo tintado
+        ya da la jerarquía visual; el gris solo restaba legibilidad. -#}
+    <div class="text-ink {{ 'mt-0.5' if title else '' }}">{{ text }}</div>
+    {%- if caller is defined %}<div class="mt-2">{{ caller() }}</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+
+{#- ── Barra de progreso ────────────────────────────────────────────────────── -#}
+{#- `value` acepta `None` (una métrica que todavía no se registró) y rinde 0 en vez
+    de tirar `TypeError` y con eso un 500. -#}
+{% macro progress(value, max=100, tone='brand', label=None, class='') -%}
+{%- set value = value | default(0, true) -%}
+{%- set pct = ((value / max * 100) if max else 0) | round | int -%}
+{%- set pct = 100 if pct > 100 else (0 if pct < 0 else pct) -%}
+<div class="{{ class }}">
+  {%- if label %}
+  <div class="flex items-center justify-between text-xs font-medium text-ink-muted mb-1">
+    <span>{{ label }}</span><span class="tabular-nums">{{ pct }}%</span>
+  </div>
+  {%- endif %}
+  <div class="h-2 rounded-pill bg-card-alt overflow-hidden" role="progressbar"
+       aria-valuenow="{{ pct }}" aria-valuemin="0" aria-valuemax="100"{% if label %} aria-label="{{ label }}"{% endif %}>
+    <div class="h-full rounded-pill bg-{{ tone }}-solid transition-all" style="width: {{ pct }}%"></div>
+  </div>
+</div>
+{%- endmacro %}
+
+
+{#- Clases compartidas por los controles nativos, para que un <select> escrito a
+    mano no quede distinto de un `field`. Definido **antes** de `field` porque el
+    macro lo consume: la cadena estaba escrita cuatro veces (acá, en `field`, y dos
+    veces en `auth/login.html`) y ya habían empezado a divergir. -#}
+{% set INPUT_CLASS = 'w-full px-3.5 py-2.5 bg-card-alt border border-line rounded-control text-sm text-ink placeholder:text-ink-subtle transition-colors focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20' %}
+
+
+{#- ── Campo de formulario ──────────────────────────────────────────────────────
+    Un `<label>` de verdad asociado por `for`/`id`. Varios inputs de la app no
+    tienen ninguno (el filtro de fecha de workouts, la cantidad de la grilla de
+    pantry), y un placeholder no es una etiqueta. -#}
+{% macro field(label, name, type='text', value='', placeholder='', required=false, hint=None, unit=None, attrs='', id=None) -%}
+{%- set fid = id or ('f-' ~ name) -%}
+<div>
+  <label for="{{ fid }}" class="block text-sm font-medium text-ink mb-1.5">
+    {{ label }}{% if required %}<span class="text-danger-ink ml-0.5" aria-hidden="true">*</span>{% endif %}
+  </label>
+  <div class="relative">
+    <input type="{{ type }}" id="{{ fid }}" name="{{ name }}"
+           value="{{ value if value is not none else '' }}"
+           {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+           {% if required %}required{% endif %}
+           {#- `pr-12` después de `INPUT_CLASS`: en el CSS generado las utilidades
+               de un lado (`pr-*`) se emiten después de las de eje (`px-*`), así que
+               gana el padding derecho y queda lugar para la unidad. -#}
+           class="{{ INPUT_CLASS }} {{ 'pr-12' if unit else '' }}"
+           {% if attrs %}{{ attrs | safe }}{% endif %} />
+    {%- if unit %}
+    <span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-ink-subtle pointer-events-none">{{ unit }}</span>
+    {%- endif %}
+  </div>
+  {%- if hint %}<p class="mt-1.5 text-xs text-ink-subtle">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{#- El mismo envoltorio, para un control que el macro `field` no cubre
+    (<select>, <textarea>, un grupo de radios). -#}
+{% macro field_wrap(label, for_id, hint=None, required=false) -%}
+<div>
+  <label for="{{ for_id }}" class="block text-sm font-medium text-ink mb-1.5">
+    {{ label }}{% if required %}<span class="text-danger-ink ml-0.5" aria-hidden="true">*</span>{% endif %}
+  </label>
+  {{ caller() }}
+  {%- if hint %}<p class="mt-1.5 text-xs text-ink-subtle">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{#- ── Estado vacío ─────────────────────────────────────────────────────────────
+    Versión macro del `components/empty_state.html` que hoy se incluye en 3 de
+    los 9 lugares que lo necesitan. Un estado vacío sin acción es un cartel de
+    "no hay nada"; con acción es el primer paso. -#}
+{% macro empty_state(title, text=None, icon='sparkles', action_label=None, action_href=None, tone='brand') -%}
+<div class="flex flex-col items-center justify-center text-center py-12 px-6">
+  <span class="w-14 h-14 rounded-card bg-{{ tone }}-soft text-{{ tone }}-ink flex items-center justify-center mb-4">
+    {{ ic.icon(icon, 'w-7 h-7') }}
+  </span>
+  <p class="text-base font-semibold text-ink">{{ title }}</p>
+  {%- if text %}<p class="mt-1.5 text-sm text-ink-muted max-w-sm">{{ text }}</p>{% endif %}
+  {%- if action_label and action_href %}
+  <div class="mt-5">{{ btn(action_label, href=action_href, tone='primary', icon='plus') }}</div>
+  {%- endif %}
+  {%- if caller is defined %}<div class="mt-5">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+
+{#- ── Cambio de tema ───────────────────────────────────────────────────────────
+    Vive acá y no en `base.html` porque hacen falta dos: uno en la sidebar y otro
+    en el perfil — en mobile no hay sidebar y los seis huecos de la barra inferior
+    ya están ocupados, así que sin el del perfil el modo oscuro sería inaccesible
+    desde el teléfono.
+
+    Los dos rótulos se renderizan siempre y la variante `dark:` de Tailwind decide
+    cuál se ve. El servidor no puede saber el tema: vive en localStorage, y el
+    script síncrono de `shell.html` es el que lo aplica antes de pintar.
+    `app.js` escucha `[data-theme-toggle]` por delegación, así que este macro
+    funciona también dentro de un fragmento que llega por HTMX. -#}
+{% macro theme_toggle(class='') -%}
+<button type="button" data-theme-toggle
+        class="w-full flex items-center gap-3 px-3 py-2.5 rounded-control text-sm font-medium text-ink-muted hover:bg-card-alt hover:text-ink transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 {{ class }}">
+  <span class="flex-shrink-0 dark:hidden">{{ ic.icon('moon') }}</span>
+  <span class="flex-shrink-0 hidden dark:block">{{ ic.icon('sun') }}</span>
+  <span class="dark:hidden">{{ _('Dark mode') }}</span>
+  <span class="hidden dark:inline">{{ _('Light mode') }}</span>
+</button>
+{%- endmacro %}
