@@ -66,6 +66,28 @@ def create_app() -> FastAPI:
             clear_flash(response)
         return response
 
+    @app.middleware("http")
+    async def privacy_headers(request: Request, call_next: Any) -> Any:
+        """No dejar datos de salud en el caché del navegador ni en un `Referer`.
+
+        Cada página de esta app renderiza datos personales de quien la mira: peso,
+        comidas, marcadores de sangre. Sin `Cache-Control`, el panel queda en el caché
+        de disco y en el back/forward cache después de cerrar sesión — y este es un
+        teléfono y una notebook compartidos entre dos personas.
+
+        `Referrer-Policy` es preventivo: hoy los navegadores modernos ya no mandan la
+        query string a otro origen, pero la app carga cuatro CDN y `?user_id=2` no tiene
+        por qué salir de acá si ese default cambia.
+
+        `/static/` queda afuera del `no-store`: ahí no hay nada personal y el caché es
+        justamente lo que hace que la segunda carga sea rápida.
+        """
+        response = await call_next(request)
+        response.headers.setdefault("Referrer-Policy", "same-origin")
+        if not request.url.path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
     # API routes
     app.include_router(api_router)
 

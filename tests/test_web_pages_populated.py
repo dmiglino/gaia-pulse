@@ -306,6 +306,140 @@ def test_health_detail_does_not_leak_raw_enum_values(
     assert "analyzed" not in body, "el estado del análisis se muestra sin traducir"
 
 
+def test_dashboard_ignores_a_user_id_from_another_household(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session
+) -> None:
+    """La misma fuga que `/body-metrics/`, en la pantalla de gráficos.
+
+    `uid = user_id or current_user.id` sin validar iba a `get_weight_series`, que filtra
+    **solo** por usuario: el id de cualquier persona de la base devolvía su serie de peso
+    de 30 días. Los otros cuatro gráficos ya arrancaban del hogar, así que la que se
+    filtraba era justo la medida que el resto del rediseño protege.
+    """
+    from app.models.body_metric import BodyMetricLog
+
+    other = Household(name="Tercera casa")
+    db.add(other)
+    db.flush()
+    stranger = User(
+        household_id=other.id,
+        name="Ajeni",
+        email="ajeni@test.com",
+        password_hash="x",
+        onboarding_completed=True,
+    )
+    db.add(stranger)
+    db.flush()
+    db.add_all(
+        [
+            BodyMetricLog(
+                user_id=stranger.id, timestamp=UTC_NOW - timedelta(days=5), weight_kg=99.9
+            ),
+            BodyMetricLog(user_id=stranger.id, timestamp=UTC_NOW, weight_kg=98.7),
+        ]
+    )
+    db.flush()
+
+    resp = authenticated_client.get(f"/dashboard/?user_id={stranger.id}")
+    assert resp.status_code == 200
+    assert "99.9" not in resp.text and "98.7" not in resp.text, "fuga: serie de peso ajena"
+    assert "78.4" in resp.text, "debería caer de vuelta en el usuario que pide"
+
+
+@pytest.mark.parametrize("path", ["/dashboard/", "/body-metrics/", "/history/"])
+@pytest.mark.parametrize("raw", ["", "abc", "-1", "²"])
+def test_person_filters_survive_a_hand_edited_user_id(
+    authenticated_client: TestClient, seeded: dict[str, int], path: str, raw: str
+) -> None:
+    """Ninguna de las tres pantallas con `?user_id=` puede contestar 422 ni 500.
+
+    `""` es lo que manda un formulario GET sin JS, y `"²"` está acá porque
+    `"²".isdigit()` es `True` mientras `int("²")` explota: con `isdigit`, el helper que
+    existe para absorber URLs editadas a mano devolvía un 500.
+    """
+    resp = authenticated_client.get(f"{path}?user_id={raw}")
+    assert resp.status_code == 200, f"{path}?user_id={raw!r} → {resp.status_code}"
+
+
+def test_health_detail_renders_its_safety_notice_in_spanish(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """El aviso de "esto no es un diagnóstico" tiene que estar en el idioma del hogar.
+
+    Poner `_()` alrededor de una cadena no la traduce: el catálogo hay que regenerarlo.
+    El rediseño agregó las llamadas y no el `.po`, así que la pantalla de salud mostraba
+    "Out of range" / "In range" / "days ago" en inglés con `DEFAULT_LOCALE=es_AR` — un
+    aviso de seguridad que el hogar no lee en su idioma no es un aviso. El otro test de
+    esta pantalla no lo atrapa porque afirma sobre "LDL"/"Glucosa", que salen de
+    `values_json`, no del catálogo.
+    """
+    body = authenticated_client.get(f"/health/{seeded['analysis_id']}").text
+    assert "no un diagnóstico" in body
+    assert "Fuera de rango" in body and "En rango" in body
+    assert "Out of range" not in body and "In range" not in body
+
+
+def test_health_detail_does_not_call_an_unevaluated_marker_normal(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """Un marcador sin rango de referencia no está "en rango": no se evaluó.
+
+    `_determine_status` devuelve `"unknown"` para cualquier clave que la tabla de 31
+    rangos no conozca, y la Capa 2 del NLP acepta cualquier clave snake_case que el LLM
+    emita. Ese `"unknown"` caía en el `else` de la ruta, o sea en la tarjeta verde, bajo
+    un texto que afirmaba que todos los marcadores estaban dentro de su rango — una
+    afirmación clínica sobre un valor que la app nunca comparó con nada.
+    """
+    analysis = BloodAnalysis(
+        user_id=diego.id,
+        analysis_date=date.today(),
+        status="analyzed",
+        values_json={
+            "psa": {"display_name": "PSA", "value": 45, "unit": "ng/mL", "status": "unknown"},
+            "glucose": {"display_name": "Glucosa", "value": 88, "status": "normal"},
+        },
+    )
+    db.add(analysis)
+    db.flush()
+
+    body = authenticated_client.get(f"/health/{analysis.id}").text
+    unevaluated = body.split('data-marker-group="unevaluated"')[-1]
+    normal = body.split('data-marker-group="normal"')[-1].split("</ul>")[0]
+    assert "PSA" in unevaluated.split("</ul>")[0], "el marcador sin rango no se muestra"
+    assert "PSA" not in normal, 'un marcador sin evaluar se muestra como "en rango"'
+    assert "Glucosa" in normal
+
+
+def test_health_detail_hides_the_age_of_a_future_dated_panel(
+    authenticated_client: TestClient, seeded: dict[str, int], db: Session, diego: User
+) -> None:
+    """La fecha la lee el parser del PDF, así que puede caer en el futuro.
+
+    El `max(0, ...)` la convertía en "hace 0 días" al lado de un encabezado que dice
+    2099: dos hechos contradictorios en pantalla, y el más prominente era el falso. Si la
+    antigüedad no se puede afirmar, no se muestra.
+    """
+    analysis = BloodAnalysis(
+        user_id=diego.id, analysis_date=date(2099, 1, 1), status="analyzed", values_json={}
+    )
+    db.add(analysis)
+    db.flush()
+
+    body = authenticated_client.get(f"/health/{analysis.id}").text
+    assert "2099" in body, "la fecha leída se sigue mostrando, tal cual"
+    for claim in ("0 day", "days ago", "hace 0"):
+        assert claim not in body, f"un panel del futuro afirma antigüedad: {claim!r}"
+
+
+def test_health_responses_are_not_cached_by_the_browser(
+    authenticated_client: TestClient, seeded: dict[str, int]
+) -> None:
+    """Dos personas, un teléfono: el panel no puede quedar en el caché de disco."""
+    resp = authenticated_client.get(f"/health/{seeded['analysis_id']}")
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.headers["referrer-policy"] == "same-origin"
+
+
 def test_history_body_metrics_tab_ignores_a_foreign_user_id(
     authenticated_client: TestClient, seeded: dict[str, int], db: Session
 ) -> None:

@@ -64,7 +64,10 @@
                           subtitle=ngettext('%(num)d marker', '%(num)d markers', abnormal_markers | length),
                           icon='warning', tone='warn') }}
       {%- if abnormal_markers %}
-      <ul class="space-y-2 list-none m-0 p-0">
+      {#- `data-marker-group` rotula el grupo en el HTML. Es lo que dejan afirmar los
+          tests sin depender del texto traducido de la tarjeta, y en qué grupo cae un
+          marcador es exactamente lo que hay que poder verificar acá. -#}
+      <ul class="space-y-2 list-none m-0 p-0" data-marker-group="abnormal">
         {%- for m in abnormal_markers %}
         <li class="rounded-control border border-warn-solid/30 bg-warn-soft px-3 py-2.5">
           <div class="flex items-start justify-between gap-2">
@@ -81,7 +84,7 @@
         {%- endfor %}
       </ul>
       {%- else %}
-      <p class="text-sm text-ink-muted">{{ _('Every marker the parser recognised is inside its reference range.') }}</p>
+      <p class="text-sm text-ink-muted">{{ _('No marker fell outside its reference range.') }}</p>
       {%- endif %}
     {% endcall %}
     </div>
@@ -92,7 +95,7 @@
                           subtitle=ngettext('%(num)d marker', '%(num)d markers', normal_markers | length),
                           icon='check-circle', tone='ok') }}
       {%- if normal_markers %}
-      <ul class="space-y-2 max-h-80 overflow-y-auto pr-1 list-none m-0 p-0">
+      <ul class="space-y-2 max-h-80 overflow-y-auto pr-1 list-none m-0 p-0" data-marker-group="normal">
         {%- for m in normal_markers %}
         <li class="flex items-center justify-between gap-2 rounded-control border border-line bg-card-alt px-3 py-2">
           <p class="text-sm text-ink truncate">{{ m.display_name }}</p>
@@ -108,6 +111,30 @@
     {% endcall %}
     </div>
   </div>
+
+  {#- El tercer grupo. Un marcador sin rango de referencia no está "en rango": la app lo
+      leyó y no tiene con qué compararlo. Iba en la tarjeta verde junto a los normales,
+      así que la pantalla afirmaba que estaba bien un valor que nunca evaluó. Va en tono
+      neutro y con el rótulo diciendo exactamente eso. -#}
+  {%- if unevaluated_markers %}
+  <div class="mb-5">
+  {% call ui.card() %}
+    {{ ui.section_title(_('Read, not evaluated'),
+                        subtitle=_('No reference range for these, so nothing here says whether they are fine.'),
+                        icon='question', tone='info') }}
+    <ul class="flex flex-wrap gap-2 list-none m-0 p-0" data-marker-group="unevaluated">
+      {%- for m in unevaluated_markers %}
+      <li class="rounded-control border border-line bg-card-alt px-3 py-2">
+        <p class="text-sm text-ink">{{ m.display_name }}</p>
+        <p class="text-xs font-semibold text-ink-muted tabular-nums">
+          {{ m.value }}{% if m.unit %} {{ m.unit }}{% endif %}
+        </p>
+      </li>
+      {%- endfor %}
+    </ul>
+  {% endcall %}
+  </div>
+  {%- endif %}
 
   {%- if analysis.raw_text %}
   {#- `<details>` nativo: el texto del OCR es material de auditoría ("¿leyó bien el

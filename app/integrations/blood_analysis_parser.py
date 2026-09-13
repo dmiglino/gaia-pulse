@@ -98,12 +98,24 @@ _REGEX_PATTERNS: dict[str, list[str]] = {
 }
 
 
-def _determine_status(key: str, value: float) -> str:
-    ref = _REFERENCE_RANGES.get(key)
-    if not ref:
+def _determine_status(
+    key: str,
+    value: float,
+    ref_min: float | None = None,
+    ref_max: float | None = None,
+) -> str:
+    """En qué banda cae el valor, o `"unknown"` si no hay banda contra la que medir.
+
+    Los rangos del caller ganan sobre la tabla interna: el informe del laboratorio trae
+    sus propios límites, y son los del método con el que **ese** análisis se midió. Sin
+    esto, un marcador que la tabla no conoce quedaba en `"unknown"` aunque el PDF
+    trajera su rango de referencia al lado del valor.
+    """
+    ref = _REFERENCE_RANGES.get(key, {})
+    lo = ref_min if ref_min is not None else ref.get("ref_min")
+    hi = ref_max if ref_max is not None else ref.get("ref_max")
+    if lo is None and hi is None:
         return "unknown"
-    lo = ref.get("ref_min")
-    hi = ref.get("ref_max")
     if lo is not None and value < lo:
         return "critical_low" if value < lo * 0.7 else "low"
     if hi is not None and value > hi:
@@ -301,8 +313,12 @@ def _normalize_llm_output(llm_data: dict[str, Any]) -> tuple[dict[str, Any], dat
             continue
         unit = raw.get("unit") or _REFERENCE_RANGES.get(key, {}).get("unit", "")
         ref = _REFERENCE_RANGES.get(key, {})
-        ref_min = raw.get("ref_min") or ref.get("ref_min")
-        ref_max = raw.get("ref_max") or ref.get("ref_max")
+        # `is None` y no `or`: un límite inferior legítimo de 0 (PSA, bilirrubina) es
+        # falsy, así que con `or` se descartaba el valor que traía el informe y se caía
+        # a la tabla interna — o a `None`, dejando el marcador sin rango.
+        raw_min, raw_max = raw.get("ref_min"), raw.get("ref_max")
+        ref_min = raw_min if raw_min is not None else ref.get("ref_min")
+        ref_max = raw_max if raw_max is not None else ref.get("ref_max")
         display_name = raw.get("display_name") or ref.get("display_name") or key.replace("_", " ").title()
         category = ref.get("category", "other")
         values[key] = {
@@ -310,7 +326,7 @@ def _normalize_llm_output(llm_data: dict[str, Any]) -> tuple[dict[str, Any], dat
             "unit": unit,
             "ref_min": ref_min,
             "ref_max": ref_max,
-            "status": _determine_status(key, val),
+            "status": _determine_status(key, val, ref_min, ref_max),
             "display_name": display_name,
             "category": category,
         }

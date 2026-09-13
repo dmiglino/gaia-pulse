@@ -1036,3 +1036,114 @@ msgstr "La página que buscás no existe o se movió."
 
 msgid "If this keeps happening, the data you were saving may not have been recorded."
 msgstr "Si esto sigue pasando, puede que lo que estabas guardando no se haya registrado."
+
+# ─── Salud: análisis de sangre ────────────────────────────────────────────────
+# Estas cadenas se agregaron con el rediseño de `/health/`, que era la única
+# pantalla de la app sin una sola llamada a `_()` — y la que muestra datos de
+# salud. El aviso de "esto no es un diagnóstico" en inglés no es un aviso.
+
+msgid "Blood analysis"
+msgstr "Análisis de sangre"
+
+msgid "Lab report"
+msgstr "Informe del laboratorio"
+
+msgid "Previous panels"
+msgstr "Análisis anteriores"
+
+msgid "Summary"
+msgstr "Resumen"
+
+msgid "Out of range"
+msgstr "Fuera de rango"
+
+msgid "In range"
+msgstr "En rango"
+
+msgid "Read, not evaluated"
+msgstr "Leídos, sin evaluar"
+
+msgid "%(num)d marker"
+msgid_plural "%(num)d markers"
+msgstr[0] "%(num)d marcador"
+msgstr[1] "%(num)d marcadores"
+
+msgid "%(num)d day ago"
+msgid_plural "%(num)d days ago"
+msgstr[0] "hace %(num)d día"
+msgstr[1] "hace %(num)d días"
+
+msgid "reference"
+msgstr "referencia"
+
+msgid "These readings are informational, not a diagnosis. A marker out of range needs your doctor, not a change of diet on its own."
+msgstr "Estos valores son informativos, no un diagnóstico. Un marcador fuera de rango lo tiene que ver tu médico, no se arregla solo cambiando la comida."
+
+msgid "This panel is over a year old, so what it says about you today is a guess."
+msgstr "Este análisis tiene más de un año, así que lo que dice de vos hoy es una suposición."
+
+msgid "No marker fell outside its reference range."
+msgstr "Ningún marcador quedó fuera de su rango de referencia."
+
+msgid "No markers could be read from this file."
+msgstr "No se pudo leer ningún marcador de este archivo."
+
+msgid "No reference range for these, so nothing here says whether they are fine."
+msgstr "No hay rango de referencia para estos, así que nada de lo que ves acá dice si están bien."
+
+msgid "Text read from the file"
+msgstr "Texto leído del archivo"
+
+msgid "unknown reader"
+msgstr "lector desconocido"
+
+msgid "Delete this panel"
+msgstr "Borrar este análisis"
+
+msgid "This also deletes its markers and the text read from the file."
+msgstr "Esto también borra sus marcadores y el texto leído del archivo."
+
+msgid "Keep it"
+msgstr "Dejarlo"
+
+msgid "No blood panels yet."
+msgstr "Todavía no hay análisis de sangre."
+
+msgid "Upload a lab report and GaiaPulse reads its markers into your suggestions."
+msgstr "Subí un informe del laboratorio y GaiaPulse lee sus marcadores para tus sugerencias."
+
+msgid "Upload one with the form above and its markers become part of what GaiaPulse suggests."
+msgstr "Subí uno con el formulario de arriba y sus marcadores pasan a formar parte de lo que GaiaPulse sugiere."
+
+msgid "Upload and read it"
+msgstr "Subir y leer"
+
+msgid "PDF or photo, up to 20 MB. Both pages if the panel has two."
+msgstr "PDF o foto, hasta 20 MB. Las dos páginas si el análisis tiene dos."
+
+msgid "Unsupported file type. Use PDF, JPG, PNG, WEBP or HEIC."
+msgstr "Tipo de archivo no admitido. Usá PDF, JPG, PNG, WEBP o HEIC."
+
+msgid "File is too large. The maximum size is 20 MB."
+msgstr "El archivo es muy grande. El máximo es 20 MB."
+
+msgid "Could not read the report. Try a sharper scan or a text PDF."
+msgstr "No se pudo leer el informe. Probá con un escaneo más nítido o un PDF de texto."
+
+msgid "Very low"
+msgstr "Muy bajo"
+
+msgid "High"
+msgstr "Alto"
+
+msgid "Very high"
+msgstr "Muy alto"
+
+msgid "Read"
+msgstr "Leído"
+
+msgid "Processing"
+msgstr "Procesando"
+
+msgid "Failed"
+msgstr "Falló"

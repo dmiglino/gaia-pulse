@@ -146,8 +146,12 @@ def query_int(raw: str | None) -> int | None:
     **todos** sus campos, también los que el usuario dejó en blanco: `?user_id=` es
     "todo el hogar", no un error. Con `user_id: int | None` FastAPI responde 422 a
     esa misma URL, así que la conversión se hace acá.
+
+    `isdecimal` y no `isdigit`: `"²".isdigit()` es `True` y `int("²")` explota, así que
+    la versión con `isdigit` devolvía un 500 para `?user_id=²` — justo el tipo de URL
+    editada a mano que este helper existe para absorber.
     """
-    if raw is None or not raw.strip().lstrip("-").isdigit():
+    if raw is None or not raw.strip().lstrip("-").isdecimal():
         return None
     return int(raw)
 
