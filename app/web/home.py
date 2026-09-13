@@ -27,7 +27,11 @@ def home(request: Request, current_user: CurrentUser, db: DB) -> HTMLResponse:
 
     ctx["today_meals"] = meal_svc.get_today_meals(current_user.household_id)
     ctx["today_workouts"] = workout_svc.get_today_sessions(current_user.household_id)
-    ctx["body_metric_today"] = metric_svc.get_latest(current_user.id)
+    # `get_latest` no filtra por fecha: devuelve la última medición, sea de hoy o de
+    # hace tres semanas. La clave se llamaba `body_metric_today` y la tarjeta decía
+    # "Today's Weight", así que un pesaje viejo se presentaba como el de hoy. El dato
+    # es el mismo; lo que cambia es que ahora la pantalla dice de cuándo es.
+    ctx["latest_body_metric"] = metric_svc.get_latest(current_user.id)
     ctx["pending_suggestions"] = suggestion_svc.get_pending(
         current_user.id, current_user.household_id
     )[:3]

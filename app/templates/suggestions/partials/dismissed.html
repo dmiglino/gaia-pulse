@@ -1,3 +1,13 @@
-<div class="bg-slate-50 rounded-2xl border border-slate-100 p-4 text-center text-sm text-slate-400">
-  Response saved.
+{#- La respuesta a `POST /suggestions/{id}/feedback` desde HTMX: reemplaza la tarjeta
+    que se acaba de responder, sea "me sirve" o "descartar". Por eso el texto es neutral
+    y no dice "descartada".
+
+    `role="status"`: el intercambio de HTMX no mueve el foco ni recarga la página, así
+    que sin esto un lector de pantalla no anuncia nada — la tarjeta simplemente
+    desaparece. Recibe un contexto de solo `{request, suggestion_id}`, y los macros
+    resuelven igual porque son globals del entorno, no un `{% import %}`. -#}
+<div id="suggestion-{{ suggestion_id }}" role="status"
+     class="flex items-center justify-center gap-2 p-4 rounded-card bg-ok-soft border border-ok-ink/15 text-sm text-ink">
+  <span class="text-ok-ink flex-shrink-0">{{ ic.icon('check-circle', 'w-5 h-5') }}</span>
+  {{ _('Noted — thanks.') }}
 </div>

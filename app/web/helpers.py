@@ -1,13 +1,18 @@
 """Shared helpers for web route handlers: template rendering with auth context."""
 import hashlib
+import logging
+from datetime import date, datetime
+from functools import lru_cache
 from typing import Any
 
+from babel import Locale, UnknownLocaleError
+from babel.dates import format_date, format_time
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.core.clock import local_now
+from app.core.clock import local_now, to_local
 from app.core.config import get_settings
 from app.i18n import setup_jinja2_i18n
 from app.models.user import User
@@ -15,6 +20,8 @@ from app.repositories.user_repo import UserRepository
 from app.services.notification_service import NotificationService
 from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import read_flashes
+
+logger = logging.getLogger(__name__)
 
 _settings = get_settings()
 
@@ -63,6 +70,53 @@ templates.env.globals["locale"] = _settings.default_locale
 # del momento y no la del arranque del proceso.
 templates.env.globals["now"] = local_now
 setup_jinja2_i18n(templates.env, _settings.default_locale)
+
+
+@lru_cache(maxsize=1)
+def _display_locale() -> Locale:
+    """La locale de Babel con la que se formatean fechas y horas.
+
+    Se degrada a inglés si `DEFAULT_LOCALE` trae algo que Babel no conoce, igual
+    que `app/core/clock.py` se degrada a UTC: un valor mal escrito en el entorno
+    no debería tumbar cada página con `UnknownLocaleError`.
+    """
+    try:
+        return Locale.parse(_settings.default_locale)
+    except (UnknownLocaleError, ValueError):
+        logger.warning(
+            "Locale '%s' desconocida para Babel; se formatea en inglés.",
+            _settings.default_locale,
+        )
+        return Locale.parse("en")
+
+
+def local_date(moment: datetime | date, fmt: str = "long") -> str:
+    """La fecha de un instante, en hora local y en el idioma de la app.
+
+    `strftime('%A, %B %-d')` devuelve los nombres del *locale del proceso*, así que
+    en una app en `es_AR` el Home decía "Sunday, September 13". Babel ya es una
+    dependencia (el catálogo de traducciones pasa por `babel.support`), así que el
+    formateo localizado no agrega nada nuevo al stack.
+    """
+    when = to_local(moment) if isinstance(moment, datetime) else moment
+    return format_date(when, format=fmt, locale=_display_locale())
+
+
+def local_time(moment: datetime) -> str:
+    """La hora de un instante, convertida a la timezone del hogar.
+
+    Las columnas guardan UTC: sin la conversión, una comida de las 21:30 de acá se
+    mostraba como 00:30 del día siguiente.
+
+    El patrón es `H:mm` explícito y no `format='short'` porque el CLDR de `es_AR` pide
+    12 horas ("9:30 p. m."), y acá la hora aparece en listas de 12px al lado de un
+    contador: en Argentina se escribe 21:30 y ocupa la mitad.
+    """
+    return format_time(to_local(moment), format="H:mm", locale=_display_locale())
+
+
+templates.env.filters["local_date"] = local_date
+templates.env.filters["local_time"] = local_time
 
 # Los macros de la v3, disponibles en toda plantilla sin `{% import %}`.
 #
