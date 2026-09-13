@@ -18,6 +18,7 @@ from app.i18n import setup_jinja2_i18n
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.services.notification_service import NotificationService
+from app.web.actions import notification_action, suggestion_action
 from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import read_flashes
 
@@ -137,6 +138,13 @@ templates.env.globals["ic"] = templates.env.get_template("components/icons.html"
 # cantidades). Va con los otros dos porque el mismo rótulo aparece en el Home, en la
 # lista, en el detalle y en el historial.
 templates.env.globals["dm"] = templates.env.get_template("components/domain.html").module
+
+# La acción primaria de una notificación o de una sugerencia. Va como global y no como
+# macro de `dm` porque el mismo destino lo tienen que leer dos handlers — los `/act` —
+# para saber a dónde redirigir después de anotar que la persona actuó: si el mapa
+# viviera en una plantilla, el botón y el redirect serían dos verdades.
+templates.env.globals["notification_action"] = notification_action
+templates.env.globals["suggestion_action"] = suggestion_action
 
 
 def query_int(raw: str | None) -> int | None:

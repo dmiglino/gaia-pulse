@@ -714,10 +714,68 @@ Cinco cambios, en este orden. **Ninguno introduce un LLM en el camino de recomen
 
 **4.3 — Todo lo que la app dice lleva a algún lado**
 
-- [ ] Exponer `related_entity_*` en `NotificationRead`.
-- [ ] Renderizar cada notificación y cada sugerencia con **una acción primaria** que aterrice
+- [x] Exponer `related_entity_*` en `NotificationRead`. Las columnas existían desde el
+      principio y desde la 4.2 los jobs las llenan, pero el schema no las exponía: un cliente
+      de `/api/v1` recibía "no queda leche" sin nada que identifique **qué** leche, o sea sin
+      poder ofrecer la acción que la pantalla web sí ofrece.
+- [x] Renderizar cada notificación y cada sugerencia con **una acción primaria** que aterrice
       en la pantalla correcta con la captura preprellenada — aprovechando el prefill que la
-      Fase 1 arregla.
+      Fase 1 arregla. Nuevo `app/web/actions.py` con `notification_action()` y
+      `suggestion_action()`, más dos rutas `POST .../act`.
+  - El mapa de destinos vive en **Python y no en una plantilla** porque el mismo destino lo
+    leen tres lugares: la plantilla para dibujar el botón, y los dos `/act` para saber a dónde
+    mandar a la persona después de anotar que actuó. Calculado dos veces, el botón y el
+    redirect podrían no coincidir.
+  - `low_stock` aterriza en `/pantry/?low=1#stock-item-<id>`: el ancla es el `id` de la raíz de
+    `stock_card.html`, que ya era el contrato de `hx-target` del ajuste de stock. El `?low=1`
+    no es decoración — garantiza que la tarjeta esté en la página para que el navegador
+    encuentre el ancla, y si el ítem ya se repuso la página abre igual en la lista de
+    faltantes, que es la degradación correcta.
+  - En una sugerencia, la acción **reemplaza** al "Me parece bien" en vez de sumarse: dos
+    botones afirmativos al lado del otro le harían elegir entre aprobar y hacer, cuando hacer
+    ya implica aprobar. La señal positiva no se pierde porque `/act` graba `accepted` **antes**
+    de redirigir.
+  - **Lo que sale del panel de sangre no recibe acción, y eso se decide por `source_type`, no
+    por categoría.** La primera versión de esto excluía `category="habit"` creyendo que era la
+    categoría del generador de sangre; es falso: `blood_generator` emite 19 filas de `meal` y 5
+    de `activity`, y solo 4 de `habit`. O sea que "comé menos carne roja" recibía un botón
+    "Anotar una comida" — y como la acción **reemplaza** al "Me parece bien", la única respuesta
+    afirmativa que quedaba abría la captura con "Comimos " escrito. La app contestaba un consejo
+    de *no* comer algo pidiendo que se anote una comida, en la parte del producto que más
+    cuidado pide. Ahora `suggestion_action(category, source_type)` pide el `source_type` de
+    forma obligatoria y devuelve `None` para `blood_analysis` antes de mirar nada más; un
+    llamador nuevo que lo olvide falla en el test, no en la pantalla de alguien.
+  - Las categorías con acción son las tres que algún generador realmente emite (`meal`,
+    `activity`, `shopping`). `Suggestion.category` documenta también `variety`, `recovery`,
+    `pantry` y `reminder`: ninguna se escribe nunca, y ponerlas en el mapa era una rama
+    inalcanzable y ocho tests que parecían cobertura sin proteger nada (regla 6 de `AGENTS.md`).
+    `shopping` aterriza en `/pantry/?low=1` por lo mismo que el aviso de stock: las dos
+    sugerencias de `shopping` que existen **son** la lista de faltantes.
+  - Actuar sobre un aviso **también lo marca leído**: sin eso el globito del nav seguiría
+    contando algo que la persona acaba de hacer, o sea que la app pediría dos veces lo mismo.
+    Leído y no descartado — descartar es de la persona.
+  - Los cinco rótulos nuevos entran al catálogo `es_AR` en el momento, no en el backlog de la
+    Fase 5: son los rótulos del único botón nuevo de la sub-fase, y en inglés al lado de
+    "Buena idea" se leen como un olvido.
+  - Tests (34, `tests/test_actions.py`): el mapa como función pura; que **todo** destino
+    termine en `/` antes del `?` (sin eso cada toque paga un 307 de `redirect_slashes`, y el
+    fragmento no sobrevive a todos los clientes en un redirect); que todo destino conteste 200
+    contra la app de verdad; que `prefillMap` de `capture/index.html` conozca cada clave que
+    mandamos (una clave que no esté ahí abre el textarea vacío — el defecto de la Fase 1
+    volviendo por otra puerta, sin error visible); que `stock_card.html` siga llevando el `id`
+    del ancla; que la tarjeta renderice **sola** (el parcial de `POST /read` recibe
+    `{request, n}` y el botón usa dos globals, uno de los cuales necesita el `request`); y las
+    dos rutas, incluido que un aviso o una sugerencia ajenos no se puedan tocar.
+  - Tres de esos tests existen porque sin ellos el cambio se rompe **en silencio**: que un
+    candidato de `blood_analysis` no reciba acción en ninguna de las categorías que el
+    generador emite (más un test que verifica que esas son las que emite, para que el primero
+    no envejezca solo); que `/act` escriba el `BehaviorSignal` `accepted_suggestion` de +1.0
+    contra la sugerencia — que es la razón entera por la que la acción puede reemplazar al "Me
+    parece bien", y sin la afirmación alguien puede grabar `status="accepted"` a mano y dejar
+    al motor sin señales positivas sin que se caiga nada ni cambie ninguna pantalla —; y que
+    `GET /api/v1/notifications/` devuelva el sujeto, que es el único consumidor de los dos
+    campos nuevos del schema (la pantalla web lee la fila del ORM, no el schema, así que sin
+    esto los dos campos parecen muertos y borrarlos no rompe ningún test).
 - [ ] Detectar más ausencias además de las dos actuales (hoy solo entrenamiento y pesaje):
       comidas no registradas, sueño ausente.
 - [ ] **Ciclo de vida por sujeto**, que es lo que la 4.2 dejó pendiente: retirar el aviso

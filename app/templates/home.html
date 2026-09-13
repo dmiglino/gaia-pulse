@@ -218,8 +218,21 @@
         {{ ui.btn(tone='ghost', size='icon', icon='x', type='button',
                   aria_label=_('Dismiss suggestion'), attrs=dismiss_attrs, class='flex-shrink-0 -mt-1 -mr-1') }}
       </div>
+      {#- Cuando la categoría lleva a algún lado, ese botón reemplaza al "Me parece
+          bien" — mismo criterio que en `/suggestions/`, y por el mismo motivo: hacerlo
+          ya es aceptarlo, y `/act` graba `accepted` antes de redirigir, así que el
+          motor recibe la señal igual. Va en un `<form>` y no con `hx-post` porque el
+          handler contesta un 302 a otra pantalla: es una navegación, no un swap. -#}
+      {%- set primary = suggestion_action(suggestion.category, suggestion.source_type) %}
       <div class="mt-3 pl-12">
+        {%- if primary %}
+        <form method="post" action="/suggestions/{{ suggestion.id }}/act">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+          {{ ui.btn(primary.label, tone='ok', size='sm', icon=primary.icon) }}
+        </form>
+        {%- else %}
         {{ ui.btn(_('Sounds good'), tone='ok', size='sm', icon='check', type='button', attrs=accept_attrs) }}
+        {%- endif %}
       </div>
     {% endcall %}
     {% endfor %}

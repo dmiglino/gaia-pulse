@@ -15,7 +15,11 @@
     - `slate`/`indigo`/`rose` crudos pasan a tokens, que es lo que hace que la
       tarjeta exista en modo oscuro;
     - los glifos `✓`/`✕` como botones pasan a `ui.btn`: tenían el `aria-label` bien
-      puesto pero un área de toque de 12px de alto. -#}
+      puesto pero un área de toque de 12px de alto;
+    - y las dos únicas cosas que se podían hacer con "no queda leche" eran esconderla
+      y esconderla: ahora la tarjeta lleva una acción primaria que aterriza donde hay
+      que hacer algo — la despensa filtrada por faltantes, con el ancla en ese ítem, o
+      la captura con la frase ya empezada. -#}
 <div id="notif-{{ n.id }}"
      class="flex gap-3 p-4 rounded-card border shadow-sm
             {{ 'bg-brand-50 border-brand-300' if not n.is_read else 'bg-card border-line' }}">
@@ -41,7 +45,20 @@
 
     <p class="text-sm text-ink-muted mt-1">{{ n.body }}</p>
 
-    <div class="mt-2">{{ dm.notification_badge(n.category) }}</div>
+    {%- set action = notification_action(n.category, n.related_entity_type, n.related_entity_id) %}
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      {{ dm.notification_badge(n.category) }}
+      {#- La acción primaria. Un `<form method="post">` pelado y no `hx-post`: el
+          handler contesta un 302 a otra pantalla, y una navegación es exactamente lo
+          que se quiere acá — HTMX intercambiaría el resultado del redirect adentro de
+          esta tarjeta. Sin JS funciona igual. Ver `app/web/actions.py`. -#}
+      {%- if action %}
+      <form method="post" action="/notifications/{{ n.id }}/act" class="contents">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        {{ ui.btn(action.label, tone='subtle', size='sm', icon=action.icon) }}
+      </form>
+      {%- endif %}
+    </div>
   </div>
 
   <div class="flex-shrink-0 flex flex-col gap-1">

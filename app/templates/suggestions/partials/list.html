@@ -95,8 +95,23 @@
 
         Los rótulos dicen lo que la señal significa: `dismissed` graba −0.3 ("por
         ahora no") y `rejected` −1.0 ("nunca"). La v1 los llamaba "Dismiss" y "Not for
-        us", que se leen igual y guardan cosas distintas. -#}
+        us", que se leen igual y guardan cosas distintas.
+
+        Cuando la categoría tiene una acción, esa acción **ocupa el lugar** del "Me
+        parece bien" en vez de sumarse: dos botones afirmativos al lado del otro le
+        harían elegir entre aprobar y hacer, cuando hacer ya implica aprobar. Y la señal
+        positiva no se pierde, porque `/act` graba `accepted` antes de redirigir. Las dos
+        respuestas negativas quedan siempre. Ver `app/web/actions.py`. -#}
+    {%- set primary = suggestion_action(s.category, s.source_type) %}
     <div class="flex flex-wrap gap-2 mt-4 pt-4 border-t border-line">
+      {#- Sin `hx-post`: el handler contesta un 302 a otra pantalla, así que esto es una
+          navegación y no un intercambio de tarjeta. -#}
+      {%- if primary %}
+      <form method="post" action="/suggestions/{{ s.id }}/act">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        {{ ui.btn(primary.label, tone='ok', size='sm', icon=primary.icon) }}
+      </form>
+      {%- endif %}
       {%- for action in [
             {'status': 'accepted',  'label': _('Sounds good'), 'tone': 'ok',
              'icon': 'check'},
@@ -104,7 +119,7 @@
              'icon': 'clock'},
             {'status': 'rejected',  'label': _('Not for us'), 'tone': 'danger-soft',
              'icon': 'x'},
-          ] %}
+          ] if primary is none or action.status != 'accepted' %}
       <form method="post" action="/suggestions/{{ s.id }}/feedback">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
         <input type="hidden" name="status" value="{{ action.status }}" />

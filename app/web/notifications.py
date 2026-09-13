@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
 from app.services.notification_service import NotificationService
+from app.web.actions import notification_action
 from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
@@ -81,6 +82,36 @@ def mark_read(
         "notifications/partials/notification_card.html",
         {"request": request, "n": notification},
     )
+
+
+@router.post("/{notification_id}/act")
+def act(notification_id: int, current_user: CurrentUser, db: DB) -> Response:
+    """Ir a hacer lo que el aviso pide, y darlo por leído en el camino.
+
+    Es el botón que la 4.3 le agrega a la tarjeta. Que además marque leído no es un
+    extra: sin eso, actuar sobre un aviso lo dejaba contado en el globito del nav, o sea
+    que la app seguía pidiendo lo que la persona acababa de hacer. Se marca leído y no
+    descartado a propósito — descartar es de la persona, y el aviso sigue siendo el
+    registro de que esto pasó hasta que ella lo saque o lo pode el job.
+
+    No tiene rama `HX-Request`: es una navegación a otra pantalla, y la plantilla lo
+    manda con un `<form>` sin `hx-*`. El destino sale del **mismo** `notification_action`
+    que dibujó el botón (ver `app/web/actions.py`), así que el redirect no puede
+    discrepar de lo que decía la etiqueta.
+    """
+    svc = NotificationService(db)
+    notification = svc.mark_read(notification_id, current_user.id, current_user.household_id)
+    if notification is None:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    action = notification_action(
+        notification.category,
+        notification.related_entity_type,
+        notification.related_entity_id,
+    )
+    #: `or` y no un `if`: si a la categoría no le corresponde destino la plantilla no
+    #: dibuja el botón, así que llegar acá sin acción es una URL escrita a mano. Marcar
+    #: leído sigue siendo lo correcto para ese caso, y la lista es a dónde volver.
+    return RedirectResponse(url=action.href if action else "/notifications/", status_code=302)
 
 
 @router.post("/{notification_id}/dismiss", response_class=HTMLResponse)

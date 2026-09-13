@@ -5,6 +5,7 @@ from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
 from app.schemas.suggestion import RecommendationPreferenceCreate, SuggestionFeedback
 from app.services.suggestion_service import SuggestionService
+from app.web.actions import suggestion_action
 from app.web.flash import set_flash
 from app.web.helpers import get_template_context, templates
 
@@ -127,6 +128,42 @@ def suggestion_feedback(
             {"request": request, "suggestion_id": suggestion_id},
         )
     return _back_to_suggestions(_("Response saved."), "success")
+
+
+@router.post("/{suggestion_id}/act")
+def suggestion_act(
+    request: Request, suggestion_id: int, current_user: CurrentUser, db: DB
+) -> Response:
+    """Aceptar la sugerencia y ya ir a hacerla.
+
+    Hasta acá una sugerencia tenía tres respuestas y las tres eran para el motor:
+    aceptar, posponer, rechazar. "Me parece bien" grababa la señal positiva y dejaba a
+    la persona en la misma lista, con la cosa todavía por hacer y sin nada que la lleve
+    a hacerla. Este botón es el que la hace: graba `accepted` **antes** de redirigir, así
+    que la señal que alimenta al scorer no se pierde por convertir un gesto en dos.
+
+    Va sin rama `HX-Request` porque el destino es otra pantalla, y sin `feedback_notes`
+    porque el motivo de texto libre es de las respuestas negativas. El id no se valida
+    contra un `Form`: acá el único dato es la ruta, y la pertenencia la chequea
+    `respond_to_suggestion` — un id ajeno vuelve `None` y contesta lo mismo que uno
+    inexistente.
+    """
+    svc = SuggestionService(db)
+    suggestion = svc.respond_to_suggestion(
+        suggestion_id,
+        SuggestionFeedback(status="accepted"),
+        current_user.id,
+        current_user.household_id,
+    )
+    if suggestion is None:
+        return _invalid(request, _("That suggestion is no longer available."), status_code=404)
+    action = suggestion_action(suggestion.category, suggestion.source_type)
+    if action is None:
+        # La plantilla no dibuja el botón para estas categorías, así que llegar acá es
+        # una URL a mano. La respuesta queda grabada igual y el mensaje es el de
+        # `/feedback`, que es lo que efectivamente pasó.
+        return _back_to_suggestions(_("Response saved."), "success")
+    return RedirectResponse(url=action.href, status_code=302)
 
 
 @router.post("/preferences")

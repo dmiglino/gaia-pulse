@@ -1704,3 +1704,18 @@ msgstr "¡Listo! Estos no los pude leer, así que los dejé afuera: %(fields)s. 
 
 msgid "All set. Welcome to GaiaPulse."
 msgstr "Listo. Te damos la bienvenida a GaiaPulse."
+
+msgid "Update the pantry"
+msgstr "Actualizar la despensa"
+
+msgid "Log a workout"
+msgstr "Anotar un entrenamiento"
+
+msgid "Log your weight"
+msgstr "Anotar tu peso"
+
+msgid "Log a meal"
+msgstr "Anotar una comida"
+
+msgid "Open the pantry"
+msgstr "Abrir la despensa"
