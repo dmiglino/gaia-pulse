@@ -30,6 +30,20 @@ class PantryStockRepository(BaseRepository[PantryStock]):
             stmt = stmt.where(FoodItem.category == category)
         return list(self.db.scalars(stmt).unique().all())
 
+    def get_for_household(self, household_id: int, stock_id: int) -> PantryStock | None:
+        """Return one stock row by id, scoped to the household that owns it."""
+        stmt = (
+            select(PantryStock)
+            .where(
+                and_(
+                    PantryStock.id == stock_id,
+                    PantryStock.household_id == household_id,
+                )
+            )
+            .options(joinedload(PantryStock.food_item))
+        )
+        return self.db.scalar(stmt)
+
     def get_by_food_item(self, household_id: int, food_item_id: int) -> PantryStock | None:
         stmt = select(PantryStock).where(
             and_(

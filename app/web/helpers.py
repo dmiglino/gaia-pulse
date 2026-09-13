@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.i18n import setup_jinja2_i18n
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
+from app.services.notification_service import NotificationService
 
 _settings = get_settings()
 
@@ -48,12 +49,20 @@ setup_jinja2_i18n(templates.env, _settings.default_locale)
 
 
 def get_template_context(request: Request, db: Session, current_user: User) -> dict:
-    """Build the base template context with household and user data."""
+    """Build the base template context with household and user data.
+
+    ``base.html`` renders the notification badge on every page, so the unread
+    count belongs here rather than in each individual route.
+    """
     users = UserRepository(db).get_household_users(current_user.household_id)
+    unread = NotificationService(db).get_unread_count(
+        current_user.id, current_user.household_id
+    )
     return {
         "request": request,
         "current_user": current_user,
         "users": users,
+        "unread_notifications_count": unread,
     }
 
 

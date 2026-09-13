@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.models.suggestion import Suggestion
+from app.models.user import User
 from app.repositories.suggestion_repo import BehaviorSignalRepository, SuggestionRepository
 from app.schemas.suggestion import RecommendationPreferenceCreate, SuggestionFeedback
 
@@ -15,6 +16,12 @@ class SuggestionService:
 
     def get_pending(self, user_id: int, household_id: int) -> list[Suggestion]:
         return self.repo.get_pending_for_user(user_id, household_id)
+
+    def generate_for_user(self, user: User, limit: int = 10) -> list[Suggestion]:
+        """Run the recommendation engine on demand for *user*."""
+        from app.recommendations.engine import RecommendationEngine
+
+        return RecommendationEngine().generate_for_user(self.db, user, limit=limit)
 
     def respond_to_suggestion(
         self, suggestion_id: int, feedback: SuggestionFeedback, user_id: int

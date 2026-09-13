@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
@@ -20,6 +20,20 @@ def suggestions_index(request: Request, current_user: CurrentUser, db: DB) -> HT
     ctx["suggestions"] = svc.get_pending(current_user.id, current_user.household_id)
     ctx["preferences"] = svc.get_user_preferences(current_user.id)
     return templates.TemplateResponse("suggestions/index.html", ctx)
+
+
+@router.post("/generate", response_class=HTMLResponse)
+def generate_suggestions(request: Request, current_user: CurrentUser, db: DB) -> Response:
+    """Run the recommendation engine on demand and swap the list back in."""
+    svc = SuggestionService(db)
+    svc.generate_for_user(current_user, limit=10)
+
+    if not request.headers.get("HX-Request"):
+        return RedirectResponse(url="/suggestions", status_code=302)
+
+    ctx = get_template_context(request, db, current_user)
+    ctx["suggestions"] = svc.get_pending(current_user.id, current_user.household_id)
+    return templates.TemplateResponse("suggestions/partials/list.html", ctx)
 
 
 @router.post("/{suggestion_id}/feedback")

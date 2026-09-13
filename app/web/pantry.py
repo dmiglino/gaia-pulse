@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Form, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, Query, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
+from app.i18n import _
 from app.services.pantry_service import PantryService
 from app.web.helpers import get_template_context, templates
 
 router = APIRouter()
+
+_VALID_MOVEMENT_TYPES = {"adjustment", "purchase", "consumption", "discard"}
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -31,6 +34,43 @@ def pantry_index(
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse("pantry/partials/stock_grid.html", ctx)
     return templates.TemplateResponse("pantry/index.html", ctx)
+
+
+@router.post("/{stock_id}/adjust", response_class=HTMLResponse)
+def pantry_adjust(
+    request: Request,
+    stock_id: int,
+    current_user: CurrentUser,
+    db: DB,
+    quantity: float = Form(...),
+    movement_type: str = Form(default="adjustment"),
+) -> Response:
+    """Adjust one pantry item from the stock grid and swap its card back in."""
+    is_htmx = bool(request.headers.get("HX-Request"))
+
+    if movement_type not in _VALID_MOVEMENT_TYPES or quantity < 0:
+        if is_htmx:
+            return HTMLResponse(_("Invalid stock adjustment."), status_code=400)
+        return RedirectResponse(url="/pantry", status_code=302)
+
+    item = PantryService(db).adjust_stock_by_id(
+        household_id=current_user.household_id,
+        user_id=current_user.id,
+        stock_id=stock_id,
+        quantity=quantity,
+        movement_type=movement_type,
+    )
+    if item is None:
+        if is_htmx:
+            return HTMLResponse(_("Pantry item not found."), status_code=404)
+        return RedirectResponse(url="/pantry", status_code=302)
+
+    if not is_htmx:
+        return RedirectResponse(url="/pantry", status_code=302)
+
+    ctx = get_template_context(request, db, current_user)
+    ctx["item"] = item
+    return templates.TemplateResponse("pantry/partials/stock_card.html", ctx)
 
 
 @router.get("/movements", response_class=HTMLResponse)

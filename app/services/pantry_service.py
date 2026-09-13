@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.pantry import PantryMovement
+from app.models.pantry import PantryMovement, PantryStock
 from app.repositories.food_repo import FoodRepository
 from app.repositories.pantry_repo import PantryMovementRepository, PantryStockRepository
 from app.schemas.pantry import PurchaseRequest, StockAdjustRequest
@@ -78,6 +78,54 @@ class PantryService:
         self.db.flush()
         self.db.commit()
         return movement
+
+    def adjust_stock_by_id(
+        self,
+        household_id: int,
+        user_id: int,
+        stock_id: int,
+        quantity: float,
+        movement_type: str,
+        notes: str | None = None,
+    ) -> PantryStock | None:
+        """Adjust an existing stock row identified by its id.
+
+        Unlike :meth:`adjust_stock`, ``adjustment`` means *set the quantity to
+        this absolute value* (which is what the pantry grid's "Set" option
+        offers); ``purchase`` adds, ``consumption``/``discard`` subtract. The
+        recorded movement always carries the magnitude of the actual change.
+
+        Returns ``None`` when the row does not belong to *household_id*.
+        """
+        stock = self.stock_repo.get_for_household(household_id, stock_id)
+        if stock is None:
+            return None
+
+        if movement_type == "adjustment":
+            delta = quantity - float(stock.current_quantity)
+        elif movement_type in ("consumption", "discard"):
+            delta = -quantity
+        else:
+            delta = quantity
+
+        self.stock_repo.upsert_stock(
+            household_id=household_id,
+            food_item_id=stock.food_item_id,
+            delta=delta,
+            unit=stock.unit,
+        )
+        self._make_movement(
+            household_id=household_id,
+            user_id=user_id,
+            food_item_id=stock.food_item_id,
+            movement_type=movement_type,
+            quantity=abs(delta),
+            unit=stock.unit,
+            notes=notes,
+        )
+        self.db.flush()
+        self.db.commit()
+        return stock
 
     def record_consumption(
         self,

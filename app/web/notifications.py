@@ -29,6 +29,21 @@ def notifications_index(
     return templates.TemplateResponse("notifications/index.html", ctx)
 
 
+@router.get("/badge", response_class=HTMLResponse)
+def notifications_badge(request: Request, current_user: CurrentUser, db: DB) -> HTMLResponse:
+    """Return just the unread badge, so the nav can refresh it without a reload."""
+    svc = NotificationService(db)
+    return templates.TemplateResponse(
+        "notifications/partials/badge.html",
+        {
+            "request": request,
+            "unread_notifications_count": svc.get_unread_count(
+                current_user.id, current_user.household_id
+            ),
+        },
+    )
+
+
 @router.post("/mark-all-read")
 def mark_all_read(
     request: Request, current_user: CurrentUser, db: DB

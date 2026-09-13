@@ -1,0 +1,14 @@
+{# Unread-notification badge. Polls itself every 60s and is replaced in place
+   by GET /notifications/badge.
+   Variables:
+     unread_notifications_count: int (injected by get_template_context) #}
+{% set count = unread_notifications_count | default(0, true) %}
+<span id="notif-badge"
+      hx-get="/notifications/badge"
+      hx-trigger="every 60s"
+      hx-swap="outerHTML"
+      {% if count > 0 %}
+      role="status"
+      aria-label="{{ _('%(count)s unread notifications', count=count) }}"
+      class="absolute -top-1.5 -right-1.5 h-4 w-4 bg-rose-500 text-white text-xs font-bold rounded-full flex items-center justify-center leading-none"
+      {% endif %}>{% if count > 0 %}{{ count if count < 10 else '9+' }}{% endif %}</span>
