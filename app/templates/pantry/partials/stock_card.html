@@ -1,87 +1,79 @@
-{# One pantry stock card.
-   Variables:
-     item: PantryStock (with .food_item loaded)
-   Swapped in place by POST /pantry/{id}/adjust. #}
-<div id="stock-item-{{ item.id }}"
-     class="bg-white rounded-2xl border {{ 'border-rose-200 bg-rose-50/30' if item.is_low else 'border-slate-200' }} overflow-hidden group hover:shadow-md hover:shadow-slate-100 transition-all"
-     x-data="{ adjustOpen: false, adjustQty: {{ item.current_quantity | float }} }">
+{#- Una tarjeta de stock.
 
-  <!-- Card header -->
+    Variables: `item` (PantryStock con `.food_item` cargado).
+
+    La devuelve `POST /pantry/{id}/adjust` para reemplazarse a sí misma, así que el
+    `id` del nodo raíz es parte del contrato con `hx-target`.
+
+    Cambios respecto de la v1: la categoría pasa por `dm.food_category_label` (antes
+    era `_(category|title)`, que le pedía al catálogo "Vegetable" — un msgid que no
+    existe y que `pybabel extract` no puede ver), la cantidad por `dm.quantity` (antes
+    repetía inline el truco de `round(1)` contra `| int`), y el rojo del stock bajo
+    pasa a ser el tono `warn`: "queda poco" es un aviso, no un error. -#}
+<div id="stock-item-{{ item.id }}"
+     class="bg-card border rounded-card overflow-hidden transition-all hover:shadow-md
+            {{ 'border-warn-solid/40' if item.is_low else 'border-line' }}"
+     x-data="{ adjustOpen: false }">
+
   <div class="px-4 pt-4 pb-3">
-    <!-- Category badge -->
-    <div class="flex items-start justify-between gap-1 mb-2">
-      <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600 truncate max-w-[60%]">
-        {{ _(item.food_item.category | title) if item.food_item.category else _('Other') }}
-      </span>
-      {% if item.is_low %}
-      <span class="flex-shrink-0 inline-flex items-center gap-0.5 bg-rose-100 text-rose-600 text-xs font-bold px-1.5 py-0.5 rounded-md">
-        <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
-        {{ _('Low') }}
-      </span>
-      {% endif %}
+    <div class="flex items-start justify-between gap-1.5 mb-2">
+      {{ ui.badge(dm.food_category_label(item.food_item.category), tone='neutral', size='sm') }}
+      {%- if item.is_low %}
+      {{ ui.badge(_('Low'), tone='warn', icon='warning', size='sm') }}
+      {%- endif %}
     </div>
 
-    <!-- Item name -->
-    <h3 class="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">
+    <h3 class="text-sm font-semibold text-ink leading-snug line-clamp-2">
       {{ item.food_item.canonical_name }}
     </h3>
 
-    <!-- Quantity -->
-    <div class="mt-2 flex items-baseline gap-1">
-      <span class="text-xl font-bold {{ 'text-rose-600' if item.is_low else 'text-slate-800' }}">
-        {{ item.current_quantity | round(1) if item.current_quantity != item.current_quantity | int else item.current_quantity | int }}
+    <p class="mt-2 flex items-baseline gap-1">
+      <span class="text-xl font-bold tabular-nums {{ 'text-warn-ink' if item.is_low else 'text-ink' }}">
+        {{ dm.quantity(item.current_quantity) }}
       </span>
-      <span class="text-sm text-slate-400">{{ item.unit }}</span>
-    </div>
+      <span class="text-sm text-ink-subtle">{{ item.unit }}</span>
+    </p>
 
     {% if item.low_stock_threshold %}
-    <p class="text-xs text-slate-400 mt-0.5">{{ _('Threshold:') }} {{ item.low_stock_threshold }} {{ item.unit }}</p>
+    <p class="text-xs text-ink-subtle mt-0.5">
+      {{ _('Alerts under %(qty)s', qty=dm.quantity(item.low_stock_threshold, item.unit)) }}
+    </p>
     {% endif %}
   </div>
 
-  <!-- Adjust stock action -->
   <div class="px-4 pb-3">
-    <button
-      type="button"
-      @click="adjustOpen = !adjustOpen"
-      :aria-expanded="adjustOpen"
-      class="w-full text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 py-1.5 rounded-lg transition-colors">
-      {{ _('Adjust Stock') }}
-    </button>
+    {{ ui.btn(_('Adjust'), tone='subtle', size='sm', type='button', block=true, icon='pencil',
+              attrs='@click="adjustOpen = !adjustOpen" :aria-expanded="adjustOpen"') }}
 
-    <!-- Inline adjust form -->
-    <div x-show="adjustOpen" x-cloak class="mt-2" x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0">
-      <form
-        hx-post="/pantry/{{ item.id }}/adjust"
-        hx-target="#stock-item-{{ item.id }}"
-        hx-swap="outerHTML"
-        class="flex items-center gap-2"
-      >
+    <div x-show="adjustOpen" x-cloak class="mt-2"
+         x-transition:enter="transition ease-out duration-150"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0">
+      <form hx-post="/pantry/{{ item.id }}/adjust"
+            hx-target="#stock-item-{{ item.id }}"
+            hx-swap="outerHTML"
+            class="flex items-center gap-1.5">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
-        <label class="sr-only" for="stock-qty-{{ item.id }}">{{ _('Quantity in %(unit)s', unit=item.unit) }}</label>
-        <input
-          id="stock-qty-{{ item.id }}"
-          type="number"
-          name="quantity"
-          x-model="adjustQty"
-          step="0.1"
-          min="0"
-          class="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400"
-          placeholder="{{ _('New qty') }}"
-        />
+
+        <label class="sr-only" for="stock-qty-{{ item.id }}">
+          {{ _('Quantity in %(unit)s', unit=item.unit) }}
+        </label>
+        <input id="stock-qty-{{ item.id }}" type="number" name="quantity"
+               step="0.1" min="0" value="{{ dm.quantity(item.current_quantity) }}"
+               class="w-full min-w-0 px-2 py-1.5 bg-card-alt border border-line rounded-control
+                      text-sm text-ink tabular-nums focus:outline-none focus:border-brand-500
+                      focus:ring-2 focus:ring-brand-500/20" />
+
         <label class="sr-only" for="stock-movement-{{ item.id }}">{{ _('How to apply it') }}</label>
-        <select id="stock-movement-{{ item.id }}" name="movement_type" class="text-xs border border-slate-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500/40 bg-white">
+        <select id="stock-movement-{{ item.id }}" name="movement_type"
+                class="px-1.5 py-1.5 bg-card-alt border border-line rounded-control text-xs text-ink
+                       focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20">
           <option value="adjustment">{{ _('Set') }}</option>
           <option value="purchase">{{ _('Add') }}</option>
           <option value="consumption">{{ _('Use') }}</option>
         </select>
-        <button type="submit"
-                aria-label="{{ _('Save stock change') }}"
-                class="flex-shrink-0 bg-brand-500 hover:bg-brand-600 text-white p-1.5 rounded-lg transition-colors">
-          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/>
-          </svg>
-        </button>
+
+        {{ ui.btn(size='icon', icon='check', aria_label=_('Save stock change'), class='flex-shrink-0') }}
       </form>
     </div>
   </div>

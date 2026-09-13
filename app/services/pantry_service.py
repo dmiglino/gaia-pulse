@@ -17,12 +17,34 @@ class PantryService:
         self.food_repo = FoodRepository(db)
 
     def get_stock(
-        self, household_id: int, search: str | None = None, category: str | None = None
+        self,
+        household_id: int,
+        search: str | None = None,
+        category: str | None = None,
+        low_only: bool = False,
     ) -> list:
-        return self.stock_repo.get_household_stock(household_id, search=search, category=category)
+        """Household stock, optionally narrowed by name, category or low-stock state.
+
+        `low_only` se filtra acá y no en el repositorio porque `is_low` es una
+        propiedad de Python (compara la cantidad contra `low_stock_threshold` y
+        contra cero), no una columna: no hay forma de expresarla en el `WHERE`.
+        """
+        items = self.stock_repo.get_household_stock(household_id, search=search, category=category)
+        if low_only:
+            return [item for item in items if item.is_low]
+        return items
 
     def get_low_stock(self, household_id: int) -> list:
         return self.stock_repo.get_low_stock(household_id)
+
+    def get_stock_summary(self, household_id: int) -> dict[str, int]:
+        """How many items the household tracks, and how many are running low.
+
+        Una sola consulta para los dos números: la pantalla los muestra juntos y
+        pedirlos por separado recorría la despensa completa dos veces.
+        """
+        items = self.stock_repo.get_household_stock(household_id)
+        return {"total": len(items), "low": sum(1 for item in items if item.is_low)}
 
     def process_purchase(
         self, household_id: int, user_id: int, request: PurchaseRequest

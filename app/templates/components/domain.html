@@ -25,6 +25,7 @@
 #}
 
 {% import 'components/ui.html' as ui %}
+{% import 'components/icons.html' as ic %}
 
 
 {#- ── Tipo de comida ──────────────────────────────────────────────────────────
@@ -78,6 +79,47 @@
                  'cardio': 'warn', 'sports': 'info', 'yoga': 'body'} -%}
 {{ ui.badge(workout_type_label(workout_type), tone=tones.get(workout_type | lower if workout_type else '', 'move'),
             icon='bolt', size=size) }}
+{%- endmacro %}
+
+
+{#- ── Categoría de alimento ───────────────────────────────────────────────────
+    `FoodItem.category` guarda los nueve valores en minúscula que siembra
+    `seed.py` (`vegetable`, `grain`, `processed`…). La despensa los mostraba con
+    `_(item.food_item.category | title)`, que además de ser inextraíble le pedía
+    al catálogo "Vegetable" — un msgid que no existe. -#}
+{% macro food_category_label(category) -%}
+{%- set labels = {
+  'vegetable': _('Vegetables'), 'fruit': _('Fruit'), 'protein': _('Protein'),
+  'grain': _('Grains'), 'dairy': _('Dairy'), 'fat': _('Fats'),
+  'beverage': _('Drinks'), 'processed': _('Packaged'), 'other': _('Other'),
+} -%}
+{{- labels.get(category | lower if category else 'other', category | title) -}}
+{%- endmacro %}
+
+
+{#- ── Movimiento de despensa ──────────────────────────────────────────────────
+    Cuatro tipos, cada uno con su ícono y su tono. La v1 los rotulaba con
+    `m.movement_type|title` (siempre en inglés) y los ilustraba con emoji
+    (🛒🍽️🗑️📝), que no siguen el peso de la tipografía ni el tema. -#}
+{% macro movement_type_label(movement_type) -%}
+{%- set labels = {
+  'purchase': _('Purchase'), 'consumption': _('Used'),
+  'discard': _('Thrown out'), 'adjustment': _('Adjusted'),
+} -%}
+{{- labels.get(movement_type | lower if movement_type else '', movement_type | title) -}}
+{%- endmacro %}
+
+
+{% macro movement_icon(movement_type, class='w-4 h-4') -%}
+{%- set icons = {'purchase': 'cart', 'consumption': 'meal',
+                 'discard': 'x', 'adjustment': 'pantry'} -%}
+{%- set tones = {'purchase': 'ok', 'consumption': 'food',
+                 'discard': 'danger', 'adjustment': 'stock'} -%}
+{%- set key = movement_type | lower if movement_type else '' -%}
+<span class="flex-shrink-0 w-9 h-9 rounded-control flex items-center justify-center
+             bg-{{ tones.get(key, 'stock') }}-soft text-{{ tones.get(key, 'stock') }}-ink">
+  {{ ic.icon(icons.get(key, 'pantry'), class) }}
+</span>
 {%- endmacro %}
 
 

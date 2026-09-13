@@ -2,118 +2,107 @@
 
 {% block title %}{{ _('Pantry') }}{% endblock %}
 
+{#- Los tres filtros de la v1 estaban rotos, cada uno por un motivo distinto:
+
+    - el buscador mandaba `?q=`, y la ruta lee `search`: escribir no filtraba nada;
+    - el select "solo stock bajo" mandaba `?filter=low`, un parámetro que la ruta no
+      declara: no hacía nada;
+    - las diez pestañas de categoría mandaban rótulos en inglés capitalizados
+      (`Produce`, `Dairy`, `Condiments`, `Snacks`, `Frozen`) contra una columna que
+      guarda nueve valores en minúscula (`vegetable`, `dairy`, `processed`…). La
+      comparación es `==` sensible a mayúsculas, así que **ninguna** pestaña
+      matcheaba: cuatro de esos rótulos no existen como categoría y las otras seis
+      diferían en la primera letra. Encima `ctx["categories"]`, que sí tiene los
+      valores reales, se calculaba y nunca se usaba.
+
+    Y el estado activo vivía en un `x-data="pantryPage()"` que se reseteaba al
+    recargar, con `hx-push-url="false"` para que la URL no lo contradijera. Ahora es
+    un `<form method="get">` y la query es la única fuente de verdad. -#}
+
 {% block content %}
-<div class="px-4 py-6 md:px-8 max-w-5xl mx-auto" x-data="pantryPage()">
+<div class="px-4 py-6 md:px-8 max-w-5xl mx-auto">
 
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4 mb-6">
-    <div>
-      <div class="flex items-center gap-2.5">
-        <h1 class="text-2xl font-bold text-slate-800">{{ _('Pantry') }}</h1>
-        {% if low_stock_count and low_stock_count > 0 %}
-        <span class="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-xs font-bold px-2 py-0.5 rounded-full">
-          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
-          {{ low_stock_count }} {{ _('low stock') }}
+  {% call ui.page_header(_('Pantry'), subtitle=_('What the house has right now'),
+                         icon='pantry', tone='stock') %}
+    {{ ui.btn(_('History'), href='/pantry/movements', tone='secondary', icon='clock') }}
+    {{ ui.btn(_('Add purchase'), href='/capture?prefill=pantry', tone='primary', icon='plus') }}
+  {% endcall %}
+
+  {% include 'pantry/partials/summary.html' %}
+
+  {#- `hx-target`, `hx-indicator`, `hx-push-url` y `hx-include` son heredables, así
+      que el buscador solo declara su propio disparador. El `hx-sync` está porque
+      soltar el foco del buscador dispara además el `change` del formulario: sin él
+      dos requests idénticas podrían volver desordenadas y pintar un resultado
+      viejo. -#}
+  <form id="pantry-filters" method="get" action="/pantry"
+        class="space-y-3 mb-5"
+        hx-get="/pantry" hx-trigger="change" hx-target="#stock-grid"
+        hx-indicator="#pantry-spinner" hx-push-url="true">
+
+    <div class="flex flex-col sm:flex-row gap-3">
+      <div class="relative flex-1">
+        <label for="pantry-search" class="sr-only">{{ _('Search items') }}</label>
+        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-ink-subtle">
+          {{ ic.icon('search', 'w-4 h-4') }}
         </span>
-        {% endif %}
+        <input type="search" id="pantry-search" name="search" value="{{ search }}"
+               placeholder="{{ _('Search items…') }}"
+               class="{{ ui.INPUT_CLASS }} pl-9"
+               hx-get="/pantry" hx-trigger="keyup changed delay:300ms"
+               hx-include="closest form" hx-sync="closest form:replace" />
       </div>
-      <p class="text-sm text-slate-500 mt-0.5">
-        {{ stock_items | length }} {% if stock_items | length == 1 %}{{ _('item tracked') }}{% else %}{{ _('items tracked') }}{% endif %}
-      </p>
+
+      <label class="flex items-center gap-2 px-3.5 py-2.5 bg-card-alt border border-line rounded-control
+                    text-sm font-medium text-ink-muted cursor-pointer self-start
+                    has-[:checked]:bg-warn-soft has-[:checked]:text-warn-ink has-[:checked]:border-warn-solid/30">
+        <input type="checkbox" name="low" value="1" class="peer sr-only" {{ 'checked' if low_only else '' }} />
+        {#- El tilde se rinde siempre y se pinta con `text-transparent` →
+            `peer-checked:text-white`: si dependiera de `low_only` habría que esperar
+            la respuesta del servidor para verlo, y el intercambio de HTMX solo toca
+            la grilla, no este control. -#}
+        <span class="w-4 h-4 rounded border border-line-strong bg-card text-transparent
+                     flex items-center justify-center transition-colors
+                     peer-checked:bg-warn-solid peer-checked:border-warn-solid peer-checked:text-white
+                     peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
+          {{ ic.icon('check', 'w-3 h-3') }}
+        </span>
+        {{ _('Only low stock') }}
+      </label>
     </div>
-    <a href="/capture?prefill=pantry"
-       class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors shadow-sm shadow-brand-200">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/>
-      </svg>
-      {{ _('Add Purchase') }}
-    </a>
-  </div>
 
-  <!-- Search + filter bar -->
-  <div class="flex flex-col sm:flex-row gap-3 mb-5">
-    <div class="relative flex-1">
-      <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        <svg class="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
-        </svg>
-      </div>
-      <input
-        type="search"
-        name="q"
-        x-model="searchQuery"
-        @input.debounce.300ms="fetchItems()"
-        placeholder="{{ _('Search items…') }}"
-        class="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors"
-        hx-get="/pantry"
-        hx-trigger="keyup changed delay:300ms"
-        hx-target="#stock-grid"
-        hx-include="[name='q'],[name='category'],[name='filter']"
-        hx-indicator="#pantry-spinner"
-        hx-push-url="false"
-      />
-    </div>
-    <select
-      name="filter"
-      x-model="filterLow"
-      hx-get="/pantry"
-      hx-trigger="change"
-      hx-target="#stock-grid"
-      hx-include="[name='q'],[name='category']"
-      hx-indicator="#pantry-spinner"
-      class="py-2.5 pl-3 pr-8 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 transition-colors">
-      <option value="">{{ _('All items') }}</option>
-      <option value="low">{{ _('Low stock only') }}</option>
-    </select>
-  </div>
+    <fieldset class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+      <legend class="sr-only">{{ _('Filter by category') }}</legend>
+      <label class="flex-shrink-0 cursor-pointer">
+        <input type="radio" name="category" value="" class="sr-only peer"
+               {{ 'checked' if not category else '' }} />
+        <span class="block px-3.5 py-1.5 rounded-pill text-xs font-semibold bg-card text-ink-muted
+                     border border-line transition-all peer-checked:bg-stock-solid peer-checked:text-white
+                     peer-checked:border-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
+          {{ _('All') }}
+        </span>
+      </label>
+      {%- for cat in categories %}
+      <label class="flex-shrink-0 cursor-pointer">
+        <input type="radio" name="category" value="{{ cat }}" class="sr-only peer"
+               {{ 'checked' if category == cat else '' }} />
+        <span class="block px-3.5 py-1.5 rounded-pill text-xs font-semibold bg-card text-ink-muted
+                     border border-line transition-all peer-checked:bg-stock-solid peer-checked:text-white
+                     peer-checked:border-transparent peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500">
+          {{ dm.food_category_label(cat) }}
+        </span>
+      </label>
+      {%- endfor %}
+    </fieldset>
 
-  <!-- Category filter tabs -->
-  <div class="flex gap-2 mb-5 overflow-x-auto pb-1 scrollbar-hide">
-    {% set categories = [('All', ''), ('Produce', 'Produce'), ('Dairy', 'Dairy'), ('Protein', 'Protein'), ('Grains', 'Grains'), ('Beverages', 'Beverages'), ('Condiments', 'Condiments'), ('Snacks', 'Snacks'), ('Frozen', 'Frozen'), ('Other', 'Other')] %}
-    {% for cat_label, cat_value in categories %}
-    <button
-      type="button"
-      name="category"
-      value="{{ cat_value }}"
-      @click="activeCategory = '{{ cat_label }}'"
-      :class="activeCategory === '{{ cat_label }}' ? 'bg-brand-500 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-brand-300 hover:text-brand-600'"
-      class="flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all"
-      hx-get="/pantry"
-      hx-trigger="click"
-      hx-target="#stock-grid"
-      hx-include="[name='q'],[name='filter']"
-      hx-vals='{"category": "{{ cat_value }}"}'
-      hx-indicator="#pantry-spinner"
-    >
-      {{ _(cat_label) }}
-    </button>
-    {% endfor %}
-  </div>
+    <button type="submit" class="sr-only">{{ _('Apply filters') }}</button>
+  </form>
 
-  <!-- Loading indicator -->
-  <div id="pantry-spinner" class="htmx-indicator flex justify-center py-4">
-    <svg class="animate-spin w-5 h-5 text-brand-400" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-  </div>
+  {{ ui.spinner('pantry-spinner') }}
 
-  <!-- Stock grid (HTMX target) -->
   <div id="stock-grid">
     {% include 'pantry/partials/stock_grid.html' %}
   </div>
 
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  function pantryPage() {
-    return {
-      searchQuery: '',
-      filterLow: '',
-      activeCategory: 'All',
-    };
-  }
-</script>
 {% endblock %}

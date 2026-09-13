@@ -1,36 +1,57 @@
 {% extends "base.html" %}
-{% block title %}{{ _('Pantry Movement History') }}{% endblock %}
+
+{% block title %}{{ _('Pantry history') }}{% endblock %}
+
+{#- Esta pantalla existía y **no se llegaba desde ningún lado**: ningún template
+    enlazaba `/pantry/movements`. Ahora sale del encabezado de la despensa.
+
+    Lo demás que arregla: el "volver" era un carácter `←` sin nombre accesible, el
+    tipo de movimiento se rotulaba con `movement_type|title` (siempre en inglés) y
+    se ilustraba con emoji (🛒🍽️🗑️📝), y la fecha era un `strftime('%b %d %H:%M')`
+    crudo — o sea UTC, en inglés y sin el año. -#}
 
 {% block content %}
-<div class="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-5">
-  <div class="flex items-center gap-4">
-    <a href="/pantry" class="text-slate-400 hover:text-slate-600">←</a>
-    <h1 class="text-xl font-bold text-slate-900">{{ _('Pantry Movement History') }}</h1>
-  </div>
+<div class="px-4 py-6 md:px-8 max-w-3xl mx-auto">
+
+  {{ ui.page_header(_('Pantry history'),
+                    subtitle=_('Every purchase, use and adjustment, newest first'),
+                    icon='clock', tone='stock',
+                    back='/pantry', back_label=_('Pantry')) }}
 
   {% if movements %}
-  <div class="space-y-2">
+  <ul class="space-y-2">
     {% for m in movements %}
-    <div class="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
-      <span class="text-lg">
-        {% if m.movement_type == 'purchase' %}🛒{% elif m.movement_type == 'consumption' %}🍽️{% elif m.movement_type == 'discard' %}🗑️{% else %}📝{% endif %}
-      </span>
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium text-slate-800">
-          {{ m.movement_type|title }}: <strong>{{ m.quantity }} {{ m.unit }}</strong> · {{ m.food_item.canonical_name }}
+    <li>
+      {% call ui.card(padding='px-4 py-3', class='flex items-center gap-3') %}
+        {{ dm.movement_icon(m.movement_type) }}
+        {#- El alimento va primero porque es lo que uno busca al recorrer la lista;
+            el tipo y la cantidad son el detalle. Así ninguna línea necesita una
+            palabra de pegamento ("2 l **de** leche") como msgid suelto. -#}
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-ink truncate">{{ m.food_item.canonical_name }}</p>
+          <p class="text-xs text-ink-muted">
+            {{ dm.movement_type_label(m.movement_type) }}
+            <span aria-hidden="true">·</span>
+            <span class="tabular-nums">{{ dm.quantity(m.quantity, m.unit) }}</span>
+          </p>
+          {% if m.notes %}<p class="text-xs text-ink-subtle truncate">{{ m.notes }}</p>{% endif %}
+        </div>
+        <p class="text-xs text-ink-subtle flex-shrink-0 text-right tabular-nums">
+          {{ m.timestamp | local_time }}<br />{{ m.timestamp | local_date('medium') }}
         </p>
-        {% if m.notes %}<p class="text-xs text-slate-400">{{ m.notes }}</p>{% endif %}
-      </div>
-      <p class="text-xs text-slate-400 flex-shrink-0">{{ m.timestamp.strftime('%b %d %H:%M') }}</p>
-    </div>
+      {% endcall %}
+    </li>
     {% endfor %}
-  </div>
+  </ul>
   {% else %}
-  {{ ui.empty_state(
-      _('No pantry movements yet.'),
-      text=_('Every purchase and every consumption shows up here, newest first.'),
-      icon='cart', tone='stock',
-      action_label=_('Log a purchase'), action_href='/capture?prefill=pantry') }}
+  {% call ui.card(padding='') %}
+    {{ ui.empty_state(
+        _('No pantry movements yet.'),
+        text=_('Every purchase and every consumption shows up here, newest first.'),
+        icon='cart', tone='stock',
+        action_label=_('Log a purchase'), action_href='/capture?prefill=pantry') }}
+  {% endcall %}
   {% endif %}
+
 </div>
 {% endblock %}

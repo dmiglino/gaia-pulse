@@ -19,6 +19,22 @@ def _back_to_pantry(message: str, category: str) -> RedirectResponse:
     return response
 
 
+#: Los nueve valores que `FoodItem.category` guarda en la base (`seed.py`). Las
+#: pestañas de la v1 mandaban rótulos en inglés capitalizados que no coincidían con
+#: ninguno, así que el filtro de categoría nunca devolvía nada.
+FOOD_CATEGORIES = [
+    "vegetable",
+    "fruit",
+    "protein",
+    "grain",
+    "dairy",
+    "fat",
+    "beverage",
+    "processed",
+    "other",
+]
+
+
 @router.get("/", response_class=HTMLResponse)
 def pantry_index(
     request: Request,
@@ -26,21 +42,34 @@ def pantry_index(
     db: DB,
     search: str | None = Query(None),
     category: str | None = Query(None),
+    low: str | None = Query(None),
 ) -> HTMLResponse:
-    svc = PantryService(db)
-    ctx = get_template_context(request, db, current_user)
-    ctx["stock_items"] = svc.get_stock(current_user.household_id, search=search, category=category)
-    ctx["low_stock_items"] = svc.get_low_stock(current_user.household_id)
-    ctx["low_stock_count"] = len(ctx["low_stock_items"])
-    ctx["search"] = search or ""
-    ctx["category"] = category or ""
-    ctx["categories"] = [
-        "vegetable", "fruit", "protein", "grain", "dairy", "fat", "beverage", "processed", "other"
-    ]
+    """Pantry stock, filtered by name, category and low-stock state.
 
-    # HTMX partial response
+    `low` llega como string porque un checkbox no marcado no manda nada y uno
+    marcado manda `low=1`: con `bool` FastAPI contestaría 422 a un `?low=` vacío.
+    """
+    svc = PantryService(db)
+    low_only = bool(low)
+    ctx = get_template_context(request, db, current_user)
+    ctx["stock_items"] = svc.get_stock(
+        current_user.household_id, search=search, category=category, low_only=low_only
+    )
+    ctx["filters_active"] = bool(search or category or low_only)
+
+    # La grilla es lo único que se intercambia, y no muestra los contadores del
+    # encabezado: pedirlos en cada tecla del buscador era recorrer la despensa
+    # completa para descartar el resultado.
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse("pantry/partials/stock_grid.html", ctx)
+
+    summary = svc.get_stock_summary(current_user.household_id)
+    ctx["stock_total"] = summary["total"]
+    ctx["low_stock_count"] = summary["low"]
+    ctx["search"] = search or ""
+    ctx["category"] = category or ""
+    ctx["low_only"] = low_only
+    ctx["categories"] = FOOD_CATEGORIES
     return templates.TemplateResponse("pantry/index.html", ctx)
 
 
@@ -61,7 +90,8 @@ def pantry_adjust(
             return HTMLResponse(_("Invalid stock adjustment."), status_code=400)
         return _back_to_pantry(_("Invalid stock adjustment."), "error")
 
-    item = PantryService(db).adjust_stock_by_id(
+    svc = PantryService(db)
+    item = svc.adjust_stock_by_id(
         household_id=current_user.household_id,
         user_id=current_user.id,
         stock_id=stock_id,
@@ -78,7 +108,11 @@ def pantry_adjust(
 
     ctx = get_template_context(request, db, current_user)
     ctx["item"] = item
-    return templates.TemplateResponse("pantry/partials/stock_card.html", ctx)
+    summary = svc.get_stock_summary(current_user.household_id)
+    ctx["stock_total"] = summary["total"]
+    ctx["low_stock_count"] = summary["low"]
+    ctx["oob"] = True
+    return templates.TemplateResponse("pantry/partials/stock_card_swap.html", ctx)
 
 
 @router.get("/movements", response_class=HTMLResponse)

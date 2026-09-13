@@ -1,3 +1,9 @@
+{#- La grilla de stock: el fragmento que HTMX intercambia cuando cambian los filtros
+    y lo que `pantry/index.html` incluye en la primera carga.
+
+    La v1 solo tenía el caso "la despensa está vacía", así que buscar algo que no
+    está invitaba a cargar el primer ítem de una despensa que ya tenía treinta. -#}
+
 {% if stock_items %}
 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
   {% for item in stock_items %}
@@ -7,10 +13,18 @@
 
 {% else %}
 {% call ui.card(padding='') %}
+  {%- if filters_active %}
+  {{ ui.empty_state(
+      _('Nothing here matches'),
+      text=_('Try another category, or clear the filters to see the whole pantry.'),
+      icon='filter', tone='stock',
+      action_label=_('Clear filters'), action_href='/pantry') }}
+  {%- else %}
   {{ ui.empty_state(
       _('Your pantry is empty'),
       text=_('Start by adding a purchase. Use the Capture screen to quickly log what you bought.'),
       icon='pantry', tone='stock',
       action_label=_('Add first item'), action_href='/capture?prefill=pantry') }}
+  {%- endif %}
 {% endcall %}
 {% endif %}

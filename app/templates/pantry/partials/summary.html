@@ -1,0 +1,21 @@
+{#- Los dos contadores del encabezado de la despensa.
+
+    Es un parcial propio porque ajustar el stock de una tarjeta puede cambiarlos: el
+    intercambio de `POST /pantry/{id}/adjust` devuelve la tarjeta **y** este bloque
+    con `hx-swap-oob`, así que subir un ítem por encima de su umbral lo saca del
+    contador de "quedan pocos" en el momento. Sin esto el encabezado seguía diciendo
+    el número viejo hasta la próxima carga completa.
+
+    Variables: `stock_total`, `low_stock_count`, y `oob` (solo lo pasa la ruta de
+    ajuste). -#}
+<div id="pantry-summary" class="flex flex-wrap items-center gap-2 mb-5 -mt-2"
+     {% if oob %}hx-swap-oob="true"{% endif %}>
+  {{ ui.badge(ngettext('%(num)d item tracked', '%(num)d items tracked', stock_total),
+              tone='neutral') }}
+  {%- if low_stock_count %}
+  <a href="/pantry?low=1"
+     class="rounded-chip focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+    {{ ui.badge(_('%(num)d running low', num=low_stock_count), tone='warn', icon='warning') }}
+  </a>
+  {%- endif %}
+</div>

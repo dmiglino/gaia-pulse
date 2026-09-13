@@ -1,0 +1,8 @@
+{#- La respuesta de `POST /pantry/{id}/adjust`: la tarjeta que reemplaza a la vieja
+    (`hx-swap="outerHTML"` sobre `#stock-item-{id}`) más los contadores del
+    encabezado, que viajan fuera de banda porque el ajuste puede cambiarlos.
+
+    Los dos nodos van al mismo nivel a propósito: HTMX solo interpreta `hx-swap-oob`
+    en los elementos de primer nivel de la respuesta. -#}
+{% include 'pantry/partials/stock_card.html' %}
+{% include 'pantry/partials/summary.html' %}
