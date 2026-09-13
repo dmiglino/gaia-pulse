@@ -38,7 +38,12 @@ _POSITIVE_SIGNAL_BOOST = 0.12
 _NEGATIVE_SIGNAL_PENALTY = 0.15
 _DIVERSITY_PENALTY = 0.20  # per subject already suggested recently
 _RECENT_SUGGESTION_DAYS = 7  # window for diversity check
-_RECENT_SIGNAL_DAYS = 30  # window for behaviour signal lookup
+
+#: La ventana de señales ya no se decide acá. Era `30` escrito a mano en este módulo **y**
+#: en `engine.py`, y desde la 4.4.2 lo que decide cuánto pesa una señal vieja es su
+#: semivida, no un corte: el horizonte solo acota la consulta y lo declara `learning`, del
+#: mismo lado que las semividas de las que se deriva.
+_RECENT_SIGNAL_DAYS = learning.SIGNAL_HORIZON_DAYS
 
 
 def score_candidates(

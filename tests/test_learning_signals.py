@@ -397,31 +397,54 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
         (scored,) = score_candidates([candidate], diego, _signals(db, diego), [])
         assert scored["_score"] > 0.5
 
-    def test_signals_older_than_the_window_stop_counting(
+    def test_an_old_meal_barely_counts_next_to_a_recent_one(
         self, db: Session, household: Household, diego: User
     ) -> None:
-        """El scorer mira 30 días. Sin esto, "comí esto una vez en 2024" pesa para siempre."""
+        """ "Comí esto una vez en 2024" no puede pesar lo mismo que "lo comí ayer".
+
+        Antes de la 4.4.2 pesaba **exactamente** lo mismo y el corte era una ventana de 30
+        días, así que el aprendizaje era un promedio de la historia con un borde duro. Ahora
+        la señal vieja sigue entrando —la consulta llega hasta el horizonte— y lo que la
+        vuelve irrelevante es su semivida.
+        """
         _log_meal(
             db,
             household,
             participants=[
                 MealParticipantCreate(
-                    user_id=diego.id, items=[MealItemCreate(food_name="ravioles")]
+                    user_id=diego.id,
+                    items=[
+                        MealItemCreate(food_name="ravioles"),
+                        MealItemCreate(food_name="ñoquis"),
+                    ],
                 )
             ],
         )
-        (signal,) = _signals(db, diego)
-        signal.created_at = datetime.now(timezone.utc) - timedelta(days=200)
+        old, recent = sorted(_signals(db, diego), key=lambda s: s.entity_name)
+        assert (old.entity_name, recent.entity_name) == ("noquis", "ravioles")
+        old.created_at = datetime.now(timezone.utc) - timedelta(days=200)
         db.flush()
 
-        candidate = {
-            "title": "Ravioles caseros",
-            "confidence": 0.5,
-            "subject_type": "food",
-            "subject_name": "ravioles",
-        }
-        (scored,) = score_candidates([candidate], diego, _signals(db, diego), [])
-        assert scored["_score"] == 0.5
+        candidates = [
+            {
+                "title": "Ñoquis del 29",
+                "confidence": 0.5,
+                "subject_type": "food",
+                "subject_name": "ñoquis",
+            },
+            {
+                "title": "Ravioles caseros",
+                "confidence": 0.5,
+                "subject_type": "food",
+                "subject_name": "ravioles",
+            },
+        ]
+        scored = score_candidates(candidates, diego, _signals(db, diego), [])
+
+        assert scored[0]["title"] == "Ravioles caseros"
+        #: Doscientos días son casi diez semividas de una señal implícita: lo que queda es
+        #: ruido a nivel del redondeo del score, no una preferencia.
+        assert scored[1]["_score"] < 0.501
 
 
 def _string_constants_outside_the_vocabulary() -> set[str]:

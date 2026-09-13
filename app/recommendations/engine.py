@@ -34,7 +34,12 @@ from app.recommendations.generators import (
 logger = logging.getLogger(__name__)
 
 _RECENT_SUGGESTION_DAYS = 7
-_RECENT_SIGNAL_DAYS = 30
+
+#: Cuánto historial de señales se trae. Lo declara `learning` porque se deriva de las
+#: semividas con las que después se pondera (4.4.2): acá era un `30` escrito a mano, y el
+#: scorer tenía su propia copia del mismo número. Con decaimiento el corte solo acota la
+#: consulta — lo viejo entra y pesa poco, en vez de no entrar.
+_RECENT_SIGNAL_DAYS = learning.SIGNAL_HORIZON_DAYS
 
 #: `record_feedback` vivía acá: una segunda implementación completa del camino de
 #: escritura de feedback, con `db.get(Suggestion, id)` sin chequeo de pertenencia y la

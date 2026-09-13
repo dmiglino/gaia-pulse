@@ -33,10 +33,12 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
 from app.repositories.suggestion_repo import BehaviorSignalRepository
 
@@ -80,6 +82,65 @@ POSITIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
 #: segundo tipo que mantener sincronizado. Que no vuelva a aparecer un tipo que se lee y no
 #: se escribe lo cuida `test_every_signal_type_the_reader_knows_has_a_writer`.
 NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion"})
+
+
+#: Cuántos días tarda una señal en pesar la mitad, según de dónde salió. Sin esto una
+#: señal de hace ocho meses pesaba **exactamente igual** que la de ayer, así que un gusto
+#: que cambió no se podía desaprender nunca: la app acumulaba, no aprendía.
+#:
+#: Las explícitas duran mucho más porque dicen algo sobre la persona ("no me gusta el
+#: hígado"), mientras que una implícita dice algo sobre la semana ("comí pollo el martes").
+#: Y las preferencias duras —lo imposible, lo que se evita— no viven acá: viven en
+#: `RecommendationPreference`, que `apply_hard_constraints` lee sin descuento alguno. Esta
+#: tabla es la parte blanda, la que tiene derecho a quedar vieja.
+_HALF_LIFE_DAYS: dict[str, float] = {
+    "explicit": 90.0,
+    "implicit": 21.0,
+}
+
+#: Lo que se usa para un `source_type` que no está en el mapa —hoy `"inferred"`, que la
+#: columna admite y nadie escribe—. Es el más corto a propósito: si no sabemos de dónde
+#: salió una señal, que se desvanezca rápido es el error más barato.
+_DEFAULT_HALF_LIFE_DAYS = 21.0
+
+#: Hasta qué edad vale la pena traer señales de la base. Se deriva de la semivida más
+#: larga en vez de ser un número aparte: la ventana de 30 días estaba escrita a mano en
+#: `engine.py` **y** en `scorer.py`, y dos copias del mismo umbral es cómo empiezan a
+#: discrepar. A cuatro semividas una señal conserva el 6% de su valor, que con el tope de
+#: boost de 0.12 mueve el score menos de una centésima: el corte existe para acotar la
+#: consulta, no para decidir nada.
+SIGNAL_HORIZON_DAYS: int = int(4 * max(_HALF_LIFE_DAYS.values()))
+
+#: Un "no" explícito saca al sujeto de la lista mientras conserve al menos la mitad de su
+#: peso — es decir, durante una semivida— y después solo pesa en el score. Es el mismo
+#: número que ya está declarado arriba y no un umbral nuevo: filtrar es más caro que
+#: puntuar (el candidato no llega a existir), así que deja de hacerse antes.
+_FILTER_DECAY_FLOOR = 0.5
+
+
+def half_life_days(source_type: str) -> float:
+    """La semivida que le corresponde a una señal según su `source_type`."""
+    return _HALF_LIFE_DAYS.get(source_type, _DEFAULT_HALF_LIFE_DAYS)
+
+
+def decay_factor(signal: BehaviorSignal, *, now: datetime | None = None) -> float:
+    """Qué fracción de su valor original conserva *signal* hoy: `0.5 ** (edad/semivida)`.
+
+    `created_at` lo pone la base (`server_default=func.now()`), así que una señal recién
+    grabada y todavía no volcada no tiene fecha: se la cuenta entera, que es lo que es.
+    """
+    if signal.created_at is None:
+        return 1.0
+    reference = now or datetime.now(tz=timezone.utc)
+    age_days = (reference - as_utc(signal.created_at)).total_seconds() / 86400.0
+    if age_days <= 0:
+        return 1.0
+    return float(0.5 ** (age_days / half_life_days(signal.source_type)))
+
+
+def signal_weight(signal: BehaviorSignal, *, now: datetime | None = None) -> float:
+    """El valor de *signal* descontado por su edad. Conserva el signo."""
+    return float(signal.value) * decay_factor(signal, now=now)
 
 
 def normalize_subject(name: str) -> str:
@@ -171,7 +232,9 @@ def record_signal(
     )
 
 
-def net_affinity(signals: list[BehaviorSignal]) -> dict[tuple[str, str], float]:
+def net_affinity(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> dict[tuple[str, str], float]:
     """Cuánto le gusta cada sujeto, sumando lo positivo y lo negativo de *signals*.
 
     Se suma en vez de clasificar cada señal por separado porque un mismo sujeto puede
@@ -179,11 +242,17 @@ def net_affinity(signals: list[BehaviorSignal]) -> dict[tuple[str, str], float]:
     dos listas separadas el candidato recibía el boost **y** la penalización, que es un
     resultado que no significa nada. La suma neta al menos dice para qué lado.
 
+    Cada señal entra con su peso descontado por la edad (`signal_weight`), así que lo
+    reciente manda y lo viejo se apaga solo. Antes cada fila valía su `value` crudo para
+    siempre, y el resultado era un promedio de toda la historia: seis meses de pollo no
+    los podían mover dos semanas de otra cosa.
+
     Quién decide el signo es `value`, no el tipo: `POSITIVE_SIGNAL_TYPES` y
     `NEGATIVE_SIGNAL_TYPES` están para que el vocabulario sea revisable de un lado solo, y
     para dejar afuera del cómputo lo que no es una opinión —`ignored_suggestion`, que graba
     tanto descartar como posponer—.
     """
+    reference = now or datetime.now(tz=timezone.utc)
     totals: dict[tuple[str, str], float] = {}
     for signal in signals:
         if signal.signal_type not in POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES:
@@ -191,19 +260,30 @@ def net_affinity(signals: list[BehaviorSignal]) -> dict[tuple[str, str], float]:
         key = subject_key(signal.entity_type, signal.entity_name)
         if not key[1]:
             continue
-        totals[key] = totals.get(key, 0.0) + float(signal.value)
+        totals[key] = totals.get(key, 0.0) + signal_weight(signal, now=reference)
     return totals
 
 
-def rejected_subjects(signals: list[BehaviorSignal]) -> set[tuple[str, str]]:
-    """Los sujetos con un rechazo explícito: lo que no se vuelve a ofrecer.
+def rejected_subjects(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> set[tuple[str, str]]:
+    """Los sujetos con un rechazo explícito reciente: lo que no se vuelve a ofrecer.
 
     Más estricto que un neto negativo a propósito. El neto lo puede poner negativo un
     descarte —"lo vi y lo cerré"—, y eso baja el score; sacar un candidato de la lista
     antes de puntuarlo pide que la persona haya dicho que no.
+
+    Y el "no" caduca. Vale mientras la señal conserve al menos la mitad de su peso, o sea
+    durante una semivida: pasado eso el sujeto vuelve a la lista y el rechazo sigue
+    contando, pero solo en el score. Sin esto, ampliar la ventana de lectura para que el
+    decaimiento tenga de qué decaer habría convertido un "no" de hace once meses en un
+    veto permanente — el problema que la 4.4.2 vino a resolver, al revés.
     """
+    reference = now or datetime.now(tz=timezone.utc)
     return {
         subject_key(s.entity_type, s.entity_name)
         for s in signals
-        if s.signal_type in NEGATIVE_SIGNAL_TYPES and float(s.value) < 0
+        if s.signal_type in NEGATIVE_SIGNAL_TYPES
+        and float(s.value) < 0
+        and decay_factor(s, now=reference) >= _FILTER_DECAY_FLOOR
     }

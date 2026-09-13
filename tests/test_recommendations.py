@@ -1,5 +1,6 @@
 """Tests for the recommendation engine."""
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -11,6 +12,7 @@ from app.models.household import Household
 from app.models.pantry import PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
+from app.recommendations import learning
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
 from app.recommendations.scorer import score_candidates
 
@@ -83,6 +85,9 @@ def _signal(
     subject_type: str,
     subject_name: str,
     value: float,
+    *,
+    source_type: str = "explicit",
+    age_days: float | None = None,
 ) -> Any:
     """Una señal en memoria, con el sujeto en las columnas que el lector mira.
 
@@ -90,16 +95,22 @@ def _signal(
     igual porque el scorer comparaba bolsas de palabras y el tipo no entraba en la
     comparación —y porque las aserciones eran `>=`, que se cumple sin que el ajuste
     exista—. Desde la 4.4 el tipo es parte de la clave.
+
+    Sin `age_days` la señal queda sin `created_at` —como una recién grabada y todavía no
+    volcada— y por lo tanto sin descuento por edad: los tests que no hablan del tiempo
+    siguen midiendo lo que medían antes de la 4.4.2.
     """
     from app.models.signal import BehaviorSignal
 
+    created_at = None if age_days is None else datetime.now(timezone.utc) - timedelta(days=age_days)
     return BehaviorSignal(
         user_id=user.id,
         signal_type=signal_type,
         entity_type=subject_type,
         entity_name=subject_name,
         value=value,
-        source_type="explicit",
+        source_type=source_type,
+        created_at=created_at,
     )
 
 
@@ -185,6 +196,119 @@ class TestScorer:
         candidates = [{"title": "Go running", "text": "Run 5km", "confidence": 0.5}]
         scored = score_candidates(candidates, diego, signals, [])
         assert scored[0]["_score"] == 0.5
+
+
+class TestTemporalDecay:
+    """Lo que hace que sea aprender y no acumular (4.4.2).
+
+    Antes de esto una señal de hace ocho meses pesaba **exactamente igual** que la de
+    ayer, así que un gusto que cambió no se podía desaprender nunca: el score era un
+    promedio de toda la historia y las primeras semanas de uso decidían para siempre. El
+    peso pasa a ser `value * 0.5 ** (edad / semivida)`.
+    """
+
+    def test_a_signal_at_its_half_life_is_worth_half(self, diego: User) -> None:
+        implicit = _signal(
+            diego, "repeated_meal_choice", "food", "pollo", 1.0, source_type="implicit", age_days=21
+        )
+        explicit = _signal(
+            diego, "explicit_preference", "food", "pollo", 1.0, source_type="explicit", age_days=90
+        )
+        assert learning.signal_weight(implicit) == pytest.approx(0.5, abs=1e-3)
+        assert learning.signal_weight(explicit) == pytest.approx(0.5, abs=1e-3)
+
+    def test_what_someone_said_outlives_what_someone_did(self, diego: User) -> None:
+        """Una implícita habla de la semana; una explícita, de la persona.
+
+        "No me gusta el hígado" sigue siendo cierto en dos meses; "comí pollo el martes"
+        no dice nada del martes que viene. Las preferencias que **no** deben caducar nunca
+        no viven en esta tabla: viven en `RecommendationPreference`, que
+        `apply_hard_constraints` lee sin descuento.
+        """
+        said = _signal(
+            diego, "explicit_preference", "food", "pollo", 1.0, source_type="explicit", age_days=40
+        )
+        did = _signal(
+            diego, "repeated_meal_choice", "food", "pollo", 1.0, source_type="implicit", age_days=40
+        )
+        assert learning.signal_weight(said) > learning.signal_weight(did)
+
+    def test_an_unknown_source_type_fades_as_fast_as_the_fastest(self, diego: User) -> None:
+        """`source_type` admite `"inferred"`, que nadie escribe todavía.
+
+        Si no sabemos de dónde salió una señal, que se desvanezca rápido es el error más
+        barato de los dos.
+        """
+        assert learning.half_life_days("inferred") == learning.half_life_days("implicit")
+
+    def test_a_signal_not_yet_flushed_counts_whole(self, diego: User) -> None:
+        """`created_at` lo pone la base, así que una señal recién creada no tiene fecha."""
+        fresh = _signal(diego, "accepted_suggestion", "food", "pollo", 1.0)
+        assert fresh.created_at is None
+        assert learning.decay_factor(fresh) == 1.0
+
+    def test_a_recent_taste_outranks_an_old_one(self, db: Session, diego: User) -> None:
+        signals = [
+            _signal(
+                diego,
+                "repeated_meal_choice",
+                "food",
+                "milanesa",
+                1.0,
+                source_type="implicit",
+                age_days=120,
+            ),
+            _signal(
+                diego,
+                "repeated_meal_choice",
+                "food",
+                "lentejas",
+                1.0,
+                source_type="implicit",
+                age_days=1,
+            ),
+        ]
+        candidates = [
+            _candidate("Milanesas", "food", "milanesa", category="meal"),
+            _candidate("Guiso de lentejas", "food", "lentejas", category="meal"),
+        ]
+        scored = score_candidates(candidates, diego, signals, [])
+        assert scored[0]["title"] == "Guiso de lentejas"
+
+    def test_an_old_no_stops_filtering_but_keeps_weighing(self, db: Session, diego: User) -> None:
+        """El "no" caduca como veto y sigue contando como opinión.
+
+        Antes de la 4.4.2 la ventana de lectura eran 30 días, así que este caso no existía.
+        Ampliarla para que el decaimiento tenga de qué decaer, sin tocar el filtro, habría
+        convertido un rechazo de hace once meses en un veto permanente — el problema al
+        revés. Vale como veto una semivida; después sale del filtro y baja el score.
+        """
+        fresh_no = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0, age_days=30)]
+        old_no = [_signal(diego, "rejected_suggestion", "exercise", "running", -1.0, age_days=300)]
+        candidates = [_candidate("Go running", "exercise", "running")]
+
+        assert apply_signal_constraints(candidates, fresh_no) == []
+
+        survived = apply_signal_constraints(candidates, old_no)
+        assert [c["title"] for c in survived] == ["Go running"]
+        (scored,) = score_candidates(survived, diego, old_no, [])
+        assert scored["_score"] < 0.5, "sigue pesando, aunque ya no vete"
+
+    def test_the_read_horizon_is_derived_and_not_copied(self) -> None:
+        """El umbral vive en un solo lugar.
+
+        Era un `30` escrito a mano en `engine.py` **y** otro en `scorer.py`: dos copias del
+        mismo número, que es exactamente cómo empiezan a discrepar. Ahora los dos leen el
+        horizonte de `learning`, que lo deriva de la semivida más larga.
+        """
+        from app.recommendations import engine, scorer
+
+        assert scorer._RECENT_SIGNAL_DAYS == learning.SIGNAL_HORIZON_DAYS
+        assert engine._RECENT_SIGNAL_DAYS == learning.SIGNAL_HORIZON_DAYS
+        #: Y el horizonte tiene que dejar entrar lo que todavía pesa: si fuera más corto
+        #: que unas pocas semividas, el corte volvería a decidir en lugar del decaimiento.
+        four_half_lives = 4 * learning.half_life_days("explicit")
+        assert four_half_lives <= learning.SIGNAL_HORIZON_DAYS
 
 
 class TestSignalConstraints:

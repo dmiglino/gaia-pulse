@@ -1012,13 +1012,55 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       ningún otro módulo. Es la red que hace que este bug falle en el commit que lo
       introduce y no meses después.
 
-**4.4.2 — Decaimiento temporal: lo que hace que sea aprender y no acumular**
+**4.4.2 — Decaimiento temporal: lo que hace que sea aprender y no acumular** ✅ hecho
 
-- [ ] Una señal de hace ocho meses hoy pesa exactamente igual que la de ayer, así que un
+- [x] Una señal de hace ocho meses hoy pesa exactamente igual que la de ayer, así que un
       gusto que cambió **no se puede desaprender nunca**. El peso pasa a ser
       `value * 0.5 ** (edad_en_días / SEMIVIDA)`, con semivida distinta por tipo: las
       explícitas duran más que las implícitas.
-- [ ] `created_at` ya está indexado, así que esto no cuesta una migración ni un query nuevo.
+      → `learning.half_life_days()` / `decay_factor()` / `signal_weight()`, y
+      `net_affinity` suma pesos descontados en vez de `value` crudo. Las semividas:
+      **explícita 90 días, implícita 21**. La explícita dura más porque dice algo sobre la
+      persona ("no me gusta el hígado") y la implícita algo sobre la semana ("comí pollo el
+      martes"). Un `source_type` desconocido —hoy `"inferred"`, que la columna admite y
+      nadie escribe— cae en la más corta: si no sabemos de dónde salió, que se desvanezca
+      rápido es el error más barato.
+      Lo que *no* decae son las preferencias duras: viven en `RecommendationPreference` y
+      `apply_hard_constraints` las lee sin descuento. `behavior_signals` es la parte blanda,
+      la que tiene derecho a quedar vieja.
+- [x] `created_at` ya está indexado, así que esto no cuesta una migración ni un query nuevo.
+      → Sí costó **ampliar la ventana de lectura**: una semivida de 90 días dentro de una
+      ventana de 30 no significa nada, porque el corte seguiría decidiendo en lugar del
+      decaimiento. Ahora el horizonte es `SIGNAL_HORIZON_DAYS = 4 × la semivida más larga`
+      (360 días) y está **derivado**, no escrito: a cuatro semividas una señal conserva el
+      6% de su valor, que con el tope de boost de 0.12 mueve el score menos de una
+      centésima. El corte existe para acotar la consulta, no para decidir.
+- [x] Y de paso, las dos copias del umbral. Era un `30` escrito a mano en `engine.py` **y**
+      otro en `scorer.py`: dos copias del mismo número, que es exactamente cómo empiezan a
+      discrepar. Los dos leen ahora `learning.SIGNAL_HORIZON_DAYS`, del mismo lado que las
+      semividas de las que se deriva, y `test_the_read_horizon_is_derived_and_not_copied` lo
+      fija.
+- [x] El "no" también caduca (`_FILTER_DECAY_FLOOR = 0.5` en `rejected_subjects`). Ampliar
+      la ventana para que el decaimiento tenga de qué decaer, sin tocar el filtro, habría
+      convertido un rechazo de hace once meses en un **veto permanente** — el problema que
+      la 4.4.2 vino a resolver, al revés. Un rechazo saca al sujeto de la lista mientras
+      conserve al menos la mitad de su peso, o sea durante exactamente una semivida; después
+      vuelve a la lista y sigue contando, pero solo en el score. El umbral no es un número
+      nuevo: es la semivida ya declarada, leída de otra forma. Filtrar es más caro que
+      puntuar —el candidato no llega a existir—, así que deja de hacerse antes.
+- [x] Siete tests nuevos en `tests/test_recommendations.py::TestTemporalDecay`: que una señal
+      en su semivida vale exactamente la mitad, que lo dicho sobrevive a lo hecho, que un
+      `source_type` desconocido se apaga como el más rápido, que una señal sin volcar (sin
+      `created_at`, porque lo pone la base) cuenta entera, que un gusto reciente le gana a
+      uno viejo, que un "no" de 30 días filtra y uno de 300 solo pesa, y el guard del
+      horizonte derivado. El helper `_signal()` acepta `age_days` opcional: sin él la señal
+      queda sin fecha y por lo tanto sin descuento, así que los tests que no hablan del
+      tiempo siguen midiendo lo que medían.
+      En `tests/test_learning_signals.py`, `test_signals_older_than_the_window_stop_counting`
+      pasó a ser `test_an_old_meal_barely_counts_next_to_a_recent_one`: con decaimiento una
+      comida de hace 200 días ya no queda **afuera**, queda en el ruido del redondeo
+      (`< 0.501`). La intención del test sobrevive; el mecanismo que la sostiene cambió de un
+      corte duro a una semivida.
 
 **4.4.3 — Confianza por sujeto: un toque no es una regla**
 
