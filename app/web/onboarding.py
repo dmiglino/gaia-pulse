@@ -2,7 +2,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
@@ -15,11 +15,12 @@ _VALID_ACTIVITY_LEVELS = {"sedentary", "light", "moderate", "active", "very_acti
 
 
 @router.get("/", response_class=HTMLResponse)
-def onboarding_index(request: Request, current_user: CurrentUser, db: DB) -> HTMLResponse:
+def onboarding_index(request: Request, current_user: CurrentUser, db: DB) -> Response:
     # If already done, redirect home
     if current_user.onboarding_completed:
         return RedirectResponse(url="/", status_code=302)
     ctx = get_template_context(request, db, current_user)
+    ctx["current_year"] = date.today().year
     return templates.TemplateResponse("onboarding/index.html", ctx)
 
 

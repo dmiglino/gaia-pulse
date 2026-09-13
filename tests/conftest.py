@@ -76,6 +76,7 @@ def diego(db: Session, household: Household) -> User:
         baseline_activity_level="moderate",
         avatar_color="#6366f1",
         impossible_activities_json=["swimming"],
+        onboarding_completed=True,
     )
     db.add(u)
     db.flush()
@@ -91,6 +92,7 @@ def rocio(db: Session, household: Household) -> User:
         password_hash=hash_password("rocio123"),
         baseline_activity_level="light",
         avatar_color="#ec4899",
+        onboarding_completed=True,
     )
     db.add(u)
     db.flush()

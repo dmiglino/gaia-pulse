@@ -10,6 +10,7 @@ from app.web import (
     home,
     meals,
     notifications,
+    onboarding,
     pantry,
     profile,
     suggestions,
@@ -19,6 +20,7 @@ from app.web import (
 web_router = APIRouter()
 
 web_router.include_router(auth.router, tags=["web-auth"])
+web_router.include_router(onboarding.router, prefix="/onboarding", tags=["web-onboarding"])
 web_router.include_router(home.router, tags=["web-home"])
 web_router.include_router(pantry.router, prefix="/pantry", tags=["web-pantry"])
 web_router.include_router(meals.router, prefix="/meals", tags=["web-meals"])

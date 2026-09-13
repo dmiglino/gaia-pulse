@@ -3,12 +3,13 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import FLASH_COOKIE_NAME, clear_flash
 from app.web.helpers import templates
 from app.web.router import web_router
@@ -77,6 +78,17 @@ def create_app() -> FastAPI:
         if request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
         return RedirectResponse(url="/login", status_code=302)
+
+    @app.exception_handler(OnboardingRequiredError)
+    async def onboarding_required_handler(request: Request, exc: Any) -> Any:
+        """Send a user who never onboarded to the wizard before anything else.
+
+        HTMX would swap a whole page into a fragment target, so an ``HX-Request``
+        gets the client-side redirect header instead of a 302.
+        """
+        if "HX-Request" in request.headers:
+            return Response(status_code=204, headers={"HX-Redirect": "/onboarding/"})
+        return RedirectResponse(url="/onboarding/", status_code=302)
 
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: Any) -> Any:

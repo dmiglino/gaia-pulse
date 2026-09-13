@@ -11,9 +11,14 @@ from app.i18n import setup_jinja2_i18n
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.services.notification_service import NotificationService
+from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import read_flashes
 
 _settings = get_settings()
+
+# Paths that must stay reachable before onboarding is finished, or the gate
+# would redirect the onboarding page to itself.
+_ONBOARDING_EXEMPT_PREFIXES = ("/onboarding", "/login", "/logout", "/static")
 
 
 class CompatJinja2Templates(Jinja2Templates):
@@ -54,7 +59,16 @@ def get_template_context(request: Request, db: Session, current_user: User) -> d
 
     ``base.html`` renders the notification badge and the flash messages on every
     page, so both belong here rather than in each individual route.
+
+    Raises:
+        OnboardingRequiredError: when the acting user has not completed onboarding
+            and the request is not part of the onboarding flow itself.
     """
+    if not current_user.onboarding_completed and not request.url.path.startswith(
+        _ONBOARDING_EXEMPT_PREFIXES
+    ):
+        raise OnboardingRequiredError
+
     users = UserRepository(db).get_household_users(current_user.household_id)
     unread = NotificationService(db).get_unread_count(
         current_user.id, current_user.household_id
