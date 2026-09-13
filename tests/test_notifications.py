@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.household import Household
 from app.models.user import User
+from app.repositories.notification_repo import NotificationRepository
 from app.schemas.notification import NotificationCreate
 from app.services.notification_service import NotificationService
 
@@ -105,3 +106,56 @@ class TestNotificationService:
         # Should appear for Diego (member of household)
         notifs = svc.get_for_user(diego.id, household.id)
         assert any(n.title == "Shared alert" for n in notifs)
+
+
+class TestCooldownScope:
+    """`has_recent_by_category` decides whether a job notification is suppressed."""
+
+    def test_one_members_reminder_does_not_suppress_the_other(
+        self, db: Session, household: Household, diego: User, rocio: User
+    ) -> None:
+        """Per-user cooldowns are per user.
+
+        Per-user reminders also carry ``household_id``, so an ``or_``-ed
+        household clause made Diego's reminder count as Rocío's.
+        """
+        NotificationService(db).create(NotificationCreate(
+            user_id=diego.id,
+            household_id=household.id,
+            category="inactivity",
+            title="No workouts in 4 days",
+            body="Hey Diego, time to move!",
+        ))
+        repo = NotificationRepository(db)
+        assert repo.has_recent_by_category(
+            household.id, "inactivity", hours=48, user_id=diego.id
+        )
+        assert not repo.has_recent_by_category(
+            household.id, "inactivity", hours=48, user_id=rocio.id
+        )
+
+    def test_household_cooldown_ignores_per_user_rows(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """A reminder addressed to one member is not a household-wide alert."""
+        NotificationService(db).create(NotificationCreate(
+            user_id=diego.id,
+            household_id=household.id,
+            category="low_stock",
+            title="Diego, buy milk",
+            body="body",
+        ))
+        repo = NotificationRepository(db)
+        assert not repo.has_recent_by_category(household.id, "low_stock", hours=6)
+
+    def test_household_cooldown_sees_household_rows(
+        self, db: Session, household: Household
+    ) -> None:
+        NotificationService(db).create(NotificationCreate(
+            household_id=household.id,
+            category="low_stock",
+            title="Low pantry stock",
+            body="body",
+        ))
+        repo = NotificationRepository(db)
+        assert repo.has_recent_by_category(household.id, "low_stock", hours=6)

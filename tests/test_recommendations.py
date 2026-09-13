@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.food import FoodItem
 from app.models.household import Household
 from app.models.pantry import PantryStock
@@ -201,3 +202,34 @@ class TestSignalConstraints:
         running = next(c for c in scored if "running" in c["title"].lower())
         # Biking has diversity penalty (recently shown), running does not
         assert running["_score"] > biking["_score"]
+
+
+class TestMealWindow:
+    """`_current_meal_type` used to read the UTC hour, so at 08:00 in Buenos
+    Aires (UTC-3) the engine believed it was 11:00 and suggested lunch."""
+
+    @pytest.mark.parametrize(
+        ("local_hour", "expected"),
+        [(8, "breakfast"), (12, "lunch"), (16, "snack"), (21, "dinner")],
+    )
+    def test_meal_type_follows_the_configured_timezone(
+        self, monkeypatch: pytest.MonkeyPatch, local_hour: int, expected: str
+    ) -> None:
+        from datetime import datetime, timedelta, timezone
+        from zoneinfo import ZoneInfo
+
+        from app.recommendations.generators import meal_generator
+
+        tz = ZoneInfo(get_settings().timezone)
+        # A real instant whose local hour is `local_hour`, expressed in UTC so a
+        # UTC reading of it would land on a different (and wrong) window.
+        local = datetime(2026, 3, 15, local_hour, 30, tzinfo=tz)
+        assert local.utcoffset() != timedelta(0), "test needs a non-UTC timezone"
+
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz: timezone | ZoneInfo | None = None) -> datetime:  # type: ignore[override]
+                return local.astimezone(tz) if tz else local.replace(tzinfo=None)
+
+        monkeypatch.setattr(meal_generator, "datetime", _FrozenDatetime)
+        assert meal_generator._current_meal_type() == expected

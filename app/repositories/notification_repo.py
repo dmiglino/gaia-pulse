@@ -73,21 +73,28 @@ class NotificationRepository(BaseRepository[Notification]):
         hours: int = 24,
         user_id: int | None = None,
     ) -> bool:
+        """Whether this cooldown already fired inside the window.
+
+        Per-user and household-wide cooldowns are independent. They used to be
+        ``or_``-ed together, and since a per-user reminder also carries
+        ``household_id``, the household clause matched the *other* member's row
+        and suppressed this user's notification for the whole window.
+        """
         from datetime import timedelta
 
         cutoff = datetime.utcnow() - timedelta(hours=hours)
+        if user_id is not None:
+            scope = and_(Notification.user_id == user_id)
+        else:
+            scope = and_(
+                Notification.household_id == household_id,
+                Notification.user_id.is_(None),
+            )
         stmt = select(Notification).where(
             and_(
                 Notification.category == category,
                 Notification.created_at >= cutoff,
-                or_(
-                    Notification.household_id == household_id,
-                    *(
-                        [Notification.user_id == user_id]
-                        if user_id
-                        else []
-                    ),
-                ),
+                scope,
             )
         )
         return self.db.scalar(stmt) is not None

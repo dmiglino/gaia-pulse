@@ -85,11 +85,14 @@ _PARSE_FUNCTION_SCHEMA: dict[str, Any] = {
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "name": {"type": "string"},
+                                        # `food_name`, not `name`: that is the field
+                                        # `FoodItemRef` declares, and the stock schema
+                                        # below already uses the same word.
+                                        "food_name": {"type": "string"},
                                         "qty": {"type": "number"},
                                         "unit": {"type": "string"},
                                     },
-                                    "required": ["name"],
+                                    "required": ["food_name"],
                                 },
                             },
                         },
@@ -193,7 +196,10 @@ def _deserialise_intents(raw_intents: list[dict[str, Any]]) -> list[Any]:
                 ipu = {
                     user: [
                         FoodItemRef(
-                            name=item["name"],
+                            # `name` is tolerated because the model still slips
+                            # into it now and then; a mismatch here used to raise
+                            # ValidationError and silently drop every LLM meal.
+                            food_name=item.get("food_name") or item["name"],
                             qty=item.get("qty"),
                             unit=item.get("unit"),
                         )

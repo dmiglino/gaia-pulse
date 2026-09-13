@@ -13,10 +13,12 @@ import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.food import FoodItem
 from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
 from app.models.pantry import PantryStock
@@ -31,8 +33,12 @@ _LOW_STOCK_PCT = 0.25      # stock at or below 25% of threshold = low
 
 
 def _current_meal_type() -> str:
-    """Infer meal type from current local hour (UTC approximation)."""
-    hour = datetime.now(tz=timezone.utc).hour
+    """Infer meal type from the current hour in the household's timezone.
+
+    This used to read the UTC hour, so at 08:00 in Buenos Aires (UTC-3) the
+    engine believed it was 11:00 and suggested lunch at breakfast time.
+    """
+    hour = datetime.now(tz=ZoneInfo(get_settings().timezone)).hour
     if 5 <= hour < 10:
         return "breakfast"
     if 10 <= hour < 14:
