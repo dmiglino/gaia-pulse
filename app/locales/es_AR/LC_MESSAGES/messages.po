@@ -910,6 +910,9 @@ msgstr "Otra cosa"
 msgid "Confirm & Save"
 msgstr "Confirmar y guardar"
 
+msgid "Wrong day? Correct it here — otherwise I use what you said (today, yesterday…)."
+msgstr "¿El día está mal? Corregilo acá — si no, uso lo que dijiste (hoy, ayer…)."
+
 msgid "Could not read that"
 msgstr "No pude leer eso"
 

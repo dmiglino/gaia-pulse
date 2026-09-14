@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_utc, local_now
 from app.models.nlp import NLPIngestionEvent
 from app.models.user import User
 from app.nlp.intents import normalize_user_key
@@ -39,6 +40,32 @@ _HOUSEHOLD_INTENTS = frozenset({"add_stock", "consume_stock"})
 
 #: La clave que representa "la frase no nombró a nadie" en el mapa de destinos.
 _SPEAKER_KEY = ""
+
+#: El único relativo no ambiguo que corre el día calendario. "Esta noche"/"tonight",
+#: "esta mañana"/"this morning" y compañía siguen siendo hoy en el reloj local: la
+#: persona ya está parada en ese "hoy" cuando lo dice.
+_YESTERDAY_REFS = frozenset({"yesterday", "ayer"})
+
+
+def _resolve_timestamp(intent: dict[str, Any], override_date: date | None) -> datetime:
+    """El instante que se guarda para una comida, un entrenamiento o un pesaje.
+
+    Antes de esto, los tres siempre se grababan con `datetime.now(timezone.utc)`:
+    `intent.get("timestamp")` es la llave que ningún parser llena nunca, así que
+    "anoté que comí ayer" quedaba fechado hoy sin que nada lo mirara. `time_reference`
+    (hoy/ayer, ver `app/nlp/rules.py`) sí lo llena el parser de comidas — acá es donde
+    empieza a importar. `override_date` es lo que la persona corrige a mano en la
+    pantalla de confirmación, y gana siempre que esté presente.
+    """
+    now = local_now()
+    target_date = override_date
+    if target_date is None:
+        time_ref = intent.get("time_reference")
+        if isinstance(time_ref, str) and time_ref.strip().lower() in _YESTERDAY_REFS:
+            target_date = now.date() - timedelta(days=1)
+    if target_date is None:
+        return as_utc(now)
+    return as_utc(datetime.combine(target_date, now.timetz()))
 
 
 def wrote_something(result: Any) -> bool:
@@ -191,8 +218,14 @@ class NLPService:
         user_id: int,
         household_id: int,
         edited_intents: list[dict[str, Any]] | None = None,
+        override_date: date | None = None,
     ) -> dict[str, Any]:
-        """Execute all confirmed intents and mark the event as confirmed."""
+        """Execute all confirmed intents and mark the event as confirmed.
+
+        `override_date` es la corrección de fecha de la pantalla de confirmación: se
+        aplica a todos los intents de esta captura por igual, porque la pantalla
+        muestra un solo campo de fecha para toda la frase, no uno por intent.
+        """
         event = self.db.get(NLPIngestionEvent, event_id)
         #: `status`: una captura se confirma **una** vez. Sin este chequeo, un segundo
         #: POST sobre el mismo id volvía a ejecutar todos los intents y escribía las
@@ -220,7 +253,9 @@ class NLPService:
         results: list[dict[str, Any]] = []
         for intent in intents:
             try:
-                result = self._execute_intent(intent, user_id, household_id, user_map, acting_user)
+                result = self._execute_intent(
+                    intent, user_id, household_id, user_map, acting_user, override_date
+                )
                 results.append(
                     {"status": "ok", "intent": intent.get("intent_type"), "result": result}
                 )
@@ -283,9 +318,10 @@ class NLPService:
         household_id: int,
         user_map: dict[str, User],
         acting_user: User | None = None,
+        override_date: date | None = None,
     ) -> Any:
         intent_type = intent.get("intent_type")
-        now = datetime.now(timezone.utc)
+        now = _resolve_timestamp(intent, override_date)
         if acting_user is None:
             acting_user = UserRepository(self.db).get(user_id)
         targets = self.resolve_intent_targets(intent, user_map, acting_user)
@@ -360,7 +396,7 @@ class NLPService:
             svc.log_meal(
                 household_id,
                 MealEventCreate(
-                    timestamp=intent.get("timestamp") or now,
+                    timestamp=now,
                     meal_type=intent.get("meal_type", "other"),
                     context=intent.get("context", "home"),
                     participants=participants,
@@ -390,7 +426,7 @@ class NLPService:
                 svc.log_workout(
                     household_id,
                     WorkoutSessionCreate(
-                        timestamp_start=intent.get("timestamp") or now,
+                        timestamp_start=now,
                         duration_minutes=intent.get("duration_minutes"),
                         workout_type=intent.get("workout_type"),
                         participants=participants,
@@ -412,7 +448,7 @@ class NLPService:
             svc.log_metric(
                 target_user.id,
                 BodyMetricCreate(
-                    timestamp=intent.get("timestamp") or now,
+                    timestamp=now,
                     weight_kg=intent.get("weight_kg"),
                     body_fat_pct=intent.get("body_fat_pct"),
                     waist_cm=intent.get("waist_cm"),

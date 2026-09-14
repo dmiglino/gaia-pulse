@@ -188,6 +188,20 @@
   {% endcall %}
   {% endfor %}
 
+  {#- Solo tiene sentido corregir la fecha si algún intent la usa: el stock y las
+      preferencias no la llevan (`NLPService._execute_intent`). Vacío por default a
+      propósito — mandar hoy siempre acá pisaría el "ayer" que el parser ya entendió,
+      porque `override_date` gana siempre que llegue. -#}
+  {% if intents | selectattr('intent_type', 'in', ('log_meal', 'log_workout', 'log_body_metric')) | list %}
+  <div>
+    <label for="nlp-override-date" class="block text-xs text-ink-subtle mb-1">
+      {{ _('Wrong day? Correct it here — otherwise I use what you said (today, yesterday…).') }}
+    </label>
+    <input type="date" id="nlp-override-date" name="override_date"
+           class="{{ ui.INPUT_CLASS }}" />
+  </div>
+  {% endif %}
+
   <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
     {#- El Discard no tenía `hx-target` ni `hx-swap`: caía en el default de HTMX
         (`innerHTML` sobre el botón mismo), así que el fragmento de descarte se
@@ -195,8 +209,10 @@
         debajo. Los dos botones apuntan al mismo lugar que reemplazan. -#}
     {{ ui.btn(_('Discard'), tone='subtle', icon='x',
               attrs='hx-post="/capture/discard/' ~ nlp_event.id ~ '" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
+    {#- Sin `<form>` alrededor, HTMX no manda nada más que el elemento que dispara el
+        request — `hx-include` es lo que suma el campo de fecha al POST. -#}
     {{ ui.btn(_('Confirm & Save'), tone='primary', icon='check', block=true, class='sm:flex-1',
-              attrs='hx-post="/capture/confirm/' ~ nlp_event.id ~ '" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
+              attrs='hx-post="/capture/confirm/' ~ nlp_event.id ~ '" hx-include="#nlp-override-date" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
   </div>
 
   <p class="text-xs text-ink-subtle">{{ _('You said:') }} “{{ nlp_event.original_input }}”</p>

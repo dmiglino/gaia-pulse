@@ -10,7 +10,7 @@ from app.i18n import _
 from app.models.nlp import NLPIngestionEvent
 from app.services.nlp_service import NLPService
 from app.web.flash import set_flash
-from app.web.helpers import get_template_context, templates
+from app.web.helpers import get_template_context, query_date, templates
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +158,14 @@ def capture_confirm(
     event_id: int,
     current_user: CurrentUser,
     db: DB,
+    override_date: Annotated[str | None, Form()] = None,
 ) -> Response:
     svc = NLPService(db)
     result = svc.confirm_event(
         event_id=event_id,
         user_id=current_user.id,
         household_id=current_user.household_id,
+        override_date=query_date(override_date),
     )
 
     if result.get("error"):

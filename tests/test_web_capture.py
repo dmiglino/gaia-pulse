@@ -6,15 +6,18 @@ de estos casos era exactamente una divergencia entre las dos cosas: el preview
 mostraba los dos avatares y el servicio le anotaba el dato a uno solo.
 """
 
+from datetime import timedelta
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today, to_local
 from app.core.security import hash_password
 from app.i18n import _
 from app.models.body_metric import BodyMetricLog
 from app.models.household import Household
-from app.models.meal import MealParticipant
+from app.models.meal import MealEvent, MealParticipant
 from app.models.nlp import NLPIngestionEvent
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
@@ -355,6 +358,54 @@ def test_preview_wires_both_actions_at_the_preview_itself(
     assert 'hx-post="/capture/discard/' in r.text
     # The dead inline-edit state is gone.
     assert "editing" not in r.text
+
+
+def test_preview_shows_a_date_correction_field_wired_into_confirm(
+    authenticated_client: TestClient,
+) -> None:
+    """A meal/workout/body-metric intent gets a date input; Confirm must include it
+    explicitly (`hx-include`) — there is no `<form>` wrapping these buttons."""
+    r = authenticated_client.post("/capture/parse", data={"text": "I ate pasta"})
+    assert r.status_code == 200, r.text[:500]
+    assert 'id="nlp-override-date"' in r.text
+    assert 'hx-include="#nlp-override-date"' in r.text
+
+
+def test_add_stock_only_shows_no_date_field(authenticated_client: TestClient) -> None:
+    """Stock has no timestamp to correct (`_execute_intent` never uses `now` for it)."""
+    r = authenticated_client.post("/capture/parse", data={"text": "We bought 6 bananas"})
+    assert r.status_code == 200, r.text[:500]
+    assert 'id="nlp-override-date"' not in r.text
+
+
+def test_override_date_from_the_confirmation_screen_wins(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    event = _pending(
+        diego,
+        "I ate pasta yesterday",
+        [
+            {
+                "intent_type": "log_meal",
+                "meal_type": "dinner",
+                "items_per_user": {"diego": [{"food_name": "pasta"}]},
+                "participants": ["diego"],
+                "time_reference": "yesterday",
+                "confidence": 0.85,
+            }
+        ],
+        db,
+    )
+    chosen_day = local_today() - timedelta(days=5)
+    r = authenticated_client.post(
+        f"/capture/confirm/{event.id}",
+        data={"override_date": chosen_day.isoformat()},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text[:500]
+
+    meal = db.scalars(select(MealEvent)).one()
+    assert to_local(meal.timestamp).date() == chosen_day
 
 
 def test_discarding_says_so_and_leaves_nothing_behind(

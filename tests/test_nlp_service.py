@@ -1,12 +1,15 @@
 """Tests for NLPService: confirm/discard flow, edge cases, intent execution."""
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_today, to_local
 from app.models.body_metric import BodyMetricLog
 from app.models.household import Household
-from app.models.meal import MealParticipant
+from app.models.meal import MealEvent, MealParticipant
 from app.models.nlp import NLPIngestionEvent
 from app.models.user import User
 from app.services.nlp_service import NLPService
@@ -281,3 +284,94 @@ class TestLogMealIntent:
         assert result["results"][0]["result"] == {"skipped": "log_meal"}
         assert result["saved_count"] == 0
         assert list(db.scalars(select(MealParticipant)).all()) == []
+
+
+class TestTimestampResolution:
+    """`time_reference` ('ayer'/'yesterday') y `override_date` deciden el día que se
+    guarda — antes, los tres siempre caían en `datetime.now()` sin mirar ninguno de
+    los dos (`app/services/nlp_service.py::_resolve_timestamp`).
+    """
+
+    def _meal_event(self, diego: User, time_reference: str | None) -> NLPIngestionEvent:
+        intent = {
+            "intent_type": "log_meal",
+            "meal_type": "dinner",
+            "items_per_user": {"diego": [{"food_name": "pasta", "qty": None, "unit": None}]},
+            "participants": ["diego"],
+            "confidence": 0.85,
+        }
+        if time_reference is not None:
+            intent["time_reference"] = time_reference
+        event = NLPIngestionEvent(
+            user_id=diego.id,
+            input_type="text",
+            original_input="test",
+            parsed_intent_json=[intent],
+            parse_confidence=0.85,
+            status="pending_confirmation",
+        )
+        return event
+
+    def test_no_time_reference_lands_on_today(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        event = self._meal_event(diego, time_reference=None)
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
+        assert result.get("success") is True
+
+        meal = db.scalars(select(MealEvent)).one()
+        assert to_local(meal.timestamp).date() == local_today()
+
+    @pytest.mark.parametrize("time_reference", ["yesterday", "ayer", "Yesterday"])
+    def test_yesterday_reference_lands_on_the_local_day_before(
+        self, db: Session, diego: User, household: Household, time_reference: str
+    ) -> None:
+        event = self._meal_event(diego, time_reference=time_reference)
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        result = svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
+        assert result.get("success") is True
+
+        meal = db.scalars(select(MealEvent)).one()
+        assert to_local(meal.timestamp).date() == local_today() - timedelta(days=1)
+
+    def test_a_same_day_reference_does_not_shift_the_date(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """'Tonight'/'esta noche' still means today — only yesterday/ayer shifts."""
+        event = self._meal_event(diego, time_reference="tonight")
+        db.add(event)
+        db.flush()
+
+        svc = NLPService(db)
+        svc.confirm_event(event_id=event.id, user_id=diego.id, household_id=household.id)
+
+        meal = db.scalars(select(MealEvent)).one()
+        assert to_local(meal.timestamp).date() == local_today()
+
+    def test_override_date_wins_over_a_yesterday_reference(
+        self, db: Session, diego: User, household: Household
+    ) -> None:
+        """The confirmation screen's manual correction outranks what the parser heard."""
+        event = self._meal_event(diego, time_reference="yesterday")
+        db.add(event)
+        db.flush()
+        chosen_day = local_today() - timedelta(days=3)
+
+        svc = NLPService(db)
+        result = svc.confirm_event(
+            event_id=event.id,
+            user_id=diego.id,
+            household_id=household.id,
+            override_date=chosen_day,
+        )
+        assert result.get("success") is True
+
+        meal = db.scalars(select(MealEvent)).one()
+        assert to_local(meal.timestamp).date() == chosen_day
