@@ -2935,14 +2935,37 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       nuevo, espejo de `test_the_index_reads_the_catalogue_including_aliases`) cubren el
       lado de ejercicios igual que sus pares ya cubrían el de comida.
 
-**7.6 — Objetivo nutricional declarado (por persona)**
+**7.6 — Objetivo nutricional declarado (por persona)** — cerrada:
 
-- [ ] Migración `0005`: un campo nuevo en `User` para el objetivo (`goals_json` ya existe
-      pero es `list[str]` de etiquetas — no sirve para esto sin pisar su significado).
-      Alcance del MVP: proteína, fibra y calorías, por persona, con validación de rango y
-      un disclaimer de que no es prescripción clínica. La tarjeta de macros pasa a comparar
-      contra el objetivo declarado cuando existe, y sigue comparando contra el propio
-      promedio cuando no.
+- [x] Migración `0005`: tres columnas nuevas en `User` (`goal_protein_g`, `goal_fiber_g`,
+      `goal_calories_kcal`, todas nullable) — `goals_json` ya existe pero es `list[str]` de
+      etiquetas y no sirve para esto sin pisar su significado. `UserBase`/`UserUpdate`
+      (`app/schemas/user.py`) y `POST /profile/update` (`app/web/profile.py`) validan rango
+      (proteína 10–400 g, fibra 5–100 g, calorías 800–6000 kcal) y número, con el mismo
+      contrato todo-o-nada que el resto del formulario — y a diferencia de altura o peso
+      objetivo, vaciar la casilla sí borra el valor (`None`), porque la tarjeta de macros
+      decide contra qué comparar según si el campo está declarado. Tarjeta nueva "Objetivo
+      Nutricional" en `profile/index.html` con el disclaimer de que no es prescripción
+      clínica.
+      `app/recommendations/generators/meal_generator.py` cambia de comparar siempre contra
+      el propio promedio (`macros_baseline`) a comparar **primero contra el objetivo
+      declarado, y solo si no hay objetivo, contra el promedio** — por macro, no en bloque:
+      alguien puede declarar proteína y dejar fibra sin declarar, y cada una sigue su propio
+      camino. Calorías queda fuera de `_MACRO_BASELINE_ELIGIBLE` a propósito: nunca compara
+      contra el propio promedio (comer como siempre no es ni bueno ni malo sin un objetivo:
+      ver `docs/gaiapulse-v3.md` §5, ya retirado de ahí), así que la tarjeta de calorías solo
+      puede existir cuando la persona declaró un objetivo. `UserContext` gana
+      `goal_protein_g`/`goal_fiber_g`/`goal_calories_kcal`, poblados una sola vez en
+      `build_user_context()` — se mantiene el "una lectura por corrida, sin pasar el `User`
+      completo" del resto del contexto.
+      12 entradas nuevas en `messages.po` (título de la tarjeta, disclaimer, las dos ayudas
+      de "fibra"/"calorías", los seis mensajes de validación), recompiladas a `.mo`.
+      `tests/test_meal_generator.py` (nueva clase `TestADeclaredGoalOutranksTheBaseline` +
+      3 tests de los mapas del módulo) cubre que un objetivo habla incluso sin base
+      estadística, que calorías solo dispara con objetivo, que un objetivo ya cumplido no
+      dice nada, y que el objetivo gana aunque la base también exista.
+      `tests/test_web_profile.py` (2 tests nuevos) cubre el rango inválido —guardando nada,
+      como el resto del formulario— y declarar-y-luego-vaciar los tres campos.
 
 **7.7 — Normalizar los marcadores de sangre**
 
@@ -3087,13 +3110,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 | Después de la 7.6 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** | **843 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) | 222 (sin cambio: los 5 `UP007` de la migración `0005` son el mismo patrón ya aceptado de `0004`; los 3 restantes de `app/models/user.py` —imports sin ordenar, un import sin usar, una línea larga— son deuda de línea de base, aislada vía `git stash` contra el árbol previo a la 7.6) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) | 37 (sin cambio: `app/models/user.py` ya estaba fuera de formato en la línea de base, aislado vía `git stash` contra el árbol previo a la 7.6) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.6) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y

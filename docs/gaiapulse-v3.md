@@ -227,19 +227,6 @@ contrato del backend, no solo la pantalla.
 tendencia por SQL: hoy un panel se compara con el anterior a mano y no hay serie. Es un
 refactor de datos con su propia migración y su propio riesgo.
 
-**Objetivos nutricionales declarados.** Es la mejor feature que queda, y por eso vale
-explicar el techo que impone su ausencia: la tarjeta de macros tuvo que comparar a cada
-persona **consigo misma a la misma hora** —su propio promedio de proteína y fibra en el
-desayuno— porque no hay un objetivo contra el que medir. Sabe decir "hoy vas por debajo de
-tu propio promedio", no "te faltan 40 g". Con un objetivo declarado la escala tendría dos
-lados, la despensa podría ordenarse por aporte al hueco del día, y el hueco sería restable
-en vez de comparativo. Queda afuera por tres razones concretas: es una feature de producto
-(hace falta una pantalla, validación de rangos, y decidir si son por persona o por casa),
-toca terreno clínico (un objetivo que la app **propone** es prescripción nutricional), y
-el dato de entrada todavía es flojo (los macros salen del catálogo y de una cantidad
-estimada por el parser; restar contra un número absoluto con ese margen da precisión
-falsa).
-
 **Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
 escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
 —vuelve `mixed` al 0.10— aunque cada mitad por separado funcione perfecto. No es una compuerta
