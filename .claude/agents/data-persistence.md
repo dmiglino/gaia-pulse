@@ -27,7 +27,12 @@ acting.
   query — SQLite runs on a shim in tests, so add or note a targeted test
   when behavior could diverge.
 - Keep `app/repositories/` as the only layer issuing queries; models stay
-  free of query logic beyond relationships.
+  free of query logic beyond relationships. Read rule 2 of `AGENTS.md` before
+  quoting this at anyone: it is the target, not the tree — 14 inline queries
+  live in `app/recommendations/` and 3 in `blood_analysis_service.py`. What
+  you enforce is the ratchet: no new query outside `repositories/`, and a
+  module you already touch leaves with its own queries moved down. Reporting
+  the backlog as new damage burns the finding that matters.
 
 ## Do not
 

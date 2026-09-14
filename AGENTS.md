@@ -22,6 +22,26 @@ point back here instead of duplicating it.
 2. Layering is one-directional: `api/` and `web/` call `services/`,
    `services/` call `repositories/`, only `repositories/` touch
    SQLAlchemy models. No layer reaches past the one directly below it.
+
+   **This one is the target, not a description of the tree today**, and
+   saying so is the point: a rule the code contradicts in eighteen places
+   gets obeyed halfway and stops nothing. Measured on the `v3` branch:
+   `app/api/` and `app/web/` are clean of `.query(` (3 of 20 `web/` modules
+   still import `app.models`); `app/services/` has 3 inline queries, all in
+   `blood_analysis_service.py:58,66,74`, and 10 of 12 modules import
+   `app.models`; `app/recommendations/` has 14 `.query()` across
+   `engine.py` (5), `generators/pantry_generator.py` (5),
+   `generators/activity_generator.py` (2) and `generators/meal_generator.py`
+   (2), with 8 of its 10 modules importing `app.models`.
+
+   So the rule is a **ratchet**, and that half is non-negotiable: new code
+   adds no query outside `repositories/`, and a change that touches a module
+   holding inline queries takes *its* queries down to a repository as part of
+   the change (`app/recommendations/engine.py` went 15 → 14 that way).
+   Reviewers block on the ratchet, not on the backlog. Closing the remaining
+   14 + 3 wholesale is its own commit, not a smuggled side effect — and
+   `app/recommendations/` is expected to import `app.models` for type
+   annotations, which is not the violation being counted.
 3. No NLP-extracted or LLM-extracted data reaches a domain table before a
    human confirms it. Every ingestion path goes through the
    `pending_confirmation` state on `NLPIngestionEvent`.

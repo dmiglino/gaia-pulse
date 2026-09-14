@@ -74,7 +74,15 @@ Tomadas explícitamente por el usuario antes de empezar:
 - **Regla de enrutamiento dual** (`AGENTS.md`): `/api/...` devuelve JSON y 401; toda otra
   ruta devuelve SSR HTML y redirige a `/login`. Nunca mezclar los dos estilos en una ruta.
 - **Layering unidireccional**: `api/` y `web/` → `services/` → `repositories/` → modelos
-  solo en `repositories/`.
+  solo en `repositories/`. **Es el objetivo, no la foto del árbol**, y decirlo es el punto:
+  medido en `v3` hay 14 consultas inline en `app/recommendations/` (`engine.py` 5,
+  `pantry_generator` 5, `activity_generator` 2, `meal_generator` 2) y 3 en
+  `blood_analysis_service.py:58,66,74`. Lo que sí es no-negociable es el **trinquete**:
+  código nuevo no agrega consultas fuera de `repositories/`, y un cambio que toca un módulo
+  con consultas inline se lleva las suyas al repositorio (así el engine bajó de 15 a 14 en
+  la 4.4.9). Cerrar las 17 de golpe es su propio commit, no un efecto secundario de otra
+  cosa. Una regla que el código contradice en dieciocho lugares se obedece a medias y no
+  frena nada; escrita como trinquete, frena lo único que importa —que la deuda crezca—.
 - **Compuerta de confirmación NLP**: ningún dato extraído por NLP/LLM llega a una tabla de
   dominio antes de que un humano confirme (`NLPIngestionEvent.status == "pending_confirmation"`).
 - **Aislamiento por usuario**: toda consulta a una tabla de datos personales filtra por el
