@@ -372,7 +372,7 @@ A response may also carry a free-text reason (`feedback_notes`, written in the c
 
 At most **5** subjects are mined per reason (`SuggestionService._MAX_MINED_SUBJECTS`) — 500 characters are enough to name dozens of catalogue foods, and `behavior_signals` has no pruning job. The reason text itself is stored once, in `suggestions.feedback_notes`; no signal copies it — a mined one records `{"mined_from": "feedback_notes"}`, the card's own one records `{"reason_written": true}` — and both point back at the row through `source_entity_id`, so deleting the reason deletes it. The sign is one per sentence, so "we do not like broccoli, we prefer chicken" records **−1.0** for both; that is tolerable precisely because mined subjects order rather than filter.
 
-Household-scoped suggestions (pantry/shopping) skip user-level filtering and are stored with `scope_type="household"`.
+Household-scoped suggestions (pantry/shopping) are stored with `scope_type="household"` and filtered against **every** member of the house (`filters.apply_household_constraints`), with the two rules deliberately inverted. A **declared** hard block is **unioned**: one person's blocked peanut keeps peanut off the shopping list, because a restriction does not admit an average and the cost of being wrong is not symmetric — one extra purchase on one side, a meal someone cannot eat on the other. A **learned** rejection is **intersected**: a subject is only dropped when *every* member rejected it, since unioning would let one person's tap delete the food the other eats daily. Each member's preferences and signals are read separately by `user_id` (`filters.HouseholdMember`) — an intersection can only be computed over sets that were never merged — and who counts as a member comes from `UserRepository.get_household_users`, so a deactivated row does not join the house with an empty rejection set and quietly disable that half of the filter. With no members at all the filter returns the candidates and logs a warning: the intersection of zero sets would have emptied the list. `generate_for_household` has no production caller yet; connecting it is Phase 4.5.
 
 ### Stage 5 — Seeing it and taking it back
 
@@ -440,7 +440,7 @@ pytest tests/
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**531 tests** across 24 files:
+**545 tests** across 25 files:
 
 | File | Coverage area |
 |---|---|
@@ -453,6 +453,7 @@ The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides 
 | `test_body_metrics.py` | Body metric logging and retrieval |
 | `test_recommendations.py` | Candidate scoring, hard constraint filtering, subject suppression |
 | `test_learning_signals.py` | The learning axes — affinity, decay, attribute level, slot, satiety, reason mining |
+| `test_household_learning.py` | Household-scope filtering — declared blocks unioned, learned rejections intersected |
 | `test_notifications.py` | Notification creation, read/dismiss lifecycle |
 | `test_notification_jobs.py` | The scheduled jobs — absences detected, subject dedup, escalation, retirement |
 | `test_clock.py` | Local time, quiet hours, day bounds |

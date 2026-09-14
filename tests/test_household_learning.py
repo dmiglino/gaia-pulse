@@ -207,6 +207,26 @@ class TestEngineReadsEachPersonSeparately:
         assert [p.item_name for p in by_user[diego.id].preferences] == ["mani"]
         assert by_user[rocio.id].preferences == []
 
+    def test_a_deactivated_person_is_not_a_member(
+        self, db: Session, household: Household, diego: User, rocio: User
+    ) -> None:
+        """Y no es un detalle de prolijidad: apagaba media 4.4.9 en silencio.
+
+        Una fila desactivada entraba a la lista sin señales, y como los "no" aprendidos se
+        **intersectan**, ese conjunto vacío hacía que ningún rechazo sacara nunca nada. Por
+        eso quién es miembro lo contesta `UserRepository.get_household_users` —que ya
+        filtraba por `is_active`— y no una consulta escrita de nuevo acá.
+        """
+        rocio.is_active = False
+        db.add(_rejection(diego, "higado"))
+        db.flush()
+
+        members = RecommendationEngine()._household_members(db, household.id)
+        assert [m.user.id for m in members] == [diego.id]
+
+        kept = apply_household_constraints([_shopping("higado")], members)
+        assert kept == []
+
 
 class TestGenerateForHouseholdRunsTheFilter:
     """El filtro tiene que estar **enchufado**, no solo existir.

@@ -31,6 +31,7 @@ from app.recommendations.generators import (
     meal_generator,
     pantry_generator,
 )
+from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -220,10 +221,13 @@ class RecommendationEngine:
         que hace posible la intersección: un `WHERE household_id = ?` traería las señales
         de los dos revueltas, y de ahí no se puede volver.
 
-        Ordenadas por `id` para que la corrida sea reproducible: los conjuntos que se
-        unen e intersectan no dependen del orden, pero los logs sí.
+        Quiénes son las personas lo contesta `UserRepository.get_household_users`, que ya
+        existía con el mismo `ORDER BY id` **y** el `is_active` que acá se había escrito de
+        nuevo sin él. Esa copia no era solo duplicación: un miembro desactivado entraba a la
+        lista sin señales, y como los "no" aprendidos se **intersectan**, un conjunto vacío
+        apagaba en silencio esa mitad del filtro —ningún rechazo volvía a sacar nada—.
         """
-        users = db.query(User).filter(User.household_id == household_id).order_by(User.id).all()
+        users = UserRepository(db).get_household_users(household_id)
         return [
             filters.HouseholdMember(
                 user=user,

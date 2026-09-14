@@ -1632,7 +1632,18 @@ ejercicios esperan la 4.5)
       actividad): ahora son un `frozenset` único, `_BLOCKING_SIGNALS`. Esa es la forma de
       duplicación que más cara sale —dos listas que tienen que coincidir y que nada obliga a
       coincidir—.
-- [x] 13 tests nuevos en `tests/test_household_learning.py`, escritos para que **unificar las
+- [x] **Lo que encontró la revisión de instrucciones, y por qué era un bug y no una
+      prolijidad.** `_household_members` había escrito su propia consulta de usuarios de la
+      casa, cuando `UserRepository.get_household_users` ya existía con el mismo `ORDER BY id`
+      **y** un `is_active` que la copia no tenía. Esa diferencia apagaba en silencio media
+      4.4.9: una persona desactivada entraba a la lista sin señales, y como los "no"
+      aprendidos se **intersectan**, un conjunto vacío hacía que ningún rechazo sacara nunca
+      nada. Es exactamente la forma de duplicación que el commit de instrucciones acababa de
+      nombrar —una regla escrita dos veces, las dos copias en desacuerdo, nada que falle—, así
+      que la regla nueva se estrenó contra el mismo diff que la introdujo. Ahora el engine
+      llama al repositorio (un `db.query()` directo menos en `app/recommendations/`, de 15 a
+      14) y hay un test que fija la dirección.
+- [x] 14 tests nuevos en `tests/test_household_learning.py`, escritos para que **unificar las
       dos reglas rompa la mitad del archivo**: que el bloqueo de uno alcance (y que dé igual de
       quién sea), que el rechazo de uno no borre la comida del otro, que el rechazo de las dos
       sí, que dos "no" de sujetos distintos no se sumen a uno, que diez rechazos de una persona
@@ -1640,7 +1651,7 @@ ejercicios esperan la 4.5)
       `_household_members` traiga a cada uno solo lo suyo, y **tres end-to-end** por
       `generate_for_household` —incluido el control de que el mismo stock sí llega a la lista
       cuando nadie lo bloquea, sin el cual "no salió nada" podría ser que el generador no
-      produjo nada—.
+      produjo nada— y el de la persona desactivada, que es el que ata el `is_active`.
 
 **4.5 — Razonar con los datos que ya están, y explicar de verdad**
 
@@ -1919,7 +1930,7 @@ checkpoint reporta el número, no una impresión:
 
 | Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 |
 |---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **544 passed** |
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** |
 | `ruff check .` | 292 findings | **288** | **256** | **260** | **257** |
 | `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** |
 | `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** |
@@ -1928,7 +1939,9 @@ checkpoint reporta el número, no una impresión:
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
 pendiente. Los números de la última columna se midieron con la forma `.venv/bin/python -m`
-sobre el árbol con la 4.4.7 aplicada.
+sobre el árbol con la 4.4.9 aplicada, **incluido el seguimiento del `instruction-steward`**:
+el test 545 es el que cierra el agujero del miembro desactivado, y por eso la columna no
+coincide con el `544` que reportó el checkpoint del commit `b116ab8`.
 
 > **`ruff` no baja monótonamente, y conviene saber por qué antes de leer un alza como un
 > daño.** De 250 en `393ec82` pasó a 252 con la 4.4.6 y a 256 con la 4.4.7: las 4 nuevas
