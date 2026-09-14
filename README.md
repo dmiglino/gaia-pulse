@@ -464,12 +464,16 @@ All preference, dietary, and goal fields (`goals_json`, `dietary_preferences_jso
 ## Testing
 
 ```bash
-pytest tests/
+.venv/bin/python -m pytest tests/
 ```
+
+Through the venv's interpreter and not a bare `pytest`: a bare one resolves to whatever
+`pytest` is on `PATH`, which is how a suite gets run against a different interpreter than
+the app's and passes or fails for reasons that have nothing to do with the code.
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**562 tests** across 25 files:
+**699 tests** across 30 files:
 
 | File | Coverage area |
 |---|---|
@@ -489,9 +493,11 @@ The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides 
 | `test_notifications.py` | Notification creation, read/dismiss lifecycle |
 | `test_notification_jobs.py` | The scheduled jobs — absences detected, subject dedup, escalation, retirement |
 | `test_clock.py` | Local time, quiet hours, day bounds, the job schedule |
+| `test_explain.py` | That the "why this suggestion" is the reason, not a catalogue phrase |
 | `test_actions.py` | Every notification and suggestion resolving to one primary action |
 | `test_dashboard.py` | Dashboard aggregation and chart series |
 | `test_components.py` | The Jinja macro library — `ui`, `icons`, `domain` |
+| `test_i18n_catalog.py` | That every string the app shows has a Spanish translation — extracted, not counted |
 | `test_web_auth.py` | Login, logout, session cookie, the redirect a page route owes |
 | `test_web_pages.py` | Smoke of every page route against 200 |
 | `test_web_pages_populated.py` | The same pages with data in them |

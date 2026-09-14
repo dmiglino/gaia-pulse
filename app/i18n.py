@@ -9,12 +9,25 @@ Usage in Jinja2 templates (automatic after setup_jinja2_i18n is called):
     {{ _('Hello, %(name)s!') % {'name': user.display_name} }}
     {% trans count=items|length %}%(count)d item{% pluralize %}%(count)d items{% endtrans %}
 
+A missing translation is invisible: gettext returns the English msgid when it finds
+no entry, and nothing raises. That is how three phases of v3 shipped 139 untranslated
+strings to a Spanish-speaking household. `tests/test_i18n_catalog.py` is the ratchet —
+it extracts on every run and fails on the first msgid with no Spanish, so the gap
+cannot come back silently. Run it after adding any user-facing string.
+
 Workflow for adding/updating translations:
-    pybabel extract -F babel.cfg -o app/locales/messages.pot .
-    pybabel update -i app/locales/messages.pot -d app/locales -D messages
-    # edit app/locales/es_AR/LC_MESSAGES/messages.po
-    pybabel compile -d app/locales -D messages
-    # or just restart the app — _ensure_mo_compiled auto-compiles on startup
+    pybabel extract -F babel.cfg -o /tmp/gp.pot --no-location --sort-output .
+    # then edit app/locales/es_AR/LC_MESSAGES/messages.po BY HAND, appending the new
+    # entries under the right `# ─── section ───` comment.
+    pybabel compile -d app/locales -D messages --statistics
+    # or just restart the app — _ensure_mo_compiled auto-compiles when the .mo is
+    # missing or older than the .po
+
+Deliberately NOT `pybabel update`: it rewrites the .po from the .pot, which drops the
+section comments and the notes recording why a short string got the translation it did
+("Out" is a meal context, not an exit). Those comments are the only documentation the
+catalog has, so the file is maintained by hand and the .pot is a scratch file — hence
+/tmp and not a tracked path. Both the .po and the compiled .mo are committed.
 """
 from __future__ import annotations
 
