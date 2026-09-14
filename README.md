@@ -27,6 +27,12 @@ GaiaPulse is built around the concept of a **household** — a single shared uni
 
 The app accepts natural language and voice input for all data entry and requires explicit confirmation before saving anything — the NLP layer surfaces a parsed preview, the user reviews it, and only then does data get written.
 
+Two companion documents cover v3 in Spanish, and each answers a question this README does not:
+[`docs/gaiapulse-v3.md`](docs/gaiapulse-v3.md) for the state of the app — what v2 had, what v3
+changed, and **what was deliberately left out and why** — and
+[`docs/guia-de-uso.md`](docs/guia-de-uso.md) for how Diego and Rocío actually use it, including
+how to teach it.
+
 ---
 
 ## Features
@@ -126,7 +132,7 @@ table, and `0003_suggestion_subject` adds `subject_type` / `subject_name` /
 | `users` | Per-user profiles, goals, dietary preferences (JSONB) |
 | `body_metric_logs` | Weight, body fat, waist, sleep per user |
 | `blood_analyses` | Blood panel results per user (markers in a JSONB blob) |
-| `food_items` | Canonical food catalogue with macros (JSONB) |
+| `food_items` | Canonical food catalogue; macros in typed columns, always per 100 g |
 | `pantry_stock` | Current household inventory per food item |
 | `pantry_movements` | Immutable add/consume ledger |
 | `meal_events` | Shared meal event (household-scoped) |
