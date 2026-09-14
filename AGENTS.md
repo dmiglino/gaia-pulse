@@ -93,6 +93,17 @@ environment.
 - No secret values committed; `.env.example` updated if env vars changed
 - `README.md` updated if the change alters documented stack, schema,
   structure, NLP behavior, recommendation behavior, or tradeoffs
+- `docs/gaiapulse-v3.md` updated on the same trigger, and specifically:
+  its "lo que quedó afuera" section when a change **closes** one of those
+  gaps, and its measured-numbers table when tables, routes, templates,
+  macros, catalog entries or test counts move. That table exists because
+  `README.md` once carried numbers nobody re-measured; it earns its keep
+  only if it is re-measured, and it lists the commands to do it.
+- `docs/guia-de-uso.md` updated when a change alters **what a phrase does**
+  or what a button does — it names screen labels and asserts parser
+  behavior phrase by phrase, so a parser or template change can falsify it
+  silently. Its claims are verifiable: re-run the phrases, don't reason
+  about them.
 - `python3 scripts/agents/sync_agent_assets.py --check` if anything under
   `.agents/` changed
 - A `security-privacy` review for anything touching auth, sessions,
