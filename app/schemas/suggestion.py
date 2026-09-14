@@ -28,10 +28,12 @@ class SuggestionRead(BaseModel):
 class SuggestionFeedback(BaseModel):
     status: Literal["accepted", "rejected", "snoozed", "dismissed"]
     #: El tope vale para los dos caminos —el formulario y la ruta JSON—: el motivo se
-    #: guarda en una columna `Text` sin límite y además viaja al `context_json` de cada
-    #: señal que se aprende de él. La ruta web recorta antes de llegar acá, así que un
-    #: pegado largo sin JS no se convierte en un 422; en la ruta JSON el 422 es la
-    #: respuesta correcta.
+    #: guarda en una columna `Text` sin límite, y el largo no es solo almacenamiento
+    #: porque el texto se mina contra el catálogo entero de sujetos. Lo que **no** pasa es
+    #: que el motivo se copie a las señales que salen de él: se minan sujetos y se graba
+    #: la señal, el texto queda en `feedback_notes` y en ningún otro lado. La ruta web
+    #: recorta antes de llegar acá, así que un pegado largo sin JS no se convierte en un
+    #: 422; en la ruta JSON el 422 es la respuesta correcta.
     feedback_notes: str | None = Field(default=None, max_length=500)
 
 

@@ -40,7 +40,7 @@ The app accepts natural language and voice input for all data entry and requires
 - **Preview / confirm flow** — NLP results are stored as `pending_confirmation` and shown to the user before any data is saved
 - **Recommendation engine** — meal, activity, and pantry suggestions personalised per user and updated by behavior signals
 - **Dashboard** — Chart.js visualisations: weight trend, workout frequency, muscle group distribution, meal type breakdown, activity calendar
-- **Background jobs** — APScheduler runs four jobs at fixed local wall-clock times in `TIMEZONE`, not on intervals, so a restart never moves them (see [Background job schedule](#background-job-schedule)). The three notification jobs skip their run entirely inside the quiet window (`QUIET_HOURS_START`–`QUIET_HOURS_END`); suggestion generation is not gated by it
+- **Background jobs** — APScheduler runs seven jobs at fixed local wall-clock times in `TIMEZONE`, not on intervals, so a restart never moves them (see [Background job schedule](#background-job-schedule)). The five that create notifications skip their run entirely inside the quiet window (`QUIET_HOURS_START`–`QUIET_HOURS_END`); suggestion generation and notification pruning are not gated by it
 - **PWA manifest** — installable on mobile home screens
 - **OpenAPI docs** — available at `/api/docs` and `/api/redoc`
 
@@ -82,27 +82,40 @@ Jobs run at fixed local wall-clock times in `TIMEZONE` (APScheduler `CronTrigger
 on an interval, so the times do not shift when the process restarts. The table of record
 is `_SCHEDULE` in `app/jobs/scheduler.py`.
 
-| Job | Local time | Why then |
-|---|---|---|
-| `metric_reminders` | 08:20 | Before breakfast — weigh-ins are done fasted |
-| `low_stock_notifications` | 09:10 | Morning, while there is still time to shop |
-| `inactivity_notifications` | 13:05 | Midday, with the day still ahead |
-| `suggestion_generation` | 07:40, 18:40 | Before breakfast, and before dinner is decided |
+| Job | Local time | Speaks? | Why then |
+|---|---|---|---|
+| `metric_reminders` | 08:20 | yes | Before breakfast — weigh-ins are done fasted |
+| `low_stock_notifications` | 09:10 | yes | Morning, while there is still time to shop |
+| `sleep_reminders` | 10:25 | yes | Sleep is logged once you are up, and 08:20 is taken by the weigh-in |
+| `inactivity_notifications` | 13:05 | yes | Midday, with the day still ahead |
+| `meal_reminders` | 20:45 | yes | After dinner, when the day's meals are complete — in the morning the gap does not exist yet |
+| `suggestion_generation` | 07:40, 18:40 | no | Before breakfast, and before dinner is decided |
+| `notification_pruning` | 04:15 | no | Housekeeping, deliberately inside the quiet window |
 
-The first three create notifications and are gated by the quiet window: inside it they
-skip the run entirely rather than deferring it, since what they would announce is still
-true tomorrow. `suggestion_generation` only writes suggestions, which nobody is woken up
-for, so it is not gated. `ENABLE_BACKGROUND_JOBS=false` registers none of them.
+The **five that speak** create notifications and are gated by the quiet window: inside it
+they skip the run entirely rather than deferring it, since what they would announce is
+still true tomorrow. The other two are not gated — `suggestion_generation` only writes
+suggestions, which nobody is woken up for, and `notification_pruning` talks to nobody at
+all, which is why it is scheduled in the middle of the quiet window on purpose.
+`ENABLE_BACKGROUND_JOBS=false` registers none of them.
+
+One consequence worth knowing before moving an hour: the gate skips, it does not defer.
+Moving a speaking job inside the quiet window (or raising `QUIET_HOURS_START` past 20:45)
+silences that reminder permanently rather than postponing it.
 
 ### Database schema
 
-18 tables across one Alembic migration (`0001_initial_schema`):
+20 tables across three Alembic migrations — `0001_initial_schema` creates 19 of them,
+`0002_onboarding_blood_analysis` adds `users.onboarding_completed` and the `blood_analyses`
+table, and `0003_suggestion_subject` adds `subject_type` / `subject_name` /
+`snoozed_until` to `suggestions`:
 
 | Table | Purpose |
 |---|---|
 | `households` | Single shared unit; holds timezone and settings |
 | `users` | Per-user profiles, goals, dietary preferences (JSONB) |
 | `body_metric_logs` | Weight, body fat, waist, sleep per user |
+| `blood_analyses` | Blood panel results per user (markers in a JSONB blob) |
 | `food_items` | Canonical food catalogue with macros (JSONB) |
 | `pantry_stock` | Current household inventory per food item |
 | `pantry_movements` | Immutable add/consume ledger |
@@ -333,11 +346,15 @@ Candidates that violate explicit user constraints are removed entirely before sc
 
 ### Stage 3 — Behavior signal scoring (`scorer.py`)
 
-Each surviving candidate receives an additive score adjustment based on the user's recent `BehaviorSignal` rows (30-day window):
+Each surviving candidate declares a **subject** (`subject_type` + `subject_name`), and the adjustment is computed against the user's `BehaviorSignal` rows for that same subject. The query horizon is `learning.SIGNAL_HORIZON_DAYS` — **360 days**, not a month; since Stage 4 what decides how much an old signal weighs is its half-life, not a cutoff, so the horizon only bounds the query.
 
-- **Positive signals** (`accepted_suggestion`, `repeated_meal_choice`, `repeated_activity`, positive value) boost candidates whose tokens overlap with the signal's `entity_name` by **+0.12 × overlap × signal_value**
-- **Negative signals** (`rejected_suggestion`, `rejected_activity`, negative value) penalise overlapping candidates by **−0.15 × overlap × |signal_value|**
-- **Diversity penalty** — candidates whose title closely matches a suggestion shown in the last 7 days receive a **−0.20** penalty (scaled by overlap for partial matches)
+Four additive axes, all of them keyed on the normalized subject (`learning.subject_key`) and none of them a filter:
+
+- **Point affinity** — `+0.12 × strength` when the subject's learned direction is positive, `−0.15 × strength` when it is negative (`_learned_delta`). `strength` already carries the evidence weighting, so a single tap does not move the score like ten consistent observations. The signal vocabulary lives in `learning.py`: positives are `accepted_suggestion`, `explicit_preference`, `repeated_meal_choice`, `repeated_purchase` and `repeated_activity`; the only negative type is `rejected_suggestion` — and `ignored_suggestion`, which is what both *dismiss* and *snooze* write, is in neither set, so postponing is not a rejection.
+- **Attribute generalization** — the same delta computed on the subject's **category** and then halved (`_ATTRIBUTE_SIGNAL_SCALE = 0.5`). This is what makes rejecting broccoli, cauliflower and kale say something about spinach. A category is one of the reasons something is liked, never the whole reason.
+- **Slot affinity** — for candidates that declare a time-of-day slot (today, the meal ones), `_learned_delta` on the *contrast* between how the subject behaves in that slot and how it behaves the rest of the time. Never having logged coffee at dinner is not a "no".
+- **Satiety pressure** — `−0.15 × pressure`, from what the person actually **did** recently (the three `CONSUMPTION_SIGNAL_TYPES`), not from what they like. It can only subtract, and it decays in a couple of days: a favourite eaten yesterday drops below an equally liked alternative and stays above zero.
+- **Diversity penalty** — a flat **−0.20** when the candidate's subject key exactly matches the subject of a suggestion created in the last 7 days, regardless of that suggestion's status. Not scaled by anything: it is a fixed step, and it looks at what the app **said**, where satiety looks at what the person did.
 
 Final scores are clamped to `[0.0, 1.0]`.
 
@@ -465,7 +482,7 @@ pytest tests/ --cov=app --cov-report=term-missing
 ### Current tradeoffs
 
 - **SQLite in tests, PostgreSQL in production** — JSONB columns use a shim in SQLite tests. A small number of JSONB-specific queries may behave differently. Column-level tests always pass but complex JSONB path queries are not integration-tested against SQLite.
-- **Single migration** — The entire schema lives in `0001_initial_schema.py`. Future changes will require new Alembic revisions; the initial single-file approach made early iteration faster.
+- **Coarse-grained migrations, and drift is only detectable with a live database** — The schema was bootstrapped as one big initial revision (`0001_initial_schema.py` creates 19 of the 20 tables), so the three revisions are milestones rather than a fine-grained history. And `alembic check` — the only thing that catches a model that has drifted away from the migrations — needs a running PostgreSQL, so it does not run on a laptop that only has the test SQLite.
 - **NLP Layer 2 requires OpenAI** — There is no local LLM fallback for Layer 2. If `OPENAI_API_KEY` is not set, ambiguous input falls back to the rule parser's best guess.
 - **No real-time sync** — The shared household model assumes both users are hitting the same server. There is no WebSocket or SSE push; HTMX polling would need to be added for live shared updates.
 - **Tailwind Play CDN** — Fast to iterate on but not suitable for a production bundle. A Tailwind CLI build step should replace the CDN link before deploying publicly.

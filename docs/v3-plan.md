@@ -1349,9 +1349,14 @@ ejercicios esperan la 4.5)
 - [x] **Suprimir es un filtro en la generación, no un ajuste de score — y esa distinción es
       todo el punto de la 4.4.7.** Hasta acá lo único que reservaba un sujeto era una fila en
       `pending`, así que "Ahora no" *despendía* la fila: el sujeto quedaba libre, y en la corrida
-      siguiente del job volvía a escribirse la misma tarjeta con el score apenas más bajo por
-      diversidad (−0.045 después de multiplicar por la confianza). El gesto de la persona producía
-      exactamente lo que quería evitar. Ahora `RecommendationEngine._still_suppressed()` es
+      siguiente del job volvía a escribirse la misma tarjeta apenas **−0.20** más abajo, el escalón
+      fijo de la penalización por diversidad (`scorer._DIVERSITY_PENALTY`, que no se multiplica por
+      nada y se cobra igual porque `recent_subjects` mira **toda** sugerencia de los últimos 7 días
+      sin importar su status). Si la respuesta había sido `dismissed` se sumaban otros −0.045 de la
+      señal de descarte (`_NEGATIVE_SIGNAL_PENALTY` × fuerza); un `snoozed` puro no escribe señal,
+      así que ahí el único descuento era el −0.20. Y eso es lo que hace el argumento más fuerte, no
+      más débil: −0.20 sobre una confianza de 0.95 **seguía saliendo primera**. El gesto de la
+      persona producía exactamente lo que quería evitar. Ahora `RecommendationEngine._still_suppressed()` es
       `or_(status == "pending", snoozed_until > ahora)` y se evalúa **antes de persistir**, no
       sobre el ranking.
 - [x] **Qué respuestas callan al sujeto, y por qué solo esas dos.** `snoozed` es supresión pura
@@ -1362,7 +1367,8 @@ ejercicios esperan la 4.5)
       que es muchísimo más que cualquier ventana.
 - [x] **`_SNOOZE_DAYS = 3` tiene piso y techo, y los dos importan.** El job de sugerencias corre
       dos veces por día a hora local fija —7:40 y 18:40, `scheduler._SCHEDULE`, desde la 4.1—,
-      así que una ventana más corta que el hueco entre dos corridas (11 h) sería **invisible**;
+      así que una ventana más corta que el hueco **más largo** entre dos corridas (13 h, el de
+      18:40 a 7:40 — el otro es de 11 h) sería **invisible**;
       y tiene que quedar por debajo de los 7 días de la penalización por diversidad
       (`scorer._RECENT_SUGGESTION_DAYS`), que así queda como el escalón siguiente: primero el
       sujeto no aparece, después aparece pero más abajo, y al final vuelve a competir de igual a
