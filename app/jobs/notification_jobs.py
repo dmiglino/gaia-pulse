@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc, is_quiet_hours, local_now
 from app.db.session import SessionLocal
+from app.jobs.logging_utils import log_job_error
 from app.models.pantry import PantryStock
 from app.models.user import User
 from app.repositories.body_metric_repo import BodyMetricRepository
@@ -237,8 +238,12 @@ def run_low_stock_notifications() -> None:
                     len(low_items),
                 )
 
-    except Exception:
-        logger.exception("Error in low_stock job")
+    except Exception as exc:
+        #: Vía `log_job_error` y no `logger.exception` directo: lo que puede fallar acá
+        #: es un `IntegrityError` del `INSERT` en `notif_svc.create`, y su `__str__()`
+        #: lleva el nombre del ítem de despensa como parámetro atado — exactamente lo
+        #: que este job existe para anunciar, no para escribir en un log.
+        log_job_error(logger, "Error in low_stock job", exc)
     finally:
         db.close()
 
@@ -496,8 +501,12 @@ def _run_absence_job(absence: _Absence) -> None:
             )
             logger.info("Created %s notification for user %d", absence.category, user.id)
 
-    except Exception:
-        logger.exception("Error in %s job", absence.category)
+    except Exception as exc:
+        #: Vía `log_job_error`: este loop es por persona, y el `INSERT` que puede fallar
+        #: lleva `display_name` y el texto del aviso como parámetros atados —
+        #: `IntegrityError.__str__()` los incluye, y son justamente el dato de salud de
+        #: la persona que el job no tiene por qué imprimir en un log.
+        log_job_error(logger, f"Error in {absence.category} job", exc)
     finally:
         db.close()
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_utc
 from app.db.session import SessionLocal
+from app.jobs.logging_utils import log_job_error
 from app.models.user import User
 from app.repositories.household_repo import HouseholdRepository
 from app.repositories.suggestion_repo import BehaviorSignalRepository, SuggestionRepository
@@ -57,13 +58,17 @@ def run_suggestion_generation() -> None:
             try:
                 new_suggestions = engine.generate_for_user(db, user, limit=_SUGGESTIONS_PER_RUN)
                 logger.info("Generated %d suggestions for user %d", len(new_suggestions), user.id)
-            except Exception:
+            except Exception as exc:
                 #: El `rollback` es parte del reparto, no una precaución de más: sin él, lo
                 #: que la corrida fallida dejó pendiente en la sesión lo commitea la
                 #: siguiente entidad. Es el mismo reparto que `_sweep_user` ya hacía —una
                 #: excepción de una no se lleva puesto lo de la otra— y acá faltaba.
                 db.rollback()
-                logger.exception("Error generating suggestions for user %d", user.id)
+                #: `log_job_error` y no `logger.exception` directo: lo que escribe
+                #: `generate_for_user` son filas de `Suggestion` con nombres de comida o
+                #: ejercicio como parámetro atado, y eso es lo que un `IntegrityError`
+                #: pondría en el log si se dejara imprimir su propio `__str__()`.
+                log_job_error(logger, f"Error generating suggestions for user {user.id}", exc)
 
         #: Y después las casas. `HouseholdRepository.list_all()` y no un `select` acá por la
         #: regla de capas, y `list_all` y no la `get_all()` heredada porque esa corta en 100
@@ -114,9 +119,12 @@ def run_absence_sweep() -> None:
                 written = _sweep_user(db, user)
                 if written:
                     logger.info("Recorded %d absence signals for user %d", written, user.id)
-            except Exception:
+            except Exception as exc:
                 db.rollback()
-                logger.exception("Error sweeping absences for user %d", user.id)
+                #: `_sweep_user` termina en `learning.record_signal` + `db.commit()` por
+                #: persona: el `INSERT` que puede fallar lleva `subject_name` como
+                #: parámetro atado, y es dato de la persona, no algo para un log.
+                log_job_error(logger, f"Error sweeping absences for user {user.id}", exc)
     except Exception:
         logger.exception("Error in absence_sweep job")
     finally:

@@ -16,11 +16,13 @@ ningún escritor.
 from __future__ import annotations
 
 import ast
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.jobs import suggestion_jobs
@@ -915,6 +917,39 @@ class TestAbsenceSweep:
         assert (signal.source_entity_type, signal.source_entity_id) == ("suggestion", card.id)
         #: Y `"inferred"`, que es la semivida más corta: nadie dijo nada y nadie hizo nada.
         assert signal.source_type == "inferred"
+
+    def test_a_failed_commit_does_not_leak_the_subject_name_into_the_log(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        db: Session,
+        diego: User,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """`IntegrityError.__str__()` carries its bound INSERT parameters.
+
+        `_sweep_user` commits once, after writing the signal whose `entity_name` is the
+        subject — "lentejas" here. If that commit fails, `logger.exception` on the raw
+        exception would put "lentejas" straight in the log via the exception's own
+        `__str__()`. `log_job_error` is what stands between the two: the job survives (its
+        own per-user `try` catches it) and the name never reaches the log.
+        """
+        self._card(db, diego, days_old=self._SWEPT_AGE)
+
+        def _failing_commit() -> None:
+            raise IntegrityError(
+                "INSERT INTO behavior_signals (entity_name) VALUES (?)",
+                ["lentejas"],
+                Exception("UNIQUE constraint failed"),
+            )
+
+        monkeypatch.setattr(db, "commit", _failing_commit)
+
+        with caplog.at_level(logging.ERROR):
+            suggestion_jobs.run_absence_sweep()
+
+        assert self._absences(db, diego) == []
+        assert "lentejas" not in caplog.text
+        assert any("IntegrityError" in record.getMessage() for record in caplog.records)
 
     def test_running_twice_the_same_day_does_not_count_the_same_card_twice(
         self, db: Session, diego: User
