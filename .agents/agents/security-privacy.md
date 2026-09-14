@@ -45,6 +45,16 @@ the concrete path, not just the category it belongs to.
   leaks by inference: a shopping list that silently loses peanut tells the
   other member something they were never shown, which is a tradeoff to state
   next to the code rather than a bug to fix.
+- **A background job has no acting user, so "the acting user's `user_id`"
+  has no answer and the rule still applies.** Ask instead which column
+  supplied it and whether that column can name someone else: the absence
+  sweep writes each signal with the `user_id` of the person the *card* was
+  scoped to (`Suggestion.scope_user_id`), which is why it must skip
+  `scope_type="household"` cards — those have no owner, and picking one would
+  teach one person from a suggestion made to the house. The loop it iterates
+  is `UserRepository.list_active()`: a deactivated account keeps accumulating
+  inferred negatives if a job walks everyone, and reactivating it then starts
+  from months of "used nothing".
 - Personal health data (body metrics, blood analysis, sleep) minimization,
   logging redaction, and retention — this data must never appear in logs.
 - Secrets: `OPENAI_API_KEY`, `STT_API_KEY`, `APP_SECRET_KEY`,

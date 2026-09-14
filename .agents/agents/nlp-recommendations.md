@@ -24,11 +24,14 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   candidate generation (`generators/`) → hard-constraint filtering
   (`filters.py`) → behavior-signal scoring (`scorer.py`, clamped to
   `[0.0, 1.0]`) → ranking/persistence. Do not fold filtering into scoring or
-  vice versa. Stage 2 has **two** entry points — `apply_hard_constraints`
-  (one person) and `apply_household_constraints` (scope household). They
-  share the comparison (`_drop_blocked`) and differ only in how the blocked
-  sets are built; a third copy of that comparison is how a block starts
-  counting on one screen and not the other.
+  vice versa. Stage 2 has **three** entry points — `apply_hard_constraints`
+  (one person's declared blocks), `apply_signal_constraints` (one person's
+  learned rejections, the only place behaviour *removes* a candidate) and
+  `apply_household_constraints` (scope household, both rules with the
+  asymmetry below). The first and third share the comparison
+  (`_drop_blocked`) and differ only in how the blocked sets are built; a
+  fourth copy of that comparison is how a block starts counting on one screen
+  and not the other.
 - `app/recommendations/learning.py` is not a fifth stage: it is the shared
   vocabulary of what the app learns —what a subject is (`subject_type` +
   `subject_name`), which `signal_type`s count, temporal decay, confidence by
@@ -43,8 +46,27 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   `BehaviorSignalRepository` directly. Signals no longer come only from
   accept/reject taps: registering a meal, a workout or a pantry purchase
   also teaches, so `MealService`, `WorkoutService` and `PantryService` are
-  part of the learning loop too. (`record_feedback()` in `engine.py` was a
-  dead second implementation and is gone — don't reintroduce it.)
+  part of the learning loop too. The fifth writer is not a service at all:
+  `app/jobs/suggestion_jobs.run_absence_sweep` writes `unused_suggestion`
+  because the fact it records is the passing of time, and nothing calls the
+  app a week later to say the lentils were never eaten. A job that writes a
+  signal is yours to review even though `backend` owns `app/jobs/`.
+  (`record_feedback()` in `engine.py` was a dead second implementation and is
+  gone — don't reintroduce it.)
+- One exception to "learning logic lives in `learning.py`":
+  `app/services/learning_service.py` owns the **read** side for people — the
+  aggregation the `/profile/` panel renders and the `forget()` that deletes a
+  subject's signals. It reads `learning.py`'s vocabulary and adds no second
+  copy of it. New scoring or filtering vocabulary still goes in
+  `learning.py`; a new way to *show* or *undo* what was learned goes there.
+- **An inferred negative must not be able to veto.** The filter drops a
+  subject at `_FILTER_EVIDENCE_FLOOR` of live negative weight, and the sweep's
+  `ABSENCE_VALUE` is set so that no reachable number of absences gets there —
+  the spacing between two absences of one subject and the decay floor bound
+  the sum at ≈0.447 against a floor of 0.5. That is arithmetic, not policy, so
+  changing `ABSENCE_VALUE`, `ABSENCE_GRACE_DAYS`, `_SNOOZE_DAYS` or a half-life
+  can silently turn silence into a ban. `test_the_sweep_can_never_veto_a_subject_on_its_own`
+  is what fails; re-derive the bound rather than adjusting the test.
 - When extending intent types or generators, add deterministic
   fixtures/unit tests (`tests/test_nlp.py`, `tests/test_recommendations.py`,
   `tests/test_learning_signals.py`, `tests/test_household_learning.py`) that

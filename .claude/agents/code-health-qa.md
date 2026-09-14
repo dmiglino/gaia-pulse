@@ -62,6 +62,23 @@ correct got there in the first place.
   writer of that column, not just the one that motivated the change: a
   "1 thing you told us" that also counts taps is a falsehood with an air of
   precision.
+- **A hand-maintained list inside a test is a test that stops testing.** A
+  parametrize list of "the jobs that notify", "the templates with a form",
+  "the services that write signals" passes green the day someone adds the
+  ninth one and forgets the list — the failure mode is silence, which is the
+  one a test is supposed to remove. Derive the list from the sources instead:
+  `_jobs_that_speak()` in `tests/test_clock.py` reads the AST of
+  `app/jobs/*.py` and propagates through call chains, so a new notifying job
+  is parametrized into the quiet-hours gate without anybody remembering. A
+  derived list needs one guard of its own — that it did not compute to empty,
+  which would parametrize zero cases and pass.
+- Some literals are load-bearing and "cleaning them up" breaks a test. The
+  clearest one: signal types are written as bare strings
+  (`signal_type="unused_suggestion"`) at every writer, because
+  `test_every_signal_type_the_reader_knows_has_a_writer` finds writers by
+  scanning literals — replacing one with its constant hides that writer and
+  the test can no longer catch a type that is read and never written. If a
+  literal has a comment saying why it is a literal, the comment is the answer.
 - Derive functional test cases from the change: happy path, boundaries,
   invalid input, cross-user isolation, and NLP/provider failure fallback.
   Verify observable behavior, not implementation shape.

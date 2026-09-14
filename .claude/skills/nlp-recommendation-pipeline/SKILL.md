@@ -21,6 +21,14 @@ description: Use when adding an NLP intent, adjusting the confidence threshold/O
    is about to write (`_still_suppressed`, `_without_duplicate_subjects`).
    A score penalty is never a suppression — `_DIVERSITY_PENALTY` lowered a
    0.95 candidate to 0.75 and it still came out first.
+   Two suppressions that read alike live in different stages on purpose. A
+   **snooze** ("not right now") is stage 4: it is about the moment, it expires
+   on the clock (`snoozed_until`), and it writes no signal. A **learned
+   rejection** ("no, not this") is stage 2: it is about the subject, it comes
+   from accumulated negative weight in `learning.rejected_subjects`, and it
+   fades by decay rather than by a date. Putting a snooze in stage 2 makes
+   "later" mean "never"; putting a rejection in stage 4 makes it forgotten the
+   moment the row is gone.
 5. If the change is about *what the app learns* rather than one stage's
    behavior (a new `signal_type` or `subject_type`, decay, evidence,
    attribute or time-slot logic), it belongs in

@@ -42,6 +42,16 @@ point back here instead of duplicating it.
    14 + 3 wholesale is its own commit, not a smuggled side effect — and
    `app/recommendations/` is expected to import `app.models` for type
    annotations, which is not the violation being counted.
+
+   **`app/jobs/` is a fourth entry point, and it calls `repositories/`
+   directly on purpose.** A job has no request and no acting user: it is the
+   clock calling in, so there is no service whose job it is to hold the
+   session. It opens a `SessionLocal()`, reads through repositories, and is
+   bound by the same ratchet as everything above — a `select(User)` written
+   inline inside a job is the violation the rule is about, and the fix is a
+   repository method, not a helper in the job module. Business logic that a
+   route would also need belongs in a service the job calls; the job's own
+   body is allowed to be a loop over people plus the decision of *when*.
 3. No NLP-extracted or LLM-extracted data reaches a domain table before a
    human confirms it. Every ingestion path goes through the
    `pending_confirmation` state on `NLPIngestionEvent`.
@@ -101,8 +111,8 @@ environment.
 
 | Agent | Owns |
 |---|---|
-| `backend` | FastAPI routers (`api/`, `web/`), `services/`, request/response schemas |
-| `nlp-recommendations` | `app/nlp/`, `app/recommendations/`, confirmation gate, feedback loop |
+| `backend` | FastAPI routers (`api/`, `web/`), `services/`, request/response schemas, `app/jobs/` and `app/core/clock.py` |
+| `nlp-recommendations` | `app/nlp/`, `app/recommendations/`, confirmation gate, feedback loop — **including any job that writes a `BehaviorSignal`**, wherever it lives |
 | `frontend` | Jinja2 templates, HTMX partials, Alpine state, Tailwind, Chart.js, i18n strings |
 | `data-persistence` | SQLAlchemy models, Alembic migrations, `repositories/`, household/user isolation |
 | `security-privacy` | Read-only review: auth, sessions, secrets, personal-data isolation, uploads |
@@ -110,6 +120,11 @@ environment.
 | `documentation-steward` | `README.md`, `.env.example` accuracy |
 | `instruction-steward` | This file, `CLAUDE.md`, `docs/`, `.agents/` skills and agent definitions |
 | `integrator` | Sequences multi-agent changes, runs the full gate, calls final verdict |
+
+A background job usually has **two** owners and needs both: `backend` for the
+registration and the session, `nlp-recommendations` for what it writes. The
+absence sweep is the worked example — a job whose entire purpose is to write a
+learning signal.
 
 Edit `.agents/agents/*.md` or `.agents/skills/*/SKILL.md` first when the
 team itself needs to change, then run
