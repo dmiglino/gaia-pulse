@@ -2967,12 +2967,30 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       `tests/test_web_profile.py` (2 tests nuevos) cubre el rango inválido —guardando nada,
       como el resto del formulario— y declarar-y-luego-vaciar los tres campos.
 
-**7.7 — Normalizar los marcadores de sangre**
+**7.7 — Normalizar los marcadores de sangre** — cerrada:
 
-- [ ] Migración `0006`: tabla nueva (`blood_markers` o similar: `analysis_id`, `marker_key`,
-      `value`, `unit`, `reference_range`) en vez del blob JSON, con su propia migración de
-      datos para los análisis ya cargados. Habilita tendencia por SQL en vez de comparar a
-      mano contra el panel anterior.
+- [x] Migración `0006`: tabla nueva `blood_markers` (`analysis_id`, `marker_key`, `value`,
+      `unit`, `ref_min`, `ref_max`, `status`, `display_name`, `category`) con
+      `UniqueConstraint(analysis_id, marker_key)`, en vez del blob `BloodAnalysis.values_json`.
+      Es la primera migración de datos del repo: el `upgrade` recorre cada panel ya cargado,
+      vuelca cada clave del JSON a su propia fila, y borra la columna vieja; el `downgrade`
+      hace el camino inverso, agrupando filas por `analysis_id` de vuelta a un blob. Ninguna
+      migración anterior (0001-0005) tocaba datos, solo esquema — este es el primer
+      `sa.table()`/`op.get_bind()` del repo.
+      `app/models/blood_analysis.py`: nuevo modelo `BloodMarker` y `BloodAnalysis.markers`
+      (relationship con `cascade="all, delete-orphan"`); se borró `values_json` y el método
+      `markers_with_status` que no tenía ningún llamador.
+      `app/services/blood_analysis_service.py`, `app/repositories/blood_repo.py`,
+      `app/recommendations/context.py` y `app/web/health.py` migrados a leer `BloodMarker`
+      en vez del blob. `context.py` reconstruye el mismo `dict` que antes salía de
+      `values_json` para que `blood_generator.py` —el motor de recomendaciones, de riesgo
+      alto— no necesitara ningún cambio. `Numeric` vuelve como `Decimal`; los cuatro sitios
+      de lectura castean a `float` explícitamente para no mostrar `"14.200"` donde antes
+      decía `"14.2"`.
+      Habilita tendencia por SQL (`SELECT ... WHERE marker_key = ... ORDER BY analysis_id`)
+      en vez de comparar a mano contra el panel anterior — no se construyó una pantalla de
+      tendencia nueva, porque ningún consumidor actual la pedía y el plan no la especifica;
+      hacerlo hubiera sido especulativo.
 
 **7.8 — Edición inline de los intents del NLP**
 
@@ -3110,13 +3128,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 | Después de la 7.6 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** | **843 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) | 222 (sin cambio: los 5 `UP007` de la migración `0005` son el mismo patrón ya aceptado de `0004`; los 3 restantes de `app/models/user.py` —imports sin ordenar, un import sin usar, una línea larga— son deuda de línea de base, aislada vía `git stash` contra el árbol previo a la 7.6) |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) | 37 (sin cambio: `app/models/user.py` ya estaba fuera de formato en la línea de base, aislado vía `git stash` contra el árbol previo a la 7.6) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.6) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 | Después de la 7.6 | Después de la 7.7 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** | **843 passed** | 843 (sin cambio) |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) | 222 (sin cambio: los 5 `UP007` de la migración `0005` son el mismo patrón ya aceptado de `0004`; los 3 restantes de `app/models/user.py` —imports sin ordenar, un import sin usar, una línea larga— son deuda de línea de base, aislada vía `git stash` contra el árbol previo a la 7.6) | 231 (aislado vía `git archive` del commit previo a la 7.7 para no dejar la migración nueva sin trackear en la comparación: esa base limpia mide 227, no los 222 de la fila anterior — una deriva previa a esta fase que no se investigó más porque no la introdujo. Sobre esos 227: +5 son `UP035`/`I001`/`UP007` de la migración `0006`, patrón ya aceptado de `0003`-`0005`; −1 es un `I001` viejo de `app/models/blood_analysis.py` que la reescritura del archivo corrigió de paso al reordenar sus imports) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) | 37 (sin cambio: `app/models/user.py` ya estaba fuera de formato en la línea de base, aislado vía `git stash` contra el árbol previo a la 7.6) | 37 (sin cambio: `app/services/blood_analysis_service.py` y `app/web/health.py` ya estaban fuera de formato en la línea de base —falta una línea en blanco después del docstring del módulo, ninguna de las dos tocada por la 7.7—, aislado vía `git stash` contra el árbol previo a la 7.7) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.6) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.7) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y

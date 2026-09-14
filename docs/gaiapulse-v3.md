@@ -223,10 +223,6 @@ frontend. Arrastra consigo la CSP y el peso del CDN.
 palta" a "una palta" requiere volver a escribir la frase. Está afuera porque cambia el
 contrato del backend, no solo la pantalla.
 
-**Normalizar los marcadores de sangre.** Viven en un blob JSON, lo que impide calcular
-tendencia por SQL: hoy un panel se compara con el anterior a mano y no hay serie. Es un
-refactor de datos con su propia migración y su propio riesgo.
-
 **Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
 escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
 —vuelve `mixed` al 0.10— aunque cada mitad por separado funcione perfecto. No es una compuerta
