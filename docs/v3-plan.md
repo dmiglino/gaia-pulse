@@ -2416,6 +2416,15 @@ panel de 4.4.8, nuevos `app/core/clock.py` y `app/recommendations/context.py`, n
       lo que hace la poda algo más que orden: un archivo del que alguien puede copiar no
       debería tener adentro la versión vieja de una afirmación.
 
+      Al ejecutarla salieron **179 bloques para 178 entradas**, y esa diferencia de uno era
+      un `msgid` **duplicado**: dos bloques con el mismo texto, de los cuales `gettext` usa
+      uno y el otro es letra muerta que igual se lee como si contara. No se veía porque
+      todo lo que abre el `.po` con una biblioteca —`read_po`, `pybabel compile`— lo colapsa
+      en silencio y reporta un total ya deduplicado. Es el precio del archivo hecho a mano,
+      y queda cubierto de rebote: la poda dejó el catálogo en **528 = 528** contra la
+      extracción, y esa igualdad no se puede cumplir con un duplicado adentro.
+      Cuatro secciones quedaron sin ninguna entrada viva y se fueron con sus títulos.
+
 **5.2 — Accesibilidad**
 
 Este punto se cerró **auditando, sin escribir código**, y por el mismo motivo que la
