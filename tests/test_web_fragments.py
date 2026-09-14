@@ -141,6 +141,82 @@ def test_pantry_adjust(
     assert r.status_code == 404
 
 
+def test_pantry_set_threshold(
+    authenticated_client: TestClient, db: Session, diego: User, banana: FoodItem
+) -> None:
+    stock = PantryStock(
+        household_id=diego.household_id,
+        food_item_id=banana.id,
+        current_quantity=5.0,
+        unit="unit",
+    )
+    db.add(stock)
+    db.flush()
+
+    r = authenticated_client.post(
+        f"/pantry/{stock.id}/threshold",
+        data={"low_stock_threshold": "3"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text
+    assert f'id="stock-item-{stock.id}"' in r.text
+    db.refresh(stock)
+    assert float(stock.low_stock_threshold) == 3.0
+
+    # Blank clears it back to "low means zero" instead of 422ing.
+    r = authenticated_client.post(
+        f"/pantry/{stock.id}/threshold",
+        data={"low_stock_threshold": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text
+    db.refresh(stock)
+    assert stock.low_stock_threshold is None
+
+    r = authenticated_client.post(
+        f"/pantry/{stock.id}/threshold",
+        data={"low_stock_threshold": "-1"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 400
+
+    r = authenticated_client.post(
+        "/pantry/999999/threshold",
+        data={"low_stock_threshold": "3"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_cannot_set_threshold_on_another_households_stock(
+    authenticated_client: TestClient, db: Session
+) -> None:
+    """The id in the URL must not be enough: scope by the acting household."""
+    other_home = Household(name="Someone else", timezone="UTC")
+    db.add(other_home)
+    db.flush()
+    other_food = FoodItem(canonical_name="their food", category="other", base_unit="unit")
+    db.add(other_food)
+    db.flush()
+    other_stock = PantryStock(
+        household_id=other_home.id,
+        food_item_id=other_food.id,
+        current_quantity=5.0,
+        unit="unit",
+    )
+    db.add(other_stock)
+    db.flush()
+
+    r = authenticated_client.post(
+        f"/pantry/{other_stock.id}/threshold",
+        data={"low_stock_threshold": "3"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404, r.text
+    db.refresh(other_stock)
+    assert other_stock.low_stock_threshold is None
+
+
 def test_home_and_pantry_pages_render(authenticated_client: TestClient) -> None:
     for path in ("/", "/pantry/"):
         r = authenticated_client.get(path)

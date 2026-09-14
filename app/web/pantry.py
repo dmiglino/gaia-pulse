@@ -115,6 +115,63 @@ def pantry_adjust(
     return templates.TemplateResponse("pantry/partials/stock_card_swap.html", ctx)
 
 
+@router.post("/{stock_id}/threshold", response_class=HTMLResponse)
+def pantry_set_threshold(
+    request: Request,
+    stock_id: int,
+    current_user: CurrentUser,
+    db: DB,
+    low_stock_threshold: str = Form(default=""),
+) -> Response:
+    """Set the low-stock alert threshold from the stock grid and swap its card back in.
+
+    The field travels as a plain string, not `float | None`: an emptied input
+    posts `""`, and FastAPI's `Form(float | None)` would reject that as an
+    invalid number before this function ever ran. Clearing the threshold has
+    to be a valid choice — it falls back to `PantryStock.is_low`'s "low means
+    zero" — not a 422.
+    """
+    is_htmx = bool(request.headers.get("HX-Request"))
+
+    raw = low_stock_threshold.strip()
+    threshold: float | None = None
+    invalid = False
+    if raw:
+        try:
+            threshold = float(raw)
+        except ValueError:
+            invalid = True
+        else:
+            invalid = threshold < 0
+
+    if invalid:
+        if is_htmx:
+            return HTMLResponse(_("Invalid stock adjustment."), status_code=400)
+        return _back_to_pantry(_("Invalid stock adjustment."), "error")
+
+    svc = PantryService(db)
+    item = svc.set_low_stock_threshold(
+        household_id=current_user.household_id,
+        stock_id=stock_id,
+        threshold=threshold,
+    )
+    if item is None:
+        if is_htmx:
+            return HTMLResponse(_("Pantry item not found."), status_code=404)
+        return _back_to_pantry(_("Pantry item not found."), "error")
+
+    if not is_htmx:
+        return _back_to_pantry(_("Stock updated."), "success")
+
+    ctx = get_template_context(request, db, current_user)
+    ctx["item"] = item
+    summary = svc.get_stock_summary(current_user.household_id)
+    ctx["stock_total"] = summary["total"]
+    ctx["low_stock_count"] = summary["low"]
+    ctx["oob"] = True
+    return templates.TemplateResponse("pantry/partials/stock_card_swap.html", ctx)
+
+
 @router.get("/movements", response_class=HTMLResponse)
 def pantry_movements(
     request: Request,

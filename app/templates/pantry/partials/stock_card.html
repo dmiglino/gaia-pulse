@@ -75,6 +75,25 @@
 
         {{ ui.btn(size='icon', icon='check', aria_label=_('Save stock change'), class='flex-shrink-0') }}
       </form>
+
+      <form hx-post="/pantry/{{ item.id }}/threshold"
+            hx-target="#stock-item-{{ item.id }}"
+            hx-swap="outerHTML"
+            class="flex items-center gap-1.5 mt-1.5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+
+        <label class="sr-only" for="stock-threshold-{{ item.id }}">
+          {{ _('Alert threshold in %(unit)s', unit=item.unit) }}
+        </label>
+        <input id="stock-threshold-{{ item.id }}" type="number" name="low_stock_threshold"
+               step="0.1" min="0" placeholder="{{ _('Alert below') }}"
+               value="{{ dm.quantity(item.low_stock_threshold) }}"
+               class="w-full min-w-0 px-2 py-1.5 bg-card-alt border border-line rounded-control
+                      text-sm text-ink tabular-nums focus:outline-none focus:border-brand-500
+                      focus:ring-2 focus:ring-brand-500/20" />
+
+        {{ ui.btn(size='icon', icon='check', aria_label=_('Save alert threshold'), class='flex-shrink-0') }}
+      </form>
     </div>
   </div>
 </div>

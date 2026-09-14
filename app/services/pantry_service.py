@@ -180,6 +180,22 @@ class PantryService:
         self.db.commit()
         return stock
 
+    def set_low_stock_threshold(
+        self, household_id: int, stock_id: int, threshold: float | None
+    ) -> PantryStock | None:
+        """Set (or clear) the quantity under which a stock row counts as low.
+
+        Scoped by household the same way :meth:`adjust_stock_by_id` is:
+        returns ``None`` when the row does not belong to *household_id*.
+        Clearing it (``threshold=None``) falls back to `PantryStock.is_low`'s
+        default of "low means exactly zero".
+        """
+        stock = self.stock_repo.set_threshold(household_id, stock_id, threshold)
+        if stock is None:
+            return None
+        self.db.commit()
+        return stock
+
     def record_consumption(
         self,
         household_id: int,

@@ -86,6 +86,23 @@ class PantryStockRepository(BaseRepository[PantryStock]):
         all_stock = list(self.db.scalars(stmt).unique().all())
         return [s for s in all_stock if s.is_low]
 
+    def set_threshold(
+        self, household_id: int, stock_id: int, threshold: float | None
+    ) -> PantryStock | None:
+        """Set (or clear, with ``None``) the low-stock threshold of one row.
+
+        Scoped the same way :meth:`get_for_household` is: returns ``None``
+        when *stock_id* does not belong to *household_id*, so the caller
+        can't be tricked into editing another household's row by guessing an id.
+        """
+        stock = self.get_for_household(household_id, stock_id)
+        if stock is None:
+            return None
+        stock.low_stock_threshold = threshold
+        stock.updated_at = datetime.now(UTC)
+        self.db.flush()
+        return stock
+
     def upsert_stock(
         self,
         household_id: int,
