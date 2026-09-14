@@ -2722,6 +2722,24 @@ estaba en el plan.
       empate técnico: es un intercambio, y se resuelve **enseñándolo** en la 6.2 —
       *"enumerá con **y**"* — en vez de cambiando el parser. Misma familia: `corrí 5 km`
       registra el entrenamiento sin duración, porque la distancia no es una columna.
+- [x] **Y una quinta, la más grande, que se decide no abrir en la Fase 6: mezclar temas en
+      una frase no funciona, y hay que decirlo.** Escribiendo la 6.2 apareció al probar
+      *"escribí varias cosas en una frase"*, que era una afirmación mía y es falsa.
+      **`cené fideos y corrí 30 minutos` vuelve `mixed` al 0.10** — el modo de falla
+      invisible otra vez, y esta vez el peor caso, porque las dos mitades son frases que por
+      separado funcionan perfecto. La causa no es una compuerta con un verbo de menos: es la
+      **precedencia de `parse()`**, donde comida excluye entrenamiento y entrenamiento excluye
+      comida, así que una frase con las dos cosas no dispara **ninguna**. Y hay un segundo
+      caso con otra causa y otra forma: `compré leche y pesé 80 kg` **sí** anota el peso y la
+      leche, y además da de alta un producto fantasma llamado *"pesé 80 kg"*, porque cada
+      parser lee **la oración entera** en vez de su propio tramo y el de stock enumera por "y". El punto tampoco ayuda (`cené fideos. corrí 30 minutos` falla igual).
+      Arreglarlo de verdad es **segmentar la oración** y correr cada parser sobre su tramo:
+      un cambio de diseño del módulo, no un hueco para tapar, y con riesgo de regresión sobre
+      las 48 aserciones que las dos pasadas anteriores dejaron. Queda entonces como lo único
+      que la guía enseña **en negativo**, con los dos contraejemplos escritos y la causa más
+      común de una confirmación vacía nombrada como tal en *"Cuando no entiende"*. Lo que
+      **sí** funciona y la guía delimita: varios hechos del **mismo** tema en una frase
+      (`pesé 81 kg y dormí 7 horas` → una sola medición con las dos cosas).
 
 Se comitea **aparte de los dos documentos**: es un cambio de comportamiento del parser, y
 mezclarlo con dos archivos de prosa deja un commit que no se puede revertir por partes.
@@ -2730,26 +2748,26 @@ mezclarlo con dos archivos de prosa deja un commit que no se puede revertir por 
 
 Para alguien que quiere entender el estado de la app, no usarla. Estructura pensada:
 
-- [ ] Qué es GaiaPulse en un párrafo y para quién (dos personas, un hogar, un objetivo).
-- [ ] **El recorrido de un dato**, que es lo que hace entendible todo lo demás: una frase
+- [x] Qué es GaiaPulse en un párrafo y para quién (dos personas, un hogar, un objetivo).
+- [x] **El recorrido de un dato**, que es lo que hace entendible todo lo demás: una frase
       escrita en Capture → NLP capa 1/capa 2 → la pantalla de confirmación → las tablas de
       dominio → las señales de aprendizaje → una sugerencia. Un diagrama y cinco párrafos.
-- [ ] Por área, tres columnas honestas: **lo que ya estaba en la v2**, **lo que la v3
+- [x] Por área, tres columnas honestas: **lo que ya estaba en la v2**, **lo que la v3
       cambió**, y **lo que sigue igual a propósito**. Áreas: funcionamiento (los 13
       defectos y el onboarding huérfano), diseño (tokens, modo oscuro, macros), la capa de
       inteligencia (el reloj, la memoria por sujeto, el aprendizaje de 4.4 **y el panel que
       lo hace visible y reversible**), i18n y accesibilidad, y la red de tests.
-- [ ] Dentro de esa área, la vuelta de tuerca que conviene contar aparte porque es la que
+- [x] Dentro de esa área, la vuelta de tuerca que conviene contar aparte porque es la que
       cambia la relación con la app y no solo su comportamiento: en la v2 el aprendizaje era
       inauditable —`behavior_signals` no tenía ninguna lectura de usuario— y en la v3 se ve,
       se cuestiona con las cifras que lo respaldan y se borra. Y el rótulo falso que había
       que corregir para que eso fuera legible: dos pantallas llamaban "aprendido" a lo que la
       persona había **declarado**.
-- [ ] **Lo que quedó afuera y por qué**, con nombre y razón: la validación de CSRF, el LLM
+- [x] **Lo que quedó afuera y por qué**, con nombre y razón: la validación de CSRF, el LLM
       en el camino de recomendación, la edición inline del NLP, el build de Tailwind, la
       normalización de los marcadores de sangre. Un documento que solo cuenta lo que se hizo
       es propaganda; lo valioso para el que llega después es el mapa de lo que falta.
-- [ ] Los números verificados al momento de escribirlo (tablas, migraciones, tests,
+- [x] Los números verificados al momento de escribirlo (tablas, migraciones, tests,
       pantallas), sacados del árbol y no de la memoria — es exactamente el error que hoy
       tiene `README.md:81`.
 
@@ -2757,18 +2775,18 @@ Para alguien que quiere entender el estado de la app, no usarla. Estructura pens
 
 Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de módulo.
 
-- [ ] **La primera semana**, en orden: el onboarding, la primera captura, el primer
+- [x] **La primera semana**, en orden: el onboarding, la primera captura, el primer
       registro de peso, cargar la despensa. Qué esperar de la app cuando todavía no sabe
       nada de vos — y por qué las primeras sugerencias son genéricas.
-- [ ] **Cómo hablarle**: qué frases entiende bien, con ejemplos reales en castellano de los
+- [x] **Cómo hablarle**: qué frases entiende bien, con ejemplos reales en castellano de los
       dos idiomas que el parser acepta, y qué conviene escribir para que una comida quede
       con su hora (que es lo que le enseña *cuándo* te gusta algo).
-- [ ] **Cómo aprende y cómo enseñarle**: qué pasa cuando aceptás, cuando descartás y cuando
+- [x] **Cómo aprende y cómo enseñarle**: qué pasa cuando aceptás, cuando descartás y cuando
       posponés una sugerencia —y que desde la 4.4.7 "Ahora no" calla el tema por tres días en
       vez de contar como un "no"—; por qué un solo toque es una pista y seis son una regla; por
       qué un "no" caduca; y que rechazar tres verduras le enseña algo sobre la cuarta. Es la
       sección que convierte la 4.4 en algo que se puede usar a propósito en vez de sufrir.
-- [ ] **Decirle por qué**, que es la forma más rápida de enseñarle y la menos evidente: el
+- [x] **Decirle por qué**, que es la forma más rápida de enseñarle y la menos evidente: el
       "¿Preferís decir por qué?" de la tarjeta (4.4.7). Que conviene **nombrar la comida o la
       actividad** —"no nos gusta el brócoli", no "no nos convence"—, porque la app busca en esa
       frase los nombres que conoce y aprende sobre ellos en lugar de sobre cómo estaba redactada
@@ -2776,12 +2794,16 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       Dos cosas más que conviene decir en la guía porque se notan al usarla: que **una frase corta
       enseña mejor que una lista** —de un motivo se aprenden hasta cinco cosas, y un signo por
       frase, así que "no nos gusta el brócoli, preferimos el pollo" baja los dos—, y que de las
-      actividades entiende las que se dicen igual en inglés y en castellano (yoga, pilates,
-      spinning, crossfit, cardio, running, hiit, zumba) pero **no** las que solo se dicen en
-      castellano ("correr", "caminar", "pesas"), hasta que la 4.5 las saque de la base.
-- [ ] **Cómo leer una sugerencia**: el "¿por qué esta sugerencia?", qué significa el
+      actividades hay **dos niveles** (esto lo cambió la 6.0, que hizo entrar al parser las que
+      solo se dicen en castellano): "correr", "caminar", "pesas", "nadar" y "bicicleta" ahora se
+      entienden como entrenamiento y como gusto, pero quedan como texto libre, mientras que las
+      que se dicen igual en los dos idiomas (yoga, pilates, spinning, crossfit, cardio, running,
+      hiit, zumba) entran al **catálogo de ejercicios** con su grupo muscular y por eso además
+      alimentan el balance y la recuperación. Lo que sigue siendo inglés es el catálogo, no la
+      compuerta, hasta que la 4.5 le agregue la columna de alias.
+- [x] **Cómo leer una sugerencia**: el "¿por qué esta sugerencia?", qué significa el
       porcentaje de confianza, y qué **no** significa (no es una recomendación médica).
-- [ ] **La lista de compras es de los dos** (4.5.7): entre las sugerencias personales aparecen
+- [x] **La lista de compras es de los dos** (4.5.7): entre las sugerencias personales aparecen
       algunas del hogar —qué se acabó, qué está por acabarse, qué se compra siempre y hoy no
       está— y esas las ven las dos personas, son la misma tarjeta y no una copia para cada uno.
       Dos cosas que conviene saber para no pelearse con ellas: **cargar la despensa es lo que
@@ -2789,9 +2811,9 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       avisa cuando algo llega a cero), y una restricción alimentaria de **una** de las dos saca
       ese alimento de la lista de la casa, mientras que un "no" a una sugerencia no —para eso
       tienen que decir las dos que no—.
-- [ ] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
+- [x] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
       captura mal interpretada, y qué mira la app para dejar de repetirse.
-- [ ] **Ver lo que aprendió, y desdecirlo** (4.4.8): que el perfil muestra lo que la app
+- [x] **Ver lo que aprendió, y desdecirlo** (4.4.8): que el perfil muestra lo que la app
       dedujo sola, con cuántas veces lo vio y cuándo fue la última, y que se puede olvidar
       cualquier cosa de esa lista en un toque. Y las dos cosas que hay que entender para que
       el gesto sirva: que **olvidar no es prohibir** —si la conducta se repite se vuelve a
@@ -2800,7 +2822,7 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       toca lo del otro, aunque compartan la casa y la despensa. Más la distinción que la
       pantalla ahora nombra: *"lo que nos dijiste"* se corrige diciendo otra cosa, *"lo que
       GaiaPulse fue aprendiendo"* se corrige olvidándolo.
-- [ ] Una página final de "trucos": las acciones rápidas del Home, el modo oscuro, la
+- [x] Una página final de "trucos": las acciones rápidas del Home, el modo oscuro, la
       despensa como fuente de las sugerencias de comida.
 
 ---
