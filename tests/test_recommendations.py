@@ -969,6 +969,74 @@ class TestSignalConstraints:
         candidates = [_candidate("Go running", "exercise", "running")]
         assert len(apply_signal_constraints(candidates, signals)) == 1
 
+    def test_one_unused_suggestion_is_not_enough_to_drop_a_candidate(
+        self, db: Session, diego: User
+    ) -> None:
+        """Una ausencia sola no puede vetar, y ese es todo el punto del umbral.
+
+        La ausencia es el negativo más barato de producir —lo escribe un job, no una
+        persona— y el más fácil de producir mal: una tarjeta que nadie miró queda igual de
+        "sin usar" que una que se descartó a propósito. Si alcanzara para filtrar, un solo
+        día en que la persona no abrió la app le sacaría un alimento de las sugerencias.
+        """
+        signals = [
+            _signal(
+                diego,
+                "unused_suggestion",
+                "food",
+                "lentejas",
+                learning.ABSENCE_VALUE,
+                source_type="inferred",
+            )
+        ]
+        candidates = [_candidate("Guiso de lentejas", "food", "lentejas", category="meal")]
+
+        assert len(apply_signal_constraints(candidates, signals)) == 1
+        #: Pero pesa: no se filtra, se ordena más abajo. Es la distinción entera entre los
+        #: dos mecanismos.
+        (scored,) = score_candidates(candidates, diego, signals, [])
+        assert scored["_score"] < 0.5
+
+    def test_three_unused_suggestions_do_drop_it(self, db: Session, diego: User) -> None:
+        """Tres veces ya no es "no la vio", es un patrón — y ahí sí sale de la lista."""
+        signals = [
+            _signal(
+                diego,
+                "unused_suggestion",
+                "food",
+                "lentejas",
+                learning.ABSENCE_VALUE,
+                source_type="inferred",
+            )
+            for _ in range(3)
+        ]
+        candidates = [_candidate("Guiso de lentejas", "food", "lentejas", category="meal")]
+
+        assert apply_signal_constraints(candidates, signals) == []
+
+    def test_stale_absences_do_not_pile_up_into_a_veto(self, db: Session, diego: User) -> None:
+        """El umbral de cantidad no derogó el de frescura: se piden los dos.
+
+        Sin esto, un sujeto que se sugirió durante meses acumularía ausencias hasta vetarse
+        para siempre — que es el veto permanente que la 4.4.2 vino a sacar, entrando por la
+        puerta de al lado.
+        """
+        signals = [
+            _signal(
+                diego,
+                "unused_suggestion",
+                "food",
+                "lentejas",
+                learning.ABSENCE_VALUE,
+                source_type="inferred",
+                age_days=90,
+            )
+            for _ in range(10)
+        ]
+        candidates = [_candidate("Guiso de lentejas", "food", "lentejas", category="meal")]
+
+        assert len(apply_signal_constraints(candidates, signals)) == 1
+
     def test_empty_signals_returns_all(self, db: Session, diego: User) -> None:
         candidates = [
             _candidate("Run", "exercise", "running"),

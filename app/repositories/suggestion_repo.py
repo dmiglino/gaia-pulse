@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, func, or_, select
@@ -75,6 +76,57 @@ class SuggestionRepository(BaseRepository[Suggestion]):
             _visible_to(user_id, household_id),
         )
         return self.db.scalar(stmt)
+
+    def get_stale_pending(
+        self,
+        user_id: int,
+        *,
+        subject_types: Collection[str],
+        created_before: datetime,
+        created_after: datetime,
+    ) -> list[Suggestion]:
+        """Las sugerencias personales de *user_id* que siguen pendientes y ya tienen edad.
+
+        Es lo que lee el barrido de ausencias: una tarjeta que nombra un sujeto, que nadie
+        respondió, y que ya pasó su semana de gracia. `subject_types` lo pone quien llama
+        —`learning.ABSENCE_SUBJECT_TYPES`— porque el vocabulario del aprendizaje vive en
+        `app/recommendations/`, y este módulo no lo puede importar sin cerrar el círculo
+        (`learning` importa `BehaviorSignalRepository`).
+
+        **Solo personales**, y no `_visible_to`: la regla 4 de `AGENTS.md` pide que toda
+        señal se grabe contra quien la generó, y una sugerencia del hogar
+        (`scope_user_id IS NULL`) no tiene un dueño de quien afirmar que no la usó. Que la
+        vieron los dos no dice cuál de los dos no comió eso.
+
+        La ventana tiene **dos** bordes, y el de arriba es el que importa: `created_after`
+        acota la elegibilidad al ancho de una corrida, así que cada tarjeta cae en el
+        barrido de un solo día y de ninguno más. Sin ese borde la tarjeta seguía elegible
+        para siempre —nada la saca de `pending`—, y como la memoria de "esto ya lo conté"
+        eran las señales mismas, borrar lo aprendido desde el panel lo devolvía a la mañana
+        siguiente: el barrido no encontraba la señal, así que la volvía a escribir sin que
+        hubiera pasado nada nuevo. Un dato que alguien pidió borrar no puede volver solo.
+
+        El precio es explícito: un día entero de scheduler caído pierde para siempre la
+        ausencia de las tarjetas que cumplían edad ese día. Es la falla barata —una
+        observación débil menos contra un borrado que no se respeta—, y además la que se
+        nota: si el proceso no corrió, no corrió nada.
+
+        Ordenadas por fecha para que el log se lea en el orden en que las tarjetas
+        envejecieron. No aporta determinismo: cada tarjeta se decide sola, contra datos que
+        el barrido calcula antes del loop, y lo que devuelve es un conteo.
+        """
+        stmt = (
+            select(Suggestion)
+            .where(
+                Suggestion.status == "pending",
+                Suggestion.scope_user_id == user_id,
+                Suggestion.subject_type.in_(sorted(subject_types)),
+                Suggestion.created_at <= created_before,
+                Suggestion.created_at > created_after,
+            )
+            .order_by(Suggestion.created_at)
+        )
+        return list(self.db.scalars(stmt).all())
 
     #: Acá había un `get_recent_suggestions` sin ningún llamador, con la misma fuga que
     #: `get_pending_for_user`: el motor tiene su propia copia de esa pregunta en

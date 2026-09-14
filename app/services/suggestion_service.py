@@ -197,8 +197,9 @@ class SuggestionService:
           semana. El signo sale de la respuesta, así que un motivo escrito junto a un "sí"
           enseña en positivo — la tarjeta solo pide motivo en las negativas, pero la ruta
           JSON lo admite en todas y no hay razón para leer un elogio como una queja.
-        - **No filtra nada.** `learning.rejected_subjects` solo mira `rejected_suggestion`,
-          así que un sujeto minado de una frase baja el score y nunca veta un candidato. Es
+        - **No filtra nada.** `learning.rejected_subjects` solo cuenta las señales de tipo
+          negativo, y esto escribe `explicit_preference`, que es de las positivas por tipo y
+          negativa por signo: un sujeto minado de una frase baja el score y nunca veta. Es
           deliberado: esto es una lectura de texto libre, y una lectura puede equivocarse —el
           costo de equivocarse ordenando es que algo salga tercero, el de equivocarse
           filtrando es que no salga nunca y nadie entienda por qué—.

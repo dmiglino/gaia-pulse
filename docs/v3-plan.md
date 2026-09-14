@@ -1004,12 +1004,12 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       `_make_movement` solo hace `add`, así que sin eso `movement.id` era `None` y la señal
       quedaba sin rastro de dónde salió, que es lo que la 4.4.8 necesita para explicarla y
       para poder olvidarla.
-- [ ] Ausencia como señal débil: un alimento sugerido que no aparece en ninguna comida en N
+- [x] Ausencia como señal débil: un alimento sugerido que no aparece en ninguna comida en N
       días es un negativo suave, no un neutro. Es lo que distingue "no me interesa" de
-      "todavía no lo vi". **Se difiere a después de la 4.4.3**, por dos razones: necesita un
-      job de barrido (nada corre "N días después" por sí solo), y sin la confianza por
-      cantidad de observaciones una sola sugerencia no comida se convierte en un veto
-      permanente sobre ese alimento — que es peor que no tener la señal.
+      "todavía no lo vi". Se difirió con dos razones y las dos se cumplieron en la **4.4.10**:
+      el job de barrido existe (`run_absence_sweep`, nada corre "N días después" por sí solo)
+      y el veto pasó a pedir peso negativo acumulado, así que una sola sugerencia no comida
+      ya no puede vetar un alimento.
 - [x] `source_type="implicit"` en todas estas, para poder distinguirlas de las explícitas al
       explicar y al permitir corregir. La 4.4.2 además les va a dar semividas distintas.
 - [x] **Se saca `rejected_activity` de `NEGATIVE_SIGNAL_TYPES`.** Es el mismo bug una capa
@@ -1041,9 +1041,9 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       4.4.3 reemplazó por `subject_affinities()`—. Las semividas:
       **explícita 90 días, implícita 21**. La explícita dura más porque dice algo sobre la
       persona ("no me gusta el hígado") y la implícita algo sobre la semana ("comí pollo el
-      martes"). Un `source_type` desconocido —hoy `"inferred"`, que la columna admite y
-      nadie escribe— cae en la más corta: si no sabemos de dónde salió, que se desvanezca
-      rápido es el error más barato.
+      martes"). Un `source_type` desconocido —hoy `"inferred"`, que desde la 4.4.10 es lo
+      que graba el barrido de ausencias— cae en la más corta: si no sabemos de dónde salió,
+      que se desvanezca rápido es el error más barato.
       Lo que *no* decae son las preferencias duras: viven en `RecommendationPreference` y
       `apply_hard_constraints` las lee sin descuento. `behavior_signals` es la parte blanda,
       la que tiene derecho a quedar vieja.
@@ -1081,7 +1081,7 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       (`< 0.501`). La intención del test sobrevive; el mecanismo que la sostiene cambió de un
       corte duro a una semivida.
 
-**4.4.3 — Confianza por sujeto: un toque no es una regla** ✅ hecho (menos la ausencia)
+**4.4.3 — Confianza por sujeto: un toque no es una regla** ✅ hecho
 
 - [x] El boost/penalización escala con la **cantidad de observaciones** y satura, en vez de
       ser un valor fijo: un descarte es una pista, seis descartes es una regla. Hoy un solo
@@ -1111,9 +1111,10 @@ compras— no le enseña nada. Cada captura confirmada pasa a emitir señales im
       el ajuste nunca pasa el knob—, que lo aprendido es un **promedio y no un conteo**
       ("diez sí y un no" sigue siendo sí, con más certeza que "un sí" solo), y que un solo
       tap ya no descarga la penalización entera.
-- [ ] **Umbral mínimo de evidencia antes de que una señal filtre** (en vez de solo puntuar),
-      junto con la **ausencia como señal débil** que la 4.4.1 dejó pendiente. Van juntos, y
-      por eso no entran acá: el único tipo que hoy filtra es `rejected_suggestion`, que
+- [x] **Umbral mínimo de evidencia antes de que una señal filtre** (en vez de solo puntuar),
+      junto con la **ausencia como señal débil** que la 4.4.1 dejó pendiente. **Hecho en la
+      4.4.10**, en un commit. Van juntos, y por eso no entraron acá: el único tipo que
+      filtraba era `rejected_suggestion`, que
       siempre se escribe con `-1.0` desde un tap deliberado en "no" —y pedirle a alguien que
       lo apriete dos veces para ser escuchado es peor producto, no mejor—. El umbral existe
       para dejar entrar negativos *débiles* sin darles poder de veto, y el único negativo
@@ -1661,6 +1662,123 @@ ejercicios esperan la 4.5)
       cuando nadie lo bloquea, sin el cual "no salió nada" podría ser que el generador no
       produjo nada— y el de la persona desactivada, que es el que ata el `is_active`.
 
+**4.4.10 — Umbral de evidencia para filtrar, y la ausencia como el "no" que nadie aprieta**
+✅ hecho
+
+- [x] **Los tres van en un commit porque cada uno solo tiene sentido con los otros dos**, y eso
+      ya estaba escrito en la 4.4.3: el umbral sin la ausencia es un lector sin escritor —el
+      único negativo que filtraba era `rejected_suggestion`, siempre `-1.0` desde un tap
+      deliberado—, la ausencia sin el umbral es un veto por no haber comido lentejas, y la
+      ausencia sin barrido no existe, porque el dato que la produce es el paso del tiempo.
+- [x] **Umbral mínimo de evidencia antes de vetar.** `learning.rejected_subjects` pasó de una
+      comprensión por señal a un **agregado por sujeto**: suma `abs(signal_weight(...))` de las
+      señales negativas que además pasan la guardia de frescura de la 4.4.2, y veta solo si el
+      total llega a `_FILTER_EVIDENCE_FLOOR = 0.5`. La firma no cambió, así que
+      `apply_signal_constraints` y `apply_household_constraints` no se tocaron.
+      La aritmética elegida a mano, no derivada: un rechazo deliberado (`-1.0`, fresco) sigue
+      vetando solo, **exactamente como antes**; una ausencia (`-0.2`) suma 0.2, dos 0.4, tres
+      0.6 → hacen falta **tres** para vetar. El piso no se calcula desde `ABSENCE_VALUE` ni
+      desde `_FILTER_DECAY_FLOOR` a propósito: son unidades distintas (peso acumulado vs.
+      fracción de decaimiento), y atarlos haría que mover uno moviera el otro sin querer.
+- [x] **La guardia de frescura no se derogó, se le sumó el piso.** Diez ausencias de hace tres
+      meses siguen sin vetar nada, porque cada señal tiene que pasar primero
+      `decay_factor >= 0.5` para *entrar* a la suma. Sin eso, "acumular" volvería a ser lo que
+      la 4.4.2 vino a arreglar. Hay un test con ese nombre.
+- [x] **La ausencia como señal débil.** Nuevo `learning.ABSENCE_SIGNAL_TYPE =
+      "unused_suggestion"`, plegado por nombre en `NEGATIVE_SIGNAL_TYPES`, con
+      `ABSENCE_VALUE = -0.2` —un quinto de un "no" explícito— y `source_type="inferred"`, que
+      es la vida media corta. No apretar nada es información, pero es la más débil de todas:
+      puede ser que no gustó, o que ese día no había, o que nadie miró la tarjeta.
+- [x] **`ABSENCE_SUBJECT_TYPES = {"food", "exercise"}`**, y el recorte sale del censo de
+      escritores: solo esos dos tienen un acto que pueda **desmentir** la ausencia. Con
+      `muscle_group` la señal se escribe solo si la captura trae la columna, así que su
+      ausencia sería falsa la mayoría de las veces; `habit` y `biomarker` no tienen escritor de
+      acto ninguno, así que su ausencia sería infalsable.
+- [x] **El barrido: `suggestion_jobs.run_absence_sweep`**, a las 6:30 locales en
+      `scheduler._SCHEDULE`, **antes** de la generación de las 7:40 —lo que se aprendió anoche
+      reordena las tarjetas de hoy, no las de mañana— y sin gate de horario de silencio, porque
+      escribe filas y no avisa a nadie. Nuevo
+      `SuggestionRepository.get_stale_pending(user_id, subject_types, created_before,
+      created_after)`, personal por regla 4; `subject_types` viaja como parámetro porque el
+      repositorio no puede importar `learning` (circular), y `created_after` es obligatorio a
+      propósito —el punto siguiente explica por qué la ventana no puede tener un borde por
+      omisión—.
+- [x] **Tres decisiones del barrido que un lector futuro va a querer explicadas:** la
+      idempotencia sale de las propias señales y no de un `NOT EXISTS` —el barrido ya tiene que
+      traer esas filas para el chequeo de "¿lo hizo igual?", y una segunda copia de la misma
+      pregunta obligaría además a bajarle el vocabulario del aprendizaje al repositorio—; el
+      `since = min(created_at)` de las tarjetas viejas es **carga útil, no una optimización**,
+      porque hace que un acto anterior a la tarjeta no pueda cancelar la ausencia (haber comido
+      lentejas el mes pasado es justamente **por qué** se sugirieron); y el nombre se compara en
+      Python con `learning.subject_key` y no en SQL, porque `Suggestion.subject_name` guarda
+      "brócoli" y `BehaviorSignal.entity_name` guarda "brocoli".
+- [x] El tipo se escribe como **literal** (`signal_type="unused_suggestion"`) y no como la
+      constante, con un comentario que dice por qué: es la única forma que
+      `test_every_signal_type_the_reader_knows_has_a_writer` puede detectar, y ese test es el
+      único mecanismo que atrapa un tipo que se lee y nadie escribe —el bug original de
+      `repeated_purchase`—.
+- [x] **El panel de 4.4.8 no miente sobre de dónde viene lo aprendido.** `LearnedSubject` suma
+      un cuarto contador, `absence_observations`, y las ausencias quedan **fuera** de
+      `observations`, `said_observations`, `last_seen` y `days_since`: un sujeto que solo
+      acumuló ausencias muestra "3 sugerencias sin usar" y ninguna fecha, porque la persona
+      efectivamente nunca hizo nada con él. Los msgids nuevos los toma la 5.1 con los otros 126.
+- [x] 16 tests nuevos: 12 en `TestAbsenceSweep` (el período de gracia, la señal con su puntero
+      `source_*`, idempotencia entre dos corridas, "lo hizo igual" y su espejo temporal, la
+      tarjeta respondida y la de la casa que no se barren, `habit` que no se barre,
+      `ABSENCE_SUBJECT_TYPES <= SUBJECT_TYPES`, la aritmética de una-vs-tres, que un rechazo
+      deliberado sigue vetando solo, y la fila del panel sin fechas); 3 en
+      `TestSignalConstraints` que fijan el umbral desde el otro lado —una ausencia no alcanza
+      pero sí baja el score, tres sí filtran, y diez viejas no—; y 1 en `tests/test_clock.py`
+      que fija el orden contra la generación de la mañana. El total sube 17 y no 16 porque el
+      test parametrizado que exige `CronTrigger` en la timezone de la casa **se llenó solo** al
+      entrar el job nuevo al `_SCHEDULE`: es la forma que tiene ese archivo de no dejar que un
+      job nazca sin reloj local.
+
+- [x] **Corrección del propio punto, antes de commitearlo: la idempotencia estaba puesta en el
+      lugar equivocado.** Derivarla solo de las señales tiene un caso que la vuelve del revés:
+      el botón "Olvidalo" del panel de 4.4.8 **borra esas mismas filas**, así que olvidar
+      "lentejas" volvía la tarjeta barrible y el barrido de la mañana siguiente reescribía la
+      ausencia que la persona acababa de sacar — todos los días, para siempre, porque la
+      tarjeta sigue pendiente. El arreglo es que la elegibilidad pase a ser una **ventana** y no
+      un umbral: `get_stale_pending` recibe además `created_after`, y una tarjeta es barrible
+      solo si nació dentro de `(corte − _SWEEP_WINDOW_DAYS, corte]` —un día de ancho, porque el
+      job corre una vez por día—, así que se barre la mañana en que cumple siete días y ninguna
+      otra. El conjunto `swept` **queda**, degradado a segunda línea: cubre el caso que la
+      ventana no puede cubrir, dos corridas el mismo día, y no cuesta una consulta porque esas
+      filas ya hay que traerlas. Lo que **no** se arregla acá es el doble scheduler de dos
+      workers de uvicorn: eso se arregla en el `Dockerfile` (`--workers 1`), que es donde está
+      la causa.
+- [x] **La aritmética "hacen falta tres" es cierta y a la vez inalcanzable, y decir solo la
+      primera mitad era lo que hacía sonar el umbral como una política.** Dos ausencias del
+      mismo sujeto no pueden estar a menos de `ABSENCE_GRACE_DAYS + SuggestionService._SNOOZE_DAYS`
+      = **10 días** una de otra (la tarjeta que produjo la primera sigue pendiente hasta que
+      algo la mueva, y lo único que la mueve sin escribir su propia señal es el snooze), y
+      `_FILTER_DECAY_FLOOR` descarta todo lo más viejo que una vida media (21 días): a lo sumo
+      **tres** están vivas al mismo tiempo y suman `0.2 · (1 + 0.5^(10/21) + 0.5^(20/21))` ≈
+      **0.447 < 0.5**. O sea que `_FILTER_EVIDENCE_FLOOR = 0.5` es **preservador de conducta por
+      construcción**: el barrido nunca puede sacar un sujeto de la lista por sí solo, solo
+      bajarlo de orden. Eso ahora es un test —`test_the_sweep_can_never_veto_a_subject_on_its_own`,
+      que camina ocho ausencias al espaciado mínimo real— y el test que fija la cuenta de
+      "tres cruzan el piso" dice en su docstring que **no** describe un camino alcanzable.
+      Acortar la gracia, subir `ABSENCE_VALUE` o alargar la vida media rompe el test de la
+      conducta, no el de la aritmética.
+- [x] **Y dos cosas del propio andamio de tests, que es código igual.** La fábrica `_card`
+      estaba escrita dos veces con las mismas once columnas obligatorias —la forma de
+      duplicación que nada obliga a coincidir—: queda una a nivel módulo con un parámetro
+      `days_old`, y `TestAbsenceSweep._card` sobrevive como delegación de dos líneas que solo
+      aporta el sujeto lentejas. Y `TestQuietHoursGate` parametrizaba una **lista escrita a
+      mano** de los jobs que hablan, que es exactamente la trampa que el punto vino a cerrar en
+      otro lado: un job nuevo que notifica no aparece en la lista y el gate queda sin probar,
+      en verde. Ahora la lista la **deriva** `_jobs_that_speak()` leyendo el AST de
+      `app/jobs/*.py` con propagación transitiva (los cuatro recordatorios hablan a través de
+      `_run_absence_job`), y `test_the_search_finds_the_jobs_that_do_speak_and_only_those` es el
+      piso contra el clásico "computó vacío, parametrizó cero casos, pasó".
+- [x] 6 tests más en `TestAbsenceSweep`/`TestSignalConstraints` (la tarjeta más vieja que la
+      ventana, el olvido que sobrevive a los barridos siguientes, que la ausencia es de quien
+      es la tarjeta y no de la casa, la persona desactivada, el veto imposible del barrido, y el
+      rechazo que veta hasta que deja de ser fresco y ni un día más) y el gate de silencio
+      derivado: **569 passed**.
+
 **4.5 — Razonar con los datos que ya están, y explicar de verdad**
 
 - [ ] Nuevo `app/recommendations/context.py`: un `UserContext` de solo lectura, armado **una
@@ -1918,6 +2036,14 @@ docker compose up          # http://localhost:8000
   de la 4.4.9 **no se puede recorrer a mano todavía**: `generate_for_household` sigue sin
   llamadores hasta la 4.5, así que por ahora lo cubren sus tres tests end-to-end y el
   recorrido de la lista de compras se agrega cuando esa función se prenda.
+  De la 4.4.8, en `/profile/`: rechazar una sugerencia y ver aparecer el sujeto en el panel
+  de lo aprendido, con su dirección y su cantidad de registros; apretar "olvidar" y ver que
+  desaparece y que el sujeto vuelve a poder salir sugerido.
+  De la 4.4.10, **el paso del tiempo no se puede recorrer**: la ausencia se escribe siete
+  días después de la tarjeta, así que a mano solo se puede forzar retrocediendo el
+  `created_at` de una sugerencia pendiente en la base y corriendo `run_absence_sweep()` a
+  mano; lo que sí se ve sin trucos es el resultado, en la línea "sugerencias sin usar" del
+  mismo panel. Por eso el punto llega con 15 tests y no con un recorrido.
 - **F5**: pantallas en `es_AR` sin cadenas en inglés; navegación por teclado y lector de
   pantalla en los botones icon-only.
 
@@ -1936,20 +2062,22 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 |
-|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 |
+|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
-pendiente. Los números de la última columna se midieron con la forma `.venv/bin/python -m`
-sobre el árbol con la 4.4.9 aplicada, **incluido el seguimiento del `instruction-steward`**:
-el test 545 es el que cierra el agujero del miembro desactivado, y por eso la columna no
-coincide con el `544` que reportó el checkpoint del commit `b116ab8`.
+pendiente. Los números de cada columna se midieron con la forma `.venv/bin/python -m` sobre
+el árbol con ese punto aplicado, **incluido el seguimiento del `instruction-steward`**: el
+test 545 de la 4.4.9 es el que cierra el agujero del miembro desactivado, y por eso esa
+columna no coincide con el `544` que reportó el checkpoint del commit `b116ab8`. La columna
+de la 4.4.10 es la del árbol ya corregido —ventana de barrido, gate de silencio derivado y
+los seis tests de la corrección incluidos—, no la de la primera pasada.
 
 > **`ruff` no baja monótonamente, y conviene saber por qué antes de leer un alza como un
 > daño.** De 250 en `393ec82` pasó a 252 con la 4.4.6 y a 256 con la 4.4.7: las 4 nuevas
@@ -1962,6 +2090,18 @@ coincide con el `544` que reportó el checkpoint del commit `b116ab8`.
 > largo de línea en `web/suggestions.py`, que era código propio: la deuda ajena se
 > reporta, la propia se arregla. Los dos archivos nuevos y los seis tocados pasan
 > `black --check` limpios, que es por qué la columna baja de 50 a 48.
+>
+> La 4.4.10 sube de 257 a **261** por **cuatro** `UP017` en `tests/test_learning_signals.py`,
+> que es un archivo escrito entero con `timezone.utc`: las clases y los helpers nuevos usan
+> la forma de sus 900 líneas vecinas en lugar de dejar un archivo con dos convenciones para
+> la misma cosa (una del punto original y tres de la corrección, que agrega el envejecido de
+> señales en varios tests nuevos). Los otros tres hallazgos que había introducido este punto
+> —un `E501` en `suggestion_jobs.py` y dos en el test— sí se arreglaron antes de commitear,
+> porque eran código propio y no una convención del archivo. `black` queda en **47** sin
+> subir: los dos archivos de tests que el punto agranda vuelven formateados —estaban limpios
+> en `HEAD` y se verificó archivo por archivo que la lista no creciera por ellos—, y
+> `suggestion_jobs.py` ya estaba en la lista desde antes de v3 (lo que `black` le pide es
+> todo anterior a este cambio).
 >
 > La 4.4.9 baja de 260 a **257** por la misma regla aplicada al revés: sumó **una**
 > `UP017` en `tests/test_household_learning.py` —la forma que usan sus líneas vecinas y

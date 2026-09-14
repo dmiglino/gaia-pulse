@@ -126,11 +126,17 @@ def apply_signal_constraints(
     candidates: list[dict[str, Any]],
     signals: list[Any],
 ) -> list[dict[str, Any]]:
-    """Remove candidates whose subject the person has explicitly rejected.
+    """Remove candidates whose subject carries enough live negative weight.
 
     This is a hard pre-filter (complements the scorer's penalty): if the user has
     clearly said no to a subject, don't show it again regardless of how scoring
     would rank it.
+
+    Desde la 4.4.10 el criterio es una **suma** de peso negativo vivo y no "hay un
+    negativo": lo que decide qué cuenta y cuánto es `learning.rejected_subjects`, no esta
+    función. En la práctica sigue significando "lo rechazó a propósito y hace poco" —una
+    ausencia inferida no junta peso suficiente para llegar acá, ver
+    `learning._FILTER_EVIDENCE_FLOOR`—, pero el nombre del criterio ya no es "explícito".
 
     Hasta la 4.4 esto comparaba tokens: se tomaba `entity_name` de la señal —el título
     renderizado de la sugerencia rechazada— y se lo cruzaba contra `title + text` del

@@ -40,7 +40,7 @@ The app accepts natural language and voice input for all data entry and requires
 - **Preview / confirm flow** — NLP results are stored as `pending_confirmation` and shown to the user before any data is saved
 - **Recommendation engine** — meal, activity, and pantry suggestions personalised per user and updated by behavior signals
 - **Dashboard** — Chart.js visualisations: weight trend, workout frequency, muscle group distribution, meal type breakdown, activity calendar
-- **Background jobs** — APScheduler runs seven jobs at fixed local wall-clock times in `TIMEZONE`, not on intervals, so a restart never moves them (see [Background job schedule](#background-job-schedule)). The five that create notifications skip their run entirely inside the quiet window (`QUIET_HOURS_START`–`QUIET_HOURS_END`); suggestion generation and notification pruning are not gated by it
+- **Background jobs** — APScheduler runs each job at a fixed local wall-clock time in `TIMEZONE`, not on an interval, so a restart never moves them (the list and the count live in one place: [Background job schedule](#background-job-schedule)). The ones that create notifications skip their run entirely inside the quiet window (`QUIET_HOURS_START`–`QUIET_HOURS_END`); the ones that only write suggestions, signals, or nothing at all are not gated by it
 - **PWA manifest** — installable on mobile home screens
 - **OpenAPI docs** — available at `/api/docs` and `/api/redoc`
 
@@ -89,15 +89,25 @@ is `_SCHEDULE` in `app/jobs/scheduler.py`.
 | `sleep_reminders` | 10:25 | yes | Sleep is logged once you are up, and 08:20 is taken by the weigh-in |
 | `inactivity_notifications` | 13:05 | yes | Midday, with the day still ahead |
 | `meal_reminders` | 20:45 | yes | After dinner, when the day's meals are complete — in the morning the gap does not exist yet |
+| `absence_sweep` | 06:30 | no | Before the morning generation, so what it learns reorders today's cards and not tomorrow's |
 | `suggestion_generation` | 07:40, 18:40 | no | Before breakfast, and before dinner is decided |
 | `notification_pruning` | 04:15 | no | Housekeeping, deliberately inside the quiet window |
 
 The **five that speak** create notifications and are gated by the quiet window: inside it
 they skip the run entirely rather than deferring it, since what they would announce is
-still true tomorrow. The other two are not gated — `suggestion_generation` only writes
-suggestions, which nobody is woken up for, and `notification_pruning` talks to nobody at
-all, which is why it is scheduled in the middle of the quiet window on purpose.
+still true tomorrow. The other three are not gated — `suggestion_generation` only writes
+suggestions and `absence_sweep` only writes signals, neither of which anybody is woken up
+for, and `notification_pruning` talks to nobody at all, which is why it is scheduled in
+the middle of the quiet window on purpose.
 `ENABLE_BACKGROUND_JOBS=false` registers none of them.
+
+**Exactly one process may have them registered.** The scheduler lives inside the app
+process, so every uvicorn worker that imports `app.main` starts its own copy and every job
+fires once per worker — two stock notifications, two absences for the same card. The
+`Dockerfile` therefore runs `--workers 1`; to scale out, run one worker per container and
+set `ENABLE_BACKGROUND_JOBS=false` in all but one. Nothing in the code detects the
+duplicate: the jobs' own de-duplication is per-run, and two runs of the same job look to
+each other like the only run.
 
 One consequence worth knowing before moving an hour: the gate skips, it does not defer.
 Moving a speaking job inside the quiet window (or raising `QUIET_HOURS_START` past 20:45)
@@ -271,7 +281,7 @@ All variables can be set in `.env` (see `.env.example`) or passed directly to th
 | `OPENAI_API_KEY` | No | _(empty)_ | Enables NLP Layer 2 and voice input. Without it, only the rule-based Layer 1 parser runs |
 | `STT_PROVIDER` | No | `none` | Set to `whisper` to enable speech-to-text |
 | `STT_API_KEY` | No | _(empty)_ | STT API key; falls back to `OPENAI_API_KEY` if not set |
-| `ENABLE_BACKGROUND_JOBS` | No | `true` | Registers the four APScheduler jobs (see [Background job schedule](#background-job-schedule)) |
+| `ENABLE_BACKGROUND_JOBS` | No | `true` | Registers the APScheduler jobs (see [Background job schedule](#background-job-schedule), which is the count of record) |
 | `QUIET_HOURS_START` | No | `22` | Whole local hour (0–23) the quiet window opens. Notification jobs scheduled inside it skip their run entirely — they are not deferred |
 | `QUIET_HOURS_END` | No | `8` | Whole local hour (0–23) the window closes. The window wraps midnight when start > end (the default 22 → 8); set it equal to `QUIET_HOURS_START` to disable quiet hours. A value outside 0–23 fails startup |
 | `TIMEZONE` | No | `America/Argentina/Buenos_Aires` | Household timezone. Defines job run times, quiet hours, and every "today" the app shows (Home counters, `/meals` and `/workouts` day filters, dashboard calendar). An unknown name falls back to UTC with a logged warning |
@@ -344,13 +354,17 @@ Candidates that violate explicit user constraints are removed entirely before sc
 - Foods in `disliked_foods_json`, `dietary_restrictions_json`, or with a `dislikes`/`impossible` `RecommendationPreference`
 - Activities in `impossible_activities_json` or `disliked_activities_json`, or with a matching negative preference
 
+A second, softer filter runs alongside them (`filters.apply_signal_constraints`), and it is the only place where something the person **did** removes a candidate instead of reordering it. `learning.rejected_subjects` drops a subject when its negative signals — the negative *types* only, each of them still fresh enough to pass `_FILTER_DECAY_FLOOR = 0.5`, meaning less than one half-life old — add up in absolute decayed weight to `_FILTER_EVIDENCE_FLOOR = 0.5`. One deliberate tap on *no* is `−1.0` and vetoes on its own. The inferred absences below are `−0.2`, so on paper three of them cross the floor — and in practice they never can, because they cannot land close enough together to be fresh at the same time (the fourth limit of the sweep, in [Stage 4](#stage-4--ranking-and-persistence)). The floor exists so weak negatives can be heard without being given veto power, and the freshness gate is what keeps "heard" from becoming "accumulated": ten stale absences still veto nothing.
+
+The module has **three** entry points, not one filter with variations. `apply_hard_constraints` reads one person; `apply_signal_constraints` reads one person's signals; `apply_household_constraints` reads every member of the house and treats the two rules asymmetrically — declared blocks are unioned, learned rejections intersected (the household paragraph of [Stage 4](#stage-4--ranking-and-persistence) has the reasoning). All three share the comparison itself, so a block that counts on one screen counts on all of them.
+
 ### Stage 3 — Behavior signal scoring (`scorer.py`)
 
 Each surviving candidate declares a **subject** (`subject_type` + `subject_name`), and the adjustment is computed against the user's `BehaviorSignal` rows for that same subject. The query horizon is `learning.SIGNAL_HORIZON_DAYS` — **360 days**, not a month; since Stage 4 what decides how much an old signal weighs is its half-life, not a cutoff, so the horizon only bounds the query.
 
 Four additive axes, all of them keyed on the normalized subject (`learning.subject_key`) and none of them a filter:
 
-- **Point affinity** — `+0.12 × strength` when the subject's learned direction is positive, `−0.15 × strength` when it is negative (`_learned_delta`). `strength` already carries the evidence weighting, so a single tap does not move the score like ten consistent observations. The signal vocabulary lives in `learning.py`: positives are `accepted_suggestion`, `explicit_preference`, `repeated_meal_choice`, `repeated_purchase` and `repeated_activity`; the only negative type is `rejected_suggestion` — and `ignored_suggestion`, which is what both *dismiss* and *snooze* write, is in neither set, so postponing is not a rejection.
+- **Point affinity** — `+0.12 × strength` when the subject's learned direction is positive, `−0.15 × strength` when it is negative (`_learned_delta`). `strength` already carries the evidence weighting, so a single tap does not move the score like ten consistent observations. The signal vocabulary lives in `learning.py`: positives are `accepted_suggestion`, `explicit_preference`, `repeated_meal_choice`, `repeated_purchase` and `repeated_activity`; the negatives are `rejected_suggestion` and `unused_suggestion` — and `ignored_suggestion`, which is what both *dismiss* and *snooze* write, is in neither set, so postponing is not a rejection.
 - **Attribute generalization** — the same delta computed on the subject's **category** and then halved (`_ATTRIBUTE_SIGNAL_SCALE = 0.5`). This is what makes rejecting broccoli, cauliflower and kale say something about spinach. A category is one of the reasons something is liked, never the whole reason.
 - **Slot affinity** — for candidates that declare a time-of-day slot (today, the meal ones), `_learned_delta` on the *contrast* between how the subject behaves in that slot and how it behaves the rest of the time. Never having logged coffee at dinner is not a "no".
 - **Satiety pressure** — `−0.15 × pressure`, from what the person actually **did** recently (the three `CONSUMPTION_SIGNAL_TYPES`), not from what they like. It can only subtract, and it decays in a couple of days: a favourite eaten yesterday drops below an equally liked alternative and stays above zero.
@@ -368,7 +382,18 @@ Candidates are sorted by score descending, and subjects that are still suppresse
 - **`snoozed`** emits none: "later" is a statement about the moment, not about the subject
 - **`snoozed`** and **`dismissed`** also set `snoozed_until` **3 days** ahead (`SuggestionService._SNOOZE_DAYS`), which is what the suppression filter above reads on the next run. Nothing has to un-snooze the row — the condition is evaluated against the clock on every run
 
-A response may also carry a free-text reason (`feedback_notes`, written in the collapsed form on the suggestion card and capped at **500 characters** in both the web route and the schema). The reason is matched against the closed vocabularies of known food names and known activity names, and every subject it names — other than the card's own subject, already recorded above — emits one `explicit_preference` signal with the same value as the response itself, so "we do not like broccoli" teaches about broccoli rather than about the wording of the card. A food is matched by any of its names and recorded under its canonical one, which matters because the catalogue convention is an English canonical with the Spanish as an alias (`["tomato", "tomate"]`) while candidates declare `canonical_name` as their subject — "no nos gusta la palta" has to reach a candidate named `avocado`. Mined subjects only move the score: they never filter a candidate, since `learning.rejected_subjects` reads `rejected_suggestion` only. `snoozed` carries no value and therefore mines nothing.
+One more outcome teaches something without anybody answering: the card nobody ever touched. `suggestion_jobs.run_absence_sweep` (06:30 local, deliberately before the morning generation) takes each person's suggestions that are still `pending` after `learning.ABSENCE_GRACE_DAYS` — **7 days** — and records one `unused_suggestion` (**−0.2**, `source_type="inferred"`, pointing back at the card through `source_entity_id`). It runs as a job because the fact that produces it is the passing of time: nothing calls the app a week later to say the lentils were never eaten.
+
+Silence is a weak reading, and it has more innocent causes than a *no* does: the food was wrong, or there was none in the house, or nobody opened the app, or the dish was cooked and eaten but logged with only one participant — which cancels the cook's card and leaves the other person's standing. Four limits keep the sweep from reading all of that as rejection:
+
+- **Only `food` and `exercise` subjects are swept** (`learning.ABSENCE_SUBJECT_TYPES`). They are the only two whose absence a logged act can contradict — a `muscle_group` signal is written only when the capture carries the column, so its absence would often be false, and `habit` and `biomarker` have no act writer at all, so theirs would be unfalsifiable
+- **Doing it anyway cancels it**, counted from when the card appeared and not from the cutoff: eating lentils the day after they were suggested is the opposite of an absence, even if six quiet days follow. An act from *before* the card does not excuse it — an old act is *why* the engine suggested it
+- **A card is swept on one day and only one.** Eligibility is a window and not a threshold — `created_at` has to fall inside `(cutoff − _SWEEP_WINDOW_DAYS, cutoff]`, one day wide because the job runs once a day — so a card that stays pending for a month produces exactly one absence, on the morning it turned seven days old. The set of cards already swept is *also* derived from the signals the job has to read anyway, but only as a second line: it covers two runs on the same day, which the window cannot. It is deliberately not the primary check, because forgetting a subject from `/profile/` deletes those signals, and a run that leaned on them would then sweep the same card again. **Two app instances running the scheduler would still double-count** — the sweep is not the reason `--workers 1` matters, but it is one of the things that assumes it
+- **The sweep can never take a subject off the list on its own.** The filter drops a subject once its live negative weight reaches `learning._FILTER_EVIDENCE_FLOOR` (**0.5**), and two absences for the same subject cannot land closer together than `ABSENCE_GRACE_DAYS + _SNOOZE_DAYS` — **10 days** — so at most three are ever fresh enough to count and they add up to ≈**0.447**. That is arithmetic, not a policy: `test_the_sweep_can_never_veto_a_subject_on_its_own` walks eight of them and asserts nothing is ever vetoed, so shortening the grace period or raising the weight fails a test instead of quietly turning silence into a ban
+
+At **−0.2** an absence is a fifth of a deliberate *no*, and that ratio is what buys the guarantee above: it only moves a subject down the order. Removing a subject from the list takes a *no* somebody actually tapped.
+
+A response may also carry a free-text reason (`feedback_notes`, written in the collapsed form on the suggestion card and capped at **500 characters** in both the web route and the schema). The reason is matched against the closed vocabularies of known food names and known activity names, and every subject it names — other than the card's own subject, already recorded above — emits one `explicit_preference` signal with the same value as the response itself, so "we do not like broccoli" teaches about broccoli rather than about the wording of the card. A food is matched by any of its names and recorded under its canonical one, which matters because the catalogue convention is an English canonical with the Spanish as an alias (`["tomato", "tomate"]`) while candidates declare `canonical_name` as their subject — "no nos gusta la palta" has to reach a candidate named `avocado`. Mined subjects only move the score: they never filter a candidate, because `learning.rejected_subjects` reads the negative *types*, and `explicit_preference` is a positive type carrying a negative sign — a name found in a sentence is not a tap on *no*. `snoozed` carries no value and therefore mines nothing.
 
 At most **5** subjects are mined per reason (`SuggestionService._MAX_MINED_SUBJECTS`) — 500 characters are enough to name dozens of catalogue foods, and `behavior_signals` has no pruning job. The reason text itself is stored once, in `suggestions.feedback_notes`; no signal copies it — a mined one records `{"mined_from": "feedback_notes"}`, the card's own one records `{"reason_written": true}` — and both point back at the row through `source_entity_id`, so deleting the reason deletes it. The sign is one per sentence, so "we do not like broccoli, we prefer chicken" records **−1.0** for both; that is tolerable precisely because mined subjects order rather than filter.
 
@@ -376,13 +401,14 @@ Household-scoped suggestions (pantry/shopping) are stored with `scope_type="hous
 
 ### Stage 5 — Seeing it and taking it back
 
-Everything above happens in a background job, which means the person it is about never sees it. `/profile/` renders what the engine actually reads, from `LearningService.learned_profile()`: every subject with a signal inside the horizon, grouped by subject type, with the direction, the confidence label, how many records back it, how many of those were **words** and not behaviour, and how long ago the last one was. Below the subjects sit the category-level conclusions (Stage 3's attribute generalization), which is where "we rejected broccoli, cauliflower and kale" becomes an opinion about vegetables.
+Everything above happens in a background job, which means the person it is about never sees it. `/profile/` renders what the engine actually reads, from `LearningService.learned_profile()`: every subject with a signal inside the horizon, grouped by subject type, with the direction, the confidence label, how many records back it, how many of those were **words** and not behaviour, how many were suggestions nobody used, and how long ago the last one was. Below the subjects sit the category-level conclusions (Stage 3's attribute generalization), which is where "we rejected broccoli, cauliflower and kale" becomes an opinion about vegetables.
 
-Four things the panel is precise about, because each one was a way of showing something false:
+Five things the panel is precise about, because each one was a way of showing something false:
 
 - **Only the five types in `learning.SUBJECT_TYPES`** (`food`, `exercise`, `muscle_group`, `biomarker`, `habit`) — the ones the scorer knows how to read. A signal of any other `entity_type` is inert, and listing it in a table ordered by "this is what is moving your suggestions most" would say otherwise. A test (`test_every_subject_type_the_engine_learns_has_a_place_in_the_panel`) ties `SUBJECT_TYPES` to the panel's group order, and another ties each type to its own label, icon and tone, so adding a sixth type cannot quietly render an English `| title` heading in a Spanish app.
 - **The word count is `signal_type="explicit_preference"`, not `source_type="explicit"`.** The latter is also how `respond_to_suggestion` marks a **tap** on a card, so counting it printed "1 from what you said" next to a food nobody had written a word about — which is precisely the distinction the line exists to draw.
 - **The cutoffs live in Python, not in the template.** `SubjectAffinity.direction_band` (`toward` / `away` / `mixed`, edge at ±0.2) and `.confidence_band` (`plenty` / `some` / `new`, at 3× and 1× `half_saturation`) return words; the macros in `components/domain.html` only map word → label, and an unknown band renders **nothing** on purpose. A `{% else %}` that labelled a new band with the nearest existing label would be wrong and silent; a gap is visible.
+- **An absence is counted apart from the records, and carries no date.** `unused_suggestion` rows are excluded from the record count, from the "from what you said" count and from the recency line, and get their own counter (`LearnedSubject.absence_observations`). A subject the person never once logged shows "3 unused suggestions" and no date at all, which is the truth: nothing ever happened with it. Folding absences into the record count would print "3 records · last seen never".
 - **A declared preference is shown but has no Forget button.** A row is `declared` when its `explicit_preference` signal has no source suggestion, which is only `save_preference` — the one path that writes the `recommendation_preferences` row in the same transaction. Forgetting deletes signals, so the preference would survive (still *filtering*, not reordering, if it is a dislike), and no route deletes it. The row points at `#what-you-told-us` instead, which is where it can actually be changed.
 
 `POST /profile/learned/forget` deletes a subject's signals for the acting user and returns the recalculated panel. There is no "forgotten" column and none is needed: what has been learned *is* the set of signals, so removing them is what forgetting means. Two consequences the screen states rather than hides:
@@ -440,7 +466,7 @@ pytest tests/
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**545 tests** across 25 files:
+**562 tests** across 25 files:
 
 | File | Coverage area |
 |---|---|
@@ -452,11 +478,11 @@ The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides 
 | `test_workouts.py` | Workout session and per-user exercise isolation |
 | `test_body_metrics.py` | Body metric logging and retrieval |
 | `test_recommendations.py` | Candidate scoring, hard constraint filtering, subject suppression |
-| `test_learning_signals.py` | The learning axes — affinity, decay, attribute level, slot, satiety, reason mining |
+| `test_learning_signals.py` | The learning axes — affinity, decay, attribute level, slot, satiety, reason mining, the absence sweep |
 | `test_household_learning.py` | Household-scope filtering — declared blocks unioned, learned rejections intersected |
 | `test_notifications.py` | Notification creation, read/dismiss lifecycle |
 | `test_notification_jobs.py` | The scheduled jobs — absences detected, subject dedup, escalation, retirement |
-| `test_clock.py` | Local time, quiet hours, day bounds |
+| `test_clock.py` | Local time, quiet hours, day bounds, the job schedule |
 | `test_actions.py` | Every notification and suggestion resolving to one primary action |
 | `test_dashboard.py` | Dashboard aggregation and chart series |
 | `test_components.py` | The Jinja macro library — `ui`, `icons`, `domain` |

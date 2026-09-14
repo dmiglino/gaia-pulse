@@ -30,7 +30,7 @@
       que filtra las sugerencias. Se dice de dónde sale y qué hace, y el poder soltarlo
       lo dice cada fila con su propio control. -#}
   {{ ui.section_title(_('What GaiaPulse figured out'),
-                      subtitle=_('Built from what you log and how you answer suggestions. It changes the order of what gets suggested, and never rules anything out.'),
+                      subtitle=_('Built from what you log and how you answer suggestions. Mostly it changes the order of what gets suggested; a recent no you tapped also keeps that subject off the list for a while.'),
                       icon='sparkles') }}
 
   {%- if learned_message %}
@@ -75,14 +75,25 @@
               <span class="text-sm font-medium text-ink">{{ row.display_name }}</span>
               {{ dm.learned_direction_badge(row.affinity.direction_band) }}
             </div>
-            {#- Las tres cifras que hacen discutible una deducción: cuántas veces,
-                cuántas de esas las dijiste con palabras, y cuándo fue la última. Sin
-                ellas el panel sería una caja negra de otro color. -#}
+            {#- Las cifras que hacen discutible una deducción: cuántas veces, cuántas de
+                esas las dijiste con palabras, cuántas son tarjetas que pasaron de largo,
+                y cuándo fue la última. Sin ellas el panel sería una caja negra de otro
+                color.
+
+                El conteo de registros va condicionado porque un sujeto puede estar acá
+                sin ninguno: si lo único que la app tiene son ausencias, "0 registros"
+                sería cierto y se leería como un error. Que diga solo "2 sugerencias sin
+                usar" es la frase completa de ese caso. -#}
             <p class="mt-1 text-xs text-ink-subtle">
               {{ dm.learned_confidence_label(row.affinity.confidence_band) }}
+              {%- if row.observations %}
               · {{ ngettext('%(num)d record', '%(num)d records', row.observations) }}
+              {%- endif %}
               {%- if row.said_observations %}
               · {{ _('%(num)d from what you said', num=row.said_observations) }}
+              {%- endif %}
+              {%- if row.absence_observations %}
+              · {{ ngettext('%(num)d unused suggestion', '%(num)d unused suggestions', row.absence_observations) }}
               {%- endif %}
               {%- if row.days_since is not none %}
               · {{ dm.learned_recency_label(row.days_since) }}
@@ -173,12 +184,15 @@
   {% endcall %}
   {%- endif %}
 
-  {#- Los dos límites que la pantalla no puede callar sin mentir: olvidar no es un veto
-      —la conducta se vuelve a leer— y el veto de verdad son las restricciones
+  {#- Los tres límites que la pantalla no puede callar sin mentir: olvidar no es un veto
+      —la conducta se vuelve a leer—; lo aprendido sí puede sacar algo de la lista, pero
+      con fecha de vencimiento; y el veto sin vencimiento son las restricciones
       alimentarias y las actividades imposibles de más arriba, que el motor lee sin
-      descuento por edad. Y el horizonte, para que "no aparece" no se confunda con "se
-      olvidó": una señal más vieja que la ventana sigue guardada, solo dejó de pesar. -#}
-  {{ ui.notice(_('Forgetting is not a ban: if the behaviour repeats, it gets learned again. To rule something out for good, use the dietary restrictions and impossible activities above — those filter suggestions instead of just reordering them.'),
+      descuento por edad. Decir solo lo último dejaba al subtítulo prometiendo que acá
+      nada se filtra, tres líneas más arriba de la fila que cuenta los rechazos que sí
+      filtran. Y el horizonte, para que "no aparece" no se confunda con "se olvidó": una
+      señal más vieja que la ventana sigue guardada, solo dejó de pesar. -#}
+  {{ ui.notice(_('Forgetting is not a ban: if the behaviour repeats, it gets learned again. A no you tapped recently does keep that subject off the list, but only for a few weeks. To rule something out for good, use the dietary restrictions and impossible activities above — those never expire.'),
                tone='info', icon='info',
                title=ngettext('Looking at the last %(num)d day',
                               'Looking at the last %(num)d days', learned.horizon_days)) }}

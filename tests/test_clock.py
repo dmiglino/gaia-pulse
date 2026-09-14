@@ -5,7 +5,10 @@ la timezone configurada, que la app tenga horas en las que no habla, y que la ho
 a la que corre cada job **no dependa de cuándo arrancó el proceso**.
 """
 
+import ast
+import importlib
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 
 import pytest
 from apscheduler.triggers.cron import CronTrigger
@@ -55,6 +58,60 @@ def _fixed_clock(monkeypatch: pytest.MonkeyPatch) -> None:
 def _local(hour: int, minute: int = 30) -> datetime:
     """Un instante real cuya hora *local* es *hour*."""
     return datetime(2026, 3, 15, hour, minute, tzinfo=household_tz())
+
+
+_JOBS_DIR = Path(__file__).resolve().parent.parent / "app" / "jobs"
+
+#: El nombre por el que se le habla a una persona. Es el único camino: la única forma de
+#: que aparezca una notificación es `NotificationService.create`, y sus únicos llamadores
+#: son los jobs (ver la docstring de `notification_jobs._muted`).
+_SPEAKING_NAME = "NotificationService"
+
+
+def _jobs_that_speak() -> list[tuple[str, str]]:
+    """Los jobs de `app/jobs/` que pueden llegar a crear una notificación.
+
+    Se lee la fuente con `ast` en vez de importar y seguir llamadas porque lo que hay que
+    saber es estático: qué *puede* hacer el job, no qué hizo en una corrida. Un job habla si
+    su cuerpo nombra `NotificationService` o si llama —directa o indirectamente, dentro de su
+    módulo— a algo que lo nombra; los cuatro recordatorios hablan por la segunda vía, porque
+    delegan en `_run_absence_job`. De ahí el punto fijo: hoy la cadena tiene dos saltos y
+    mañana puede tener tres.
+
+    Devuelve pares `(módulo, función)` y no solo el nombre porque el gate se prueba pisando
+    `is_quiet_hours` **en el módulo del job**, y un job nuevo puede vivir en un archivo nuevo.
+    """
+    found: list[tuple[str, str]] = []
+    for path in sorted(_JOBS_DIR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+        speaks = {
+            name: any(
+                isinstance(inner, ast.Name) and inner.id == _SPEAKING_NAME
+                for inner in ast.walk(node)
+            )
+            for name, node in functions.items()
+        }
+        calls = {
+            name: {
+                inner.func.id
+                for inner in ast.walk(node)
+                if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name)
+            }
+            for name, node in functions.items()
+        }
+        propagating = True
+        while propagating:
+            propagating = False
+            for name, callees in calls.items():
+                if not speaks[name] and any(speaks.get(callee, False) for callee in callees):
+                    speaks[name] = True
+                    propagating = True
+        module = f"app.jobs.{path.stem}"
+        found.extend(
+            (module, name) for name in sorted(functions) if name.startswith("run_") and speaks[name]
+        )
+    return found
 
 
 class TestQuietHours:
@@ -218,6 +275,7 @@ class TestSchedule:
             "metric_reminders",
             "meal_reminders",
             "sleep_reminders",
+            "absence_sweep",
             "suggestion_generation",
             "notification_pruning",
         }
@@ -244,6 +302,19 @@ class TestSchedule:
             fire_time = trigger.get_next_fire_time(None, _local(started_at, 0))
             assert fire_time is not None
             assert (fire_time.hour, fire_time.minute) in scheduled
+
+    def test_the_absence_sweep_runs_before_the_morning_generation(self) -> None:
+        """El orden entre estos dos es la razón de la hora, no una casualidad.
+
+        El barrido escribe lo que se aprendió de las tarjetas que nadie usó. Si corriera
+        después de la generación de la mañana, ese aprendizaje recién reordenaría las
+        sugerencias del día siguiente y la persona vería otra vez la tarjeta que ya ignoró
+        una semana.
+        """
+        sweep = _trigger("absence_sweep").get_next_fire_time(None, _local(0, 0))
+        generation = _trigger("suggestion_generation").get_next_fire_time(None, _local(0, 0))
+        assert sweep is not None and generation is not None
+        assert sweep < generation
 
     def test_start_scheduler_registers_the_whole_table(
         self, monkeypatch: pytest.MonkeyPatch
@@ -279,38 +350,64 @@ class TestSchedule:
 class TestQuietHoursGate:
     """Todos los jobs que le hablan a alguien se callan en la franja.
 
-    La poda no está en la lista a propósito: corre a las 4:15, adentro de la franja,
-    porque no le habla a nadie.
+    La lista no está escrita a mano, y esa es la mitad del test. Escrita a mano —como
+    estaba— cubría los cinco jobs que hablaban el día que se escribió, y un sexto que
+    creara notificaciones sin pasar por `_muted` no aparecía en ninguna parametrización:
+    la suite entera pasaba en verde y el síntoma era la casa despierta a las 3 de la
+    mañana. Ahora la lista sale de leer las fuentes (`_jobs_that_speak`), así que un job
+    nuevo que pueda llegar a `NotificationService` entra solo y tiene que probar que se
+    calla.
+
+    La poda queda afuera sola, sin excepción escrita: usa `NotificationRepository` para
+    borrar filas y no le habla a nadie, y por eso corre a las 4:15, adentro de la franja.
+    El barrido de ausencias tampoco aparece por el mismo motivo — escribe señales.
     """
 
-    @pytest.mark.parametrize(
-        "job_name",
-        [
+    def test_the_search_finds_the_jobs_that_do_speak_and_only_those(self) -> None:
+        """El riesgo de una lista computada: si devuelve vacío, parametriza cero casos.
+
+        Cero casos es verde, así que la lista que reemplazó a la escrita a mano necesita su
+        propio piso. Se fija por los dos lados y sin escribir el conjunto completo: los cinco
+        que hoy hablan tienen que estar —si el recorrido se rompe, el silencio se nota— y los
+        dos que escriben sin hablar no pueden estar, porque si estuvieran el gate les
+        apagaría un trabajo que nadie escucha. Un job nuevo y bien silenciado no rompe nada
+        acá: el que lo obliga a callarse es el test de abajo.
+        """
+        speaking = {name for _, name in _jobs_that_speak()}
+
+        assert {
             "run_low_stock_notifications",
             "run_inactivity_notifications",
             "run_metric_reminder_notifications",
             "run_meal_reminder_notifications",
             "run_sleep_reminder_notifications",
-        ],
-    )
+        } <= speaking
+        assert "run_notification_pruning" not in speaking
+        assert "run_absence_sweep" not in speaking
+
+    @pytest.mark.parametrize(("module_name", "job_name"), _jobs_that_speak())
     def test_a_muted_job_does_not_even_open_a_session(
-        self, monkeypatch: pytest.MonkeyPatch, job_name: str
+        self, monkeypatch: pytest.MonkeyPatch, module_name: str, job_name: str
     ) -> None:
         """El gate va antes de `SessionLocal()`, no después.
 
         Con la franja activa el job no toca la base: si abriera la sesión y
         filtrara más adentro, el `except Exception` de cada job se comería la
         prueba en silencio.
+
+        El `monkeypatch` de `is_quiet_hours` es sobre el módulo del job, y con `raising`
+        puesto: un job que hable y no tenga el nombre importado falla acá, que es
+        exactamente lo que hay que saber de él.
         """
-        from app.jobs import notification_jobs
+        module = importlib.import_module(module_name)
 
         def _no_sessions_please() -> None:
-            raise AssertionError("el job abrió una sesión en horario de silencio")
+            raise AssertionError(f"{job_name} abrió una sesión en horario de silencio")
 
-        monkeypatch.setattr(notification_jobs, "is_quiet_hours", lambda: True)
-        monkeypatch.setattr(notification_jobs, "SessionLocal", _no_sessions_please)
+        monkeypatch.setattr(module, "is_quiet_hours", lambda: True)
+        monkeypatch.setattr(module, "SessionLocal", _no_sessions_please)
 
-        getattr(notification_jobs, job_name)()  # no debe levantar nada
+        getattr(module, job_name)()  # no debe levantar nada
 
     def test_outside_the_window_the_job_does_its_work(
         self, monkeypatch: pytest.MonkeyPatch, db: Session, diego: User

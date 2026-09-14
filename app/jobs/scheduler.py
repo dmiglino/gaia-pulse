@@ -51,6 +51,11 @@ _SCHEDULE: dict[str, tuple[str, int]] = {
     # A media mañana y no al despertarse: el sueño se anota cuando uno ya se
     # levantó, y a las 8:20 el aviso competiría con el del pesaje.
     "sleep_reminders": ("10", 25),
+    # Antes de la generación de las 7:40 y no después: el barrido escribe lo que se
+    # aprendió de las tarjetas que nadie usó, y si corriera más tarde ese aprendizaje
+    # recién reordenaría las sugerencias de mañana. Sin compuerta de silencio, igual
+    # que la poda: no le habla a nadie, solo escribe filas.
+    "absence_sweep": ("6", 30),
     # Dos veces: una para que Home tenga algo fresco a la mañana y otra antes de
     # que se decida la cena.
     "suggestion_generation": ("7,18", 40),
@@ -98,7 +103,7 @@ def start_scheduler() -> None:
         run_notification_pruning,
         run_sleep_reminder_notifications,
     )
-    from app.jobs.suggestion_jobs import run_suggestion_generation
+    from app.jobs.suggestion_jobs import run_absence_sweep, run_suggestion_generation
 
     jobs = {
         "low_stock_notifications": run_low_stock_notifications,
@@ -106,6 +111,7 @@ def start_scheduler() -> None:
         "metric_reminders": run_metric_reminder_notifications,
         "meal_reminders": run_meal_reminder_notifications,
         "sleep_reminders": run_sleep_reminder_notifications,
+        "absence_sweep": run_absence_sweep,
         "suggestion_generation": run_suggestion_generation,
         "notification_pruning": run_notification_pruning,
     }

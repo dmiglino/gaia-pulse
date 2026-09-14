@@ -41,6 +41,15 @@ Lo que este módulo define es ese vocabulario:
   semivida de día y medio, la producen solo las señales de **acto** —lo que se comió, se
   hizo o se compró— y nunca las de **dicho**, y como los otros ejes no filtra: haber comido
   milanesas ayer no es un "no" a las milanesas, es un "hoy otra cosa".
+- **Y un negativo que nadie tuvo que apretar: la ausencia.** Sugerir un alimento y que no
+  aparezca en ninguna comida durante una semana no es un rechazo, pero tampoco es un
+  neutro: es la diferencia entre "no me interesa" y "todavía no lo vi". La escribe un
+  barrido diario (`run_absence_sweep`, en `app/jobs/suggestion_jobs.py`) porque nada corre
+  "siete días después" por sí solo, pesa un quinto de un "no" deliberado, y es la razón por
+  la que el veto dejó de ser "hay un negativo vivo" y pasó a ser "hay medio punto de
+  negativo vivo": una ausencia sola no puede sacar nada de la lista y tres sí. Sin ese
+  umbral la señal sería peor que no tenerla —un veto permanente por una tarjeta que la
+  persona quizá no llegó a ver—, y por eso las dos mitades se escribieron juntas.
 
 No hay LLM acá ni modelo entrenado: es aritmética determinista sobre una tabla, que es lo
 que la 4.4 se propuso y todo lo que hace falta para dos personas.
@@ -103,7 +112,15 @@ POSITIVE_SIGNAL_TYPES: frozenset[str] = frozenset(
 #: `rejected_suggestion` con `subject_type="exercise"`, que es la misma información sin un
 #: segundo tipo que mantener sincronizado. Que no vuelva a aparecer un tipo que se lee y no
 #: se escribe lo cuida `test_every_signal_type_the_reader_knows_has_a_writer`.
-NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion"})
+#:
+#: `unused_suggestion` sí está, y es el único negativo que nadie apretó: lo escribe el
+#: barrido de ausencias (`run_absence_sweep`) cuando una sugerencia con sujeto pasó su
+#: semana sin que el sujeto apareciera en ningún acto. Pesa `ABSENCE_VALUE`, un quinto de
+#: un "no" deliberado, porque no dice "no quiero" sino "no pasó", y por eso el veto mide
+#: peso negativo acumulado (`_FILTER_EVIDENCE_FLOOR`) en vez de "hay uno vivo".
+ABSENCE_SIGNAL_TYPE = "unused_suggestion"
+
+NEGATIVE_SIGNAL_TYPES: frozenset[str] = frozenset({"rejected_suggestion", ABSENCE_SIGNAL_TYPE})
 
 #: Las señales que son un **acto** y no un dicho: lo que la persona comió, hizo o compró.
 #: No es un vocabulario nuevo —son las mismas filas que ya cuentan como positivas—, es una
@@ -168,9 +185,11 @@ _HALF_LIFE_DAYS: dict[str, float] = {
     "implicit": 21.0,
 }
 
-#: Lo que se usa para un `source_type` que no está en el mapa —hoy `"inferred"`, que la
-#: columna admite y nadie escribe—. Es el más corto a propósito: si no sabemos de dónde
-#: salió una señal, que se desvanezca rápido es el error más barato.
+#: Lo que se usa para un `source_type` que no está en el mapa —hoy `"inferred"`, que es lo
+#: que graba el barrido de ausencias: nadie dijo nada y nadie hizo nada, la señal la deduce
+#: la app—. Es el más corto a propósito: si no sabemos de dónde salió una señal, que se
+#: desvanezca rápido es el error más barato. Que la ausencia caiga acá es deliberado y no
+#: un olvido: una semana sin comer algo caduca antes que una preferencia dicha.
 _DEFAULT_HALF_LIFE_DAYS = 21.0
 
 #: Hasta qué edad vale la pena traer señales de la base. Se deriva de la semivida más
@@ -181,11 +200,65 @@ _DEFAULT_HALF_LIFE_DAYS = 21.0
 #: consulta, no para decidir nada.
 SIGNAL_HORIZON_DAYS: int = int(4 * max(_HALF_LIFE_DAYS.values()))
 
-#: Un "no" explícito saca al sujeto de la lista mientras conserve al menos la mitad de su
-#: peso — es decir, durante una semivida— y después solo pesa en el score. Es el mismo
-#: número que ya está declarado arriba y no un umbral nuevo: filtrar es más caro que
-#: puntuar (el candidato no llega a existir), así que deja de hacerse antes.
+#: Qué tan fresca tiene que estar una señal negativa para poder sacar a un sujeto de la
+#: lista: mientras conserve al menos la mitad de su peso, o sea durante una semivida.
+#: Después solo pesa en el score. Es el mismo número que ya está declarado arriba y no un
+#: umbral nuevo: filtrar es más caro que puntuar (el candidato no llega a existir), así que
+#: deja de hacerse antes.
+#:
+#: Es una condición sobre **cada** señal, no sobre el conjunto: acota qué entra a la suma
+#: que después mide `_FILTER_EVIDENCE_FLOOR`. Para un rechazo deliberado las dos son la
+#: misma condición y por eso hasta la 4.4.10 alcanzaba con esta sola.
 _FILTER_DECAY_FLOOR = 0.5
+
+#: Cuánto pesa una ausencia. Negativo porque argumenta en contra, y un quinto de un "no"
+#: deliberado (que vale `-1.0`) porque no es lo mismo: quien rechaza vio la tarjeta y dijo
+#: que no; quien no usó una sugerencia pudo no haberla visto nunca. Cinco ausencias dicen
+#: lo que un rechazo dice solo.
+ABSENCE_VALUE = -0.2
+
+#: Cuánto se espera antes de leer una ausencia como ausencia. Una semana es lo que tarda
+#: un menú en dar la vuelta: menos que eso y "no lo comió" solo significa "todavía no le
+#: tocó". Coincide con `scorer._RECENT_SUGGESTION_DAYS` —la ventana de la penalización por
+#: diversidad— y la coincidencia no es casual (las dos preguntan "¿esto es reciente?"),
+#: pero no se deriva de ella a propósito: esa mide cuánto tiempo una sugerencia estorba a
+#: la siguiente, y esta cuánto tiempo hay que darle a alguien antes de contarle un no.
+#: Si una cambia, la otra no tiene por qué seguirla.
+ABSENCE_GRACE_DAYS = 7
+
+#: De qué sujetos se puede afirmar una ausencia. Es un subconjunto de `SUBJECT_TYPES` y no
+#: todos ellos porque una ausencia solo es falsable si el acto correspondiente se registra:
+#: `food` lo escribe cada comida y `exercise` cada entrenamiento, así que "no apareció" es
+#: una observación. `muscle_group` se graba solo cuando la captura trae la columna, así que
+#: su ausencia sería falsa seguido; y `habit` y `biomarker` no tienen escritor de acto
+#: ninguno, así que su ausencia no diría nada sobre la persona, solo sobre el esquema.
+ABSENCE_SUBJECT_TYPES: frozenset[str] = frozenset({"food", "exercise"})
+
+#: Cuánto peso negativo vivo hace falta para vetar un sujeto, además de la frescura que ya
+#: pide `_FILTER_DECAY_FLOOR`. Existe para que la ausencia pueda entrar al vocabulario
+#: negativo sin poder de veto propio: con este valor un rechazo deliberado se comporta
+#: **exactamente** como antes (pesa `1.0 * decay`, y `decay >= 0.5` es la misma condición
+#: que `peso >= 0.5`). Es el mismo número que el piso de decaimiento, y no está derivado de
+#: él porque miden cosas distintas —uno es una fracción de peso, el otro una suma de
+#: pesos—: que coincidan es lo que hace que el caso viejo no cambie.
+#:
+#: Y con estos valores la ausencia **nunca** llega a vetar, ni de a tres ni de a treinta.
+#: No es una casualidad de la calibración sino una consecuencia de dos números que ya
+#: estaban: entre dos ausencias del mismo sujeto no puede haber menos de 10 días
+#: (`ABSENCE_GRACE_DAYS` para que la tarjeta se barra, más `SuggestionService._SNOOZE_DAYS`
+#: para que el sujeto se destrabe y nazca otra), y el piso de frescura descarta todo lo que
+#: pase de una semivida —21 días—. Caben tres ausencias vivas a la vez y suman como máximo
+#: `0.2 * (1 + 0.5**(10/21) + 0.5**(20/21)) ≈ 0.447`. Tampoco pueden empujar a un rechazo
+#: viejo por encima del umbral, porque un rechazo que conserva la mitad de su peso ya veta
+#: solo y uno que no la conserva lo descarta el piso de frescura antes de sumar.
+#:
+#: O sea: hoy una ausencia solo puntúa. Se escribe así igual —y la suma es la regla, no un
+#: caso especial de la ausencia— porque lo que el umbral tiene que garantizar es que un
+#: negativo débil no vete, y esa garantía tiene que sobrevivir al día en que las tarjetas
+#: caduquen o la gracia se acorte. Los tests que arman tres ausencias a mano fijan la
+#: aritmética, no un camino alcanzable; el que fija lo alcanzable es
+#: `test_the_sweep_can_never_veto_a_subject_on_its_own`.
+_FILTER_EVIDENCE_FLOOR = 0.5
 
 #: Cuánta evidencia hace falta para que la app esté a mitad de camino de estar segura.
 #: Con este valor una sola observación pesa un tercio de lo que pesaría la certeza, dos
@@ -602,12 +675,13 @@ class LearnedSubject:
     edad, de los que salen una dirección y una confianza. Sirven para ordenar candidatos y
     no sirven para mostrarle a nadie: "evidencia 4.31" no es una frase.
 
-    Esto agrega las tres cosas que hacen falta para que el panel de la 4.4.8 no sea una caja
-    negra con otro color —**cuántas** veces se vio, **cuántas** de esas las dijo la persona
-    con palabras, y **cuándo** fue la última—, sin recalcular la opinión por otro camino: la
-    dirección y la confianza son las mismas de `subject_affinities`, así que el panel no
-    puede discrepar de lo que el motor hace. Si discrepara, el panel sería una segunda
-    implementación del aprendizaje, que es peor que no tener panel.
+    Esto agrega lo que hace falta para que el panel de la 4.4.8 no sea una caja negra con
+    otro color —**cuántas** veces se vio, **cuántas** de esas las dijo la persona con
+    palabras, **cuántas** son sugerencias que pasaron de largo, y **cuándo** fue la última
+    vez que algo se registró—, sin recalcular la opinión por otro camino: la dirección y la
+    confianza son las mismas de `subject_affinities`, así que el panel no puede discrepar de
+    lo que el motor hace. Si discrepara, el panel sería una segunda implementación del
+    aprendizaje, que es peor que no tener panel.
     """
 
     subject_type: str
@@ -634,6 +708,13 @@ class LearnedSubject:
     #: la persona nunca escribió nada — y la distinción que el panel promete es justo esa,
     #: porque separa lo que se corrige escribiendo de lo que se corrige con conducta.
     said_observations: int
+    #: Cuántas sugerencias de este sujeto pasaron su semana sin que nada lo registrara
+    #: (`ABSENCE_SIGNAL_TYPE`). Va en un contador aparte y **no** entra en `observations`
+    #: porque no es un registro: nadie hizo nada, y contarlo como "6 registros" al lado de
+    #: cinco comidas reales convertiría el número que el panel promete —cuántas veces esto
+    #: pasó— en la suma de dos cosas distintas. Tampoco mueve `last_seen`: la última vez que
+    #: se vio el sujeto es la última vez que apareció, no la última vez que faltó.
+    absence_observations: int
     #: Si esto además está declarado en `recommendation_preferences`, o sea si es una fila
     #: de "lo que nos dijiste". Se detecta por el `explicit_preference` que **no** viene de
     #: una sugerencia: `save_preference` escribe la preferencia y la señal juntas, y es el
@@ -701,6 +782,7 @@ def learned_subjects(
     affinities = subject_affinities(signals, now=reference)
     observations: dict[tuple[str, str], int] = {}
     said: dict[tuple[str, str], int] = {}
+    absences: dict[tuple[str, str], int] = {}
     declared: set[tuple[str, str]] = set()
     display: dict[tuple[str, str], str] = {}
     last_seen: dict[tuple[str, str], datetime] = {}
@@ -709,6 +791,15 @@ def learned_subjects(
             continue
         key = subject_key(signal.entity_type, signal.entity_name)
         if key[0] not in SUBJECT_TYPES or not key[1]:
+            continue
+        if signal.signal_type == ABSENCE_SIGNAL_TYPE:
+            #: Una ausencia mueve la opinión —`subject_affinities` la sumó— pero no es un
+            #: registro ni una fecha en que el sujeto se vio, así que sale del contador
+            #: general y del reloj. El nombre para mostrar sí lo puede aportar: si lo único
+            #: que hay de un sujeto son ausencias, sin esto el panel imprimiría la clave
+            #: normalizada.
+            absences[key] = absences.get(key, 0) + 1
+            display.setdefault(key, signal.entity_name)
             continue
         observations[key] = observations.get(key, 0) + 1
         if signal.signal_type == "explicit_preference":
@@ -734,6 +825,7 @@ def learned_subjects(
             affinity=affinity,
             observations=observations.get((subject_type, subject_name), 0),
             said_observations=said.get((subject_type, subject_name), 0),
+            absence_observations=absences.get((subject_type, subject_name), 0),
             declared=(subject_type, subject_name) in declared,
             last_seen=last_seen.get((subject_type, subject_name)),
             days_since=_days_since(last_seen.get((subject_type, subject_name)), reference),
@@ -903,9 +995,10 @@ def slot_contrast(
 
     La formulación alternativa —dirección en la franja menos dirección global— no servía:
     con los datos que la app tiene hoy toda señal de comida es positiva, así que las dos
-    direcciones valen `+1` y la resta da `0` siempre. La ausencia como señal (que la cena
-    *no* tenga café) es lo que la 4.4.3 dejó postergado junto con el umbral mínimo de
-    evidencia para filtrar; comparar franja contra franja no la necesita.
+    direcciones valen `+1` y la resta da `0` siempre. La 4.4.10 agregó una señal negativa
+    inferida (`ABSENCE_SIGNAL_TYPE`), pero no la que haría falta acá: dice que una
+    sugerencia no se usó, no que la cena no tuvo café, y sin franja no entra a este eje.
+    Comparar franja contra franja no la necesita.
 
     El recorte a `[-1, 1]` no es decorativo: la resta de dos fuerzas vive en `[-2, 2]`, y
     sin el tope este eje podría mover el score el doble de su perilla, que es justo la
@@ -973,23 +1066,33 @@ def satiety_pressure(
 def rejected_subjects(
     signals: list[BehaviorSignal], *, now: datetime | None = None
 ) -> set[tuple[str, str]]:
-    """Los sujetos con un rechazo explícito reciente: lo que no se vuelve a ofrecer.
+    """Los sujetos con suficiente negativo vivo encima: lo que no se vuelve a ofrecer.
 
     Más estricto que un neto negativo a propósito. El neto lo puede poner negativo un
     descarte —"lo vi y lo cerré"—, y eso baja el score; sacar un candidato de la lista
-    antes de puntuarlo pide que la persona haya dicho que no.
+    antes de puntuarlo pide un tipo de señal que signifique "no".
 
-    Y el "no" caduca. Vale mientras la señal conserve al menos la mitad de su peso, o sea
-    durante una semivida: pasado eso el sujeto vuelve a la lista y el rechazo sigue
+    Y el "no" caduca. Cada señal cuenta mientras conserve al menos la mitad de su peso, o
+    sea durante una semivida: pasado eso el sujeto vuelve a la lista y el rechazo sigue
     contando, pero solo en el score. Sin esto, ampliar la ventana de lectura para que el
     decaimiento tenga de qué decaer habría convertido un "no" de hace once meses en un
     veto permanente — el problema que la 4.4.2 vino a resolver, al revés.
+
+    Sobre esa frescura hay un segundo umbral: **cuánto** negativo hay. Existe porque no
+    todos los negativos son un "no" —la ausencia pesa `ABSENCE_VALUE`, un quinto— y una
+    sugerencia que la persona quizá nunca vio no puede vetar sola. Para un rechazo
+    deliberado los dos umbrales son la misma condición y el comportamiento anterior no
+    cambia; para una ausencia, con los valores de hoy, no alcanza nunca — ver la cuenta en
+    `_FILTER_EVIDENCE_FLOOR`. Lo que sale de acá es entonces "los sujetos que alguien
+    rechazó a propósito y hace poco", igual que antes de que la ausencia existiera.
     """
     reference = now or datetime.now(tz=timezone.utc)
-    return {
-        subject_key(s.entity_type, s.entity_name)
-        for s in signals
-        if s.signal_type in NEGATIVE_SIGNAL_TYPES
-        and float(s.value) < 0
-        and decay_factor(s, now=reference) >= _FILTER_DECAY_FLOOR
-    }
+    negative: dict[tuple[str, str], float] = {}
+    for signal in signals:
+        if signal.signal_type not in NEGATIVE_SIGNAL_TYPES or float(signal.value) >= 0:
+            continue
+        if decay_factor(signal, now=reference) < _FILTER_DECAY_FLOOR:
+            continue
+        key = subject_key(signal.entity_type, signal.entity_name)
+        negative[key] = negative.get(key, 0.0) + abs(signal_weight(signal, now=reference))
+    return {key for key, weight in negative.items() if weight >= _FILTER_EVIDENCE_FLOOR}
