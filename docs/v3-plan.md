@@ -1781,28 +1781,138 @@ ejercicios esperan la 4.5)
 
 **4.5 — Razonar con los datos que ya están, y explicar de verdad**
 
-- [ ] Nuevo `app/recommendations/context.py`: un `UserContext` de solo lectura, armado **una
-      vez por corrida** desde los repositorios y pasado a todos los generadores y al scorer —
-      tendencia de peso/grasa, sueño reciente, RPE y balance de grupos musculares con
-      ventanas de recuperación reales, totales de macros derivados del catálogo de `FoodItem`
-      que ya está sembrado, `ExerciseType` en lugar de la lista hardcodeada de 8, y
-      antigüedad del panel de sangre.
-- [ ] Con ese contexto, `rationale` deja de ser un string fijo y pasa a ser **la explicación
-      computada del score**: qué dato y qué señal produjeron esta sugerencia.
-- [ ] Conectar `generate_for_household` para que las sugerencias de pantry/compras existan.
-- [ ] **Arreglar el bypass de seguridad** de `category="habit"` en `_infer_category` más el
-      atajo `return candidates` que saltea el filtro cuando no hay bloqueos.
-- [ ] **Seguridad:** las sugerencias de sangre pasan a llevar la antigüedad del panel
-      explícita y un encuadre no diagnóstico, y a atravesar los filtros como todas las demás.
+**Antes de implementar: tres cosas que el diagnóstico F5/F7 de este plan dice y que leer el
+código desmiente.** El punto se implementa contra el código, no contra la descripción, y las
+correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
+
+1. **`evidence_summary` no está huérfano.** F6 lo agrupa con `serving_size_g` y `micro_json`
+   entre las columnas que "ningún código escribe jamás", y es falso: los dos
+   `_make_*_suggestion` de `engine.py` lo persisten (`item.get("evidence_summary")`),
+   `blood_generator` lo llena para los 16 marcadores, y
+   `suggestions/partials/list.html:82` lo renderiza cuando existe. Lo que **sí** es un string
+   fijo por regla es `rationale`, y solo él. Así que 4.5.4 tiene un lugar donde poner la
+   explicación computada y un renderizador que ya la muestra: no hay que inventar la columna.
+2. **El atajo `return candidates` de `_drop_blocked` (`filters.py:215-216`) es preservador de
+   conducta por construcción, y esa es la razón para borrarlo.** Con los dos conjuntos de
+   bloqueos vacíos las dos ramas de abajo no pueden descartar nada, así que hoy no se escapa
+   ni un candidato por ahí. Es una **trampa**, no un agujero: el día que el filtro tenga que
+   mirar algo que no sean esos dos conjuntos —una restricción del hogar, un umbral del
+   contexto— la línea lo saltea en silencio y en verde. Se borra porque es una optimización de
+   cuatro comparaciones que compra un modo de falla silencioso, no porque hoy deje pasar algo.
+3. **"Las sugerencias de sangre eluden los dos filtros" quedó a medias con la 4.4.** Desde que
+   `apply_signal_constraints` matchea por `learning.candidate_subject`, las tarjetas de sangre
+   **sí** atraviesan el filtro de señales aprendidas: tienen `subject_type="biomarker"` y
+   sujeto propio. El que sigue esquivándose es `apply_hard_constraints`, y el alcance real es
+   **exactamente tres tarjetas**: TSH alta, TSH baja y creatinina alta, las únicas del repo con
+   `category="habit"`. Las tarjetas de *sujeto* `habit` de `activity_generator` y
+   `pantry_generator` viajan con `category="activity"`/`"shopping"` y ya se filtran. Tres
+   tarjetas no es "todo el generador de sangre", y decirlo bien es lo que evita arreglar el
+   bypass en el lugar equivocado.
+
+- [ ] **4.5.1 — `UserContext`: un solo lector por corrida.** Nuevo
+      `app/recommendations/context.py` con una dataclass congelada y `build_user_context(db,
+      user)`, armada **una vez** en `engine.generate_for_user` y pasada a los cuatro
+      generadores, al scorer y a los filtros. Campos: tendencia de peso y grasa, sueño
+      reciente, días desde el último entrenamiento, **días desde el último estímulo por grupo
+      muscular**, RPE reciente, contador de alimentos recientes, macros de hoy contra la línea
+      de base de la persona, stock del hogar, catálogo de `ExerciseType` y panel de sangre con
+      su fecha y su antigüedad. **El contexto no decide nada**: es de solo lectura, no opina, y
+      cada generador sigue siendo el dueño de su regla — si el contexto empieza a decidir,
+      volvimos a tener la lógica en dos lados.
+      Todo se lee **por repositorio**, y eso es la mitad del trabajo: hacen falta un lector de
+      último estímulo por grupo muscular, un contador de alimentos recientes con `since` (hoy
+      `MealRepository.get_recent_foods_for_user` trae las últimas 30 filas sin filtro de fecha
+      y `meal_generator._get_recent_food_names` cuenta 7 días por `MealEvent.timestamp`: dos
+      respuestas distintas a "qué comió last week" y nada que las obligue a coincidir), una
+      agregación de macros, un listador de `ExerciseType` y un `app/repositories/blood_repo.py`
+      que hoy no existe.
+      Con eso se cierra el **trinquete** de `AGENTS.md` regla 2 sobre todo lo que el punto
+      toca: las 14 consultas inline de `app/recommendations/` (engine 5, pantry 5, activity 2,
+      meal 2) y las 3 de `blood_analysis_service.py:58,66,74` bajan a repositorios, y los
+      números *medidos* de `AGENTS.md` se actualizan en el mismo commit — un número en un doc
+      es una copia de una regla, y desactualizado miente con aire de precisión.
+- [ ] **4.5.2 — Catálogo de ejercicios real y ventanas de recuperación que sean ventanas.**
+      Fuera `_DEFAULT_ACTIVITIES` (las 8 hardcodeadas), dentro `ExerciseType` (21 filas que
+      `seed.py:160-191` siembra y que `docker-compose.yml:44` corre al arrancar). Y
+      `_MUSCLE_RECOVERY` deja de ser una lista de claves: hoy `rested_muscles = set(claves) −
+      recientes` con un `_OVERTRAINING_DAYS = 2` plano para todos y `sorted(...)[0]`, que es
+      por qué el músculo sugerido es **casi siempre "back"**. Pasa a comparar *días desde el
+      estímulo de ese grupo* contra *la ventana de ese grupo*, eligiendo el que hace más tiempo
+      que pasó su ventana, con desempate estable y no alfabético.
+      **Lo que hay que resolver primero es que hay tres vocabularios de grupo muscular y no
+      coinciden**: `_MUSCLE_RECOVERY` y `nlp/rules.py:_EXERCISE_MAP` usan los mismos ocho
+      (`chest, shoulders, triceps, biceps, back, legs, core, cardio`), pero `seed.py` escribe
+      `arms` y `full_body`, que no tienen ventana, y nunca escribe `triceps`, `biceps` ni
+      `cardio`. Hoy no molesta porque **nadie lee `ExerciseType.muscle_group`** y lo que llega
+      a la columna `WorkoutExercise.muscle_group` lo pone el NLP; el día que el catálogo entre
+      en la lógica de recuperación, `arms` y `full_body` entran con él. Vocabulario único en
+      `learning.py` (que ya es el módulo del vocabulario), el seed y el mapa del NLP
+      conformando a él, y un default documentado para un grupo desconocido en vez de un
+      `KeyError` o un silencio.
+      Y hay un cambio de conducta que hay que nombrar: el catálogo es de **ejercicios**, la
+      lista era de **actividades**. "Andá en bici" y "hacé Barbell Row" no son la misma clase
+      de tarjeta; el eje de actividad es `ExerciseType.category` (`strength`/`cardio`/
+      `flexibility`), no el nombre. En los tests el catálogo está **vacío** —ningún fixture lo
+      siembra—, así que hace falta un camino honesto para catálogo vacío: no emitir tarjeta con
+      nombre de actividad (las de descanso, constancia y balance muscular no necesitan nombre)
+      y loguearlo una vez. Eso permite borrar las 8 sin reponerlas disfrazadas de fallback.
+- [ ] **4.5.3 — Macros: contar lo que se puede contar, y decir cuánto se contó.** Un
+      `MacroTotals` que lleve `items_counted`/`items_total`, porque el total honesto no es el
+      total: sumar necesita `food_item_id` **y** una cantidad convertible a gramos, y
+      `MealItemConsumed` tiene los dos como nullable (las capturas de texto libre solo dejan
+      `normalized_free_text_name`). Los macros de `FoodItem` son **por 100 g** y
+      `serving_size_g` no lo escribe nadie, así que un ítem sin gramos no se puede convertir y
+      hay que declararlo en vez de sumarlo como cero. Y como la app **no tiene objetivo de
+      macros** (`goals_json` y `target_weight_kg` no se leen en ningún lado), toda afirmación
+      es relativa a la línea de base de la propia persona — "hoy vas más liviano de proteína
+      que tu promedio", nunca "te faltan 40 g".
+- [ ] **4.5.4 — `rationale` computado.** Dos mitades que el `engine` compone: la razón de
+      *dato* que pone el generador desde el contexto, y la razón de *aprendizaje* que pone el
+      scorer. Hoy el scorer calcula el delta de sus cuatro ejes y lo tira a `logger.debug`: pasa
+      a devolver un `_score_parts` estructurado, que es el mismo cálculo dejando de descartarse.
+      Ningún eje se nombra cuando su delta es 0 —enumerar los ceros es cómo una explicación
+      vuelve a ser decorativa—, y cuando no hay ni dato ni aprendizaje la tarjeta **lo dice**
+      en vez de caer en una frase de catálogo. Se van las 9 cadenas fijas de
+      `activity_generator`/`meal_generator`.
+      **Interacción con i18n que hay que dejar escrita:** `rationale` se persiste ya
+      renderizado, así que queda congelado en el idioma en que se generó — un cambio de idioma
+      no reescribe las sugerencias viejas. Es un tradeoff, no un bug, y la Fase 5 tiene que
+      saberlo antes de contar msgids.
+- [ ] **4.5.5 — `_infer_category` y el atajo.** Una categoría desconocida deja de saltear los
+      dos chequeos y pasa a mirar **los dos** conjuntos de bloqueos; el atajo de
+      `_drop_blocked` se borra (ver corrección 2). El costo aceptado es más falsos positivos
+      del match por substring de `_any_token_matches`, y se acepta en esa dirección a
+      propósito: mostrar una tarjeta de menos es preferible a mostrarle carne a quien declaró
+      que no come carne.
+- [ ] **4.5.6 — Sangre: antigüedad del panel y encuadre no diagnóstico.** El contexto lleva
+      fecha y antigüedad —hoy `BloodAnalysisService.get_latest_values` ordena por
+      `analysis_date` y devuelve **solo** `values_json`, que es exactamente por qué la
+      antigüedad nunca se chequea—. Umbral de frescura (~180 días) y techo de obsolescencia
+      (~365) pasado el cual **no se emite consejo** y en su lugar sale una sola tarjeta de
+      "repetí el panel" con sujeto propio. Las 22 cadenas fijas pasan a llevar la fecha del
+      panel y un encuadre de observación-más-sugerencia-de-alimentos en vez de imperativo
+      médico; las derivaciones de TSH y creatinina **se quedan** (decirle a alguien que
+      consulte es lo correcto) pero atraviesan los filtros como todas. **Revisión de
+      `security-privacy` obligatoria**, por dato de salud y por encuadre.
+- [ ] **4.5.7 — Conectar `generate_for_household`.** Existe, filtra bien la asimetría
+      unión/intersección de 4.4.9 y tiene **cero llamadores**, así que todo el generador de
+      pantry y compras nunca llegó a nadie. Un loop de hogares en `suggestion_jobs` sobre
+      `HouseholdRepository.list_all()`, y la línea del `README` que dice que no hay llamador en
+      producción deja de ser cierta el mismo día.
+- [ ] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
+      `learning.attribute_index` con el grupo muscular / `ExerciseType.category` como atributo
+      (va después de 4.5.2 porque necesita el vocabulario unificado), y se unifica el
+      `freq_penalty` de `meal_generator:138-139` con el eje de saciedad del scorer: hoy un
+      alimento de todos los días se penaliza **dos veces** con dos números que no se conocen.
 
 **Archivos:** `app/jobs/{scheduler,notification_jobs,suggestion_jobs}.py`,
-`app/repositories/{notification_repo,user_repo,workout_repo}.py` + nuevo
-`app/repositories/household_repo.py`, `app/schemas/notification.py`,
-`app/services/{suggestion_service,meal_service,workout_service,pantry_service}.py`,
-`app/recommendations/{engine,scorer,filters}.py` + `generators/*.py`,
-`app/models/suggestion.py`, `app/web/profile.py` + template del panel de 4.4.8, nuevos
-`app/core/clock.py`, `app/recommendations/context.py` y
-`app/recommendations/learning.py`, nueva revisión `alembic/versions/0003_*.py`.
+`app/repositories/{notification_repo,user_repo,workout_repo,meal_repo,body_metric_repo,pantry_repo}.py`
++ nuevos `app/repositories/{household_repo,blood_repo}.py`, `app/schemas/notification.py`,
+`app/services/{suggestion_service,meal_service,workout_service,pantry_service,blood_analysis_service}.py`,
+`app/recommendations/{engine,scorer,filters,learning}.py` + `generators/*.py`,
+`app/models/suggestion.py`, `app/nlp/rules.py`, `seed.py`, `app/web/profile.py` + template del
+panel de 4.4.8, nuevos `app/core/clock.py` y `app/recommendations/context.py`, nueva revisión
+`alembic/versions/0003_*.py`, `AGENTS.md` (los números medidos del trinquete) y `README.md`.
 
 ---
 
