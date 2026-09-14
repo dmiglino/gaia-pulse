@@ -2913,11 +2913,27 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       sin etiqueta o demasiado lejos de ella; `tests/test_web_pages_populated.py` cubre la
       ruta de corrección y su aislamiento por usuario.
 
-**7.5 — Nombres de actividad en castellano**
+**7.5 — Nombres de actividad en castellano** — cerrada:
 
-- [ ] Migración `0004`: columna de alias en `exercise_types` (mismo shape que
-      `FoodItem.aliases_json`). Sembrar los alias en castellano de los 20 ejercicios, y que
-      el parser y `attribute_index` los resuelvan igual que ya hacen con los alimentos.
+- [x] Migración `0004`: columna `aliases_json` en `exercise_types` (mismo shape que
+      `FoodItem.aliases_json`). `seed.py` siembra los alias en castellano de los 20
+      ejercicios del catálogo (p. ej. "press de banca", "sentadilla", "peso muerto";
+      "yoga"/"pilates"/"hiit" quedan sin alias propio porque el préstamo ya es igual en los
+      dos idiomas). `ExerciseTypeRepository.known_names()` y `learning.activity_vocabulary`
+      leen esa columna igual que ya hacían del lado de comida, y `learning.subjects_in_text`
+      y `learning.attribute_index` resuelven un alias contra su nombre canónico sin que haga
+      falta tocar `rules._EXERCISE_MAP` (que sigue existiendo aparte, sin base de datos, para
+      los préstamos). Los dos vocabularios cerrados —el mapa de reglas en inglés y el alias
+      de catálogo en castellano— conviven sin pisarse: `subjects_in_text` ya normalizaba a
+      minúsculas y sin acentos todo lo que devuelve (`subject_key`/`normalize_subject`), del
+      lado de comida y ahora también del lado de ejercicio, así que "Bench Press" sale
+      siempre como `"bench press"` sin importar si lo escribió el alias o el canónico.
+      `tests/test_learning_signals.py` (4 tests nuevos, espejo exacto de los de comida:
+      alias resuelve al canónico, los dos vocabularios contribuyen sin colisión,
+      `activity_vocabulary` resuelve desde los dos extremos, el camino completo
+      motivo-en-castellano→candidato-en-inglés) y `tests/test_recommendations.py` (1 test
+      nuevo, espejo de `test_the_index_reads_the_catalogue_including_aliases`) cubren el
+      lado de ejercicios igual que sus pares ya cubrían el de comida.
 
 **7.6 — Objetivo nutricional declarado (por persona)**
 
@@ -3071,13 +3087,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y

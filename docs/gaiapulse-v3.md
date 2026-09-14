@@ -148,7 +148,7 @@ tiempo.**
 | Ya estaba en la v2 | Lo que la v3 cambió | Sigue igual a propósito |
 |---|---|---|
 | Babel/gettext con catálogo `es_AR` | `health/detail.html` tenía **cero** llamadas a `_()`; los valores de enum se mostraban con `|title` sin traducir; había plurales hardcodeados (`participant(s)`). Hoy el catálogo tiene **528 entradas y ninguna sin traducir**, y un test lo mantiene así | Un solo idioma además del inglés de los `msgid`. El catálogo se mantiene **a mano**: `pybabel update` borra los comentarios de sección y no se corre |
-| El parser de reglas era **de entrada en inglés**, y nada lo decía: sin un verbo reconocido la frase no llega a ningún parser, se guarda con `status="pending_confirmation"` y nada que confirmar — sin excepción, sin log, sin nada rojo | Traducir la interfaz y traducir la **entrada** son dos trabajos, y hasta la Fase 6 solo estaba hecho el primero: la pantalla de captura ofrecía en castellano ejemplos que su propio parser devolvía como `mixed` al 0.10. v3 cerró los seis grupos de disparadores **y todos sus lectores** —la frase entraba, se clasificaba bien y el número no se leía nunca ("dormí 7 horas" daba una medición vacía)—, más las dos cosas que el castellano hace distinto: la pluralidad viaja en el verbo ("cenamos fideos" es de los dos) y el tipo de comida también ("nadie escribe 'cené la cena'") | Los **nombres de ejercicio** siguen siendo ingleses: es una columna de alias en `exercise_types`, o sea una migración |
+| El parser de reglas era **de entrada en inglés**, y nada lo decía: sin un verbo reconocido la frase no llega a ningún parser, se guarda con `status="pending_confirmation"` y nada que confirmar — sin excepción, sin log, sin nada rojo | Traducir la interfaz y traducir la **entrada** son dos trabajos, y hasta la Fase 6 solo estaba hecho el primero: la pantalla de captura ofrecía en castellano ejemplos que su propio parser devolvía como `mixed` al 0.10. v3 cerró los seis grupos de disparadores **y todos sus lectores** —la frase entraba, se clasificaba bien y el número no se leía nunca ("dormí 7 horas" daba una medición vacía)—, más las dos cosas que el castellano hace distinto: la pluralidad viaja en el verbo ("cenamos fideos" es de los dos) y el tipo de comida también ("nadie escribe 'cené la cena'"). La 7.5 cerró el último tramo en inglés: `exercise_types.aliases_json` (migración `0004`) le da al catálogo de ejercicios el mismo alias en castellano que `FoodItem` ya tenía, y `attribute_index`/`subjects_in_text` lo resuelven igual | — |
 | Heroicons, foco visible, nav accesible por teclado | Botones icon-only sin `aria-label`, inputs sin label, tabs sin `role="tab"`, y **ningún** fragmento HTMX con `aria-live`. v3 los cubrió, y con la regla que importa: el `role="status"` va en el **contenedor** de la página, porque una región `aria-live` tiene que existir en el DOM antes de que su contenido cambie | Auditar leyendo el elemento y no grepeando el atributo: `grep '<button' \| grep -v aria-label` reporta como defecto todo botón multilínea |
 
 ### 3.5 La red de tests
@@ -239,17 +239,6 @@ toca terreno clínico (un objetivo que la app **propone** es prescripción nutri
 el dato de entrada todavía es flojo (los macros salen del catálogo y de una cantidad
 estimada por el parser; restar contra un número absoluto con ese margen da precisión
 falsa).
-
-**Nombres de actividad en castellano.** La Fase 6 hizo que el parser entienda castellano,
-pero el **vocabulario de ejercicios** quedó afuera a propósito, y la distinción importa:
-*"prefiero correr"* ahora se clasifica bien —como preferencia **de actividad** y no de
-comida, que era el error peor porque un "correr" tipado como alimento ensucia el filtro de
-comidas sin que se vea—, pero de la frase sale el texto "correr" y no una clave de
-ejercicio. De un nombre de actividad solo salen los préstamos: yoga, pilates, spinning,
-crossfit, cardio, running, hiit, zumba. Y **no alcanza con leer `ExerciseType` de la
-base**: el catálogo también está en inglés y no tiene columna de alias. Lo que falta es esa
-columna, o sea una migración: es un problema de datos, no de código, y por eso no entró en
-un punto que no abre migraciones.
 
 **Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
 escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
