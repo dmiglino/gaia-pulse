@@ -1447,9 +1447,12 @@ class TestEveryCandidateDeclaresItsSubject:
                 strength=1.0,
             )
         ]
-        # Sin entrenamientos: empujón de constancia + rotación + preferida + catálogo
+        #: Sin entrenamientos: empujón de constancia + rotación + preferida. La cuarta era
+        #: una de las ocho actividades hardcodeadas, y desde la 4.5.2 la tarjeta con nombre de
+        #: ejercicio sale del catálogo —que en los tests está vacío a propósito—. Que con el
+        #: catálogo sembrado aparezcan las de catálogo lo cubre `test_activity_generator.py`.
         candidates = activity_generator.generate(diego, preferences, build_user_context(db, diego))
-        self._assert_subjects(candidates, 4)
+        self._assert_subjects(candidates, 3)
 
     def test_activity_generator_after_training_today(self, db: Session, diego: User) -> None:
         """La rama del descanso: la única que solo aparece si entrenó hoy."""

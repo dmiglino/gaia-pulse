@@ -170,6 +170,66 @@ ATTRIBUTE_SUBJECT_TYPES: frozenset[str] = frozenset(
 #: como evidencia de *otra* franja cuando se evalúa el desayuno.
 MEAL_SLOTS: frozenset[str] = frozenset({"breakfast", "brunch", "lunch", "snack", "dinner"})
 
+#: Los grupos musculares que la app nombra. Vocabulario **único**: hasta la 4.5.2 había
+#: tres y no coincidían —`activity_generator._MUSCLE_RECOVERY` y `nlp/rules._EXERCISE_MAP`
+#: usaban los mismos ocho (`chest, shoulders, triceps, biceps, back, legs, core, cardio`)
+#: mientras `seed.py` escribía `arms` y `full_body`, que no tenían ventana, y nunca escribía
+#: `triceps`, `biceps` ni `cardio`—. No molestaba porque nadie leía `ExerciseType`; el día
+#: que el catálogo entra en la lógica de recuperación, entra su vocabulario con él.
+#:
+#: El conjunto es la **unión** y no la intersección, y esa es la decisión: bajar el catálogo
+#: a los ocho del NLP obligaría a partir `arms` en tríceps y bíceps, que es una distinción
+#: que ningún dato sostiene (nadie registra "Dumbbell Curl" declarando el bíceps aparte del
+#: tríceps), mientras que subir el NLP a la unión es un alias en un mapa. Con esta lista
+#: `seed.py` ya conforma sin tocar una fila.
+#:
+#: Vive acá y no en el generador por la misma razón que `MEAL_SLOTS`: es vocabulario, y el
+#: vocabulario es de este módulo. Las **ventanas** de recuperación no están acá —son una
+#: regla, y las reglas son de cada generador—.
+MUSCLE_GROUPS: frozenset[str] = frozenset(
+    {
+        "chest",
+        "shoulders",
+        "arms",
+        "back",
+        "legs",
+        "core",
+        "cardio",
+        "full_body",
+    }
+)
+
+#: Lo que se dijo → lo que significa. Las dos primeras son la razón por la que este mapa
+#: existe: `_EXERCISE_MAP` emitía `triceps` y `biceps` como grupos propios y el catálogo los
+#: escribe a los dos como `arms`, así que sin el alias el mismo músculo entrenado quedaba en
+#: dos claves distintas según quién lo registró —el NLP o el seed— y ninguna de las dos veía
+#: el estímulo de la otra.
+#:
+#: El resto son los sinónimos que una captura en castellano deja pasar (`abs`, `abdominals`,
+#: `glutes`) y las formas alternativas del mismo string (`full body` con espacio, que es lo
+#: que escribiría cualquiera que no supiera que la columna usa guión bajo). No es un
+#: traductor: el mapa recibe nombres ya normalizados por `normalize_subject`, que baja a
+#: minúsculas y saca tildes, y **no** intenta cubrir el castellano entero — eso lo hace
+#: `nlp/rules.py`, que es quien lee lenguaje natural.
+_MUSCLE_GROUP_ALIASES: dict[str, str] = {
+    "triceps": "arms",
+    "biceps": "arms",
+    "arm": "arms",
+    "abs": "core",
+    "abdominals": "core",
+    "abdomen": "core",
+    "glutes": "legs",
+    "quads": "legs",
+    "hamstrings": "legs",
+    "calves": "legs",
+    "shoulder": "shoulders",
+    "delts": "shoulders",
+    "lats": "back",
+    "full body": "full_body",
+    "fullbody": "full_body",
+    "cardiovascular": "cardio",
+}
+
 
 #: Cuántos días tarda una señal en pesar la mitad, según de dónde salió. Sin esto una
 #: señal de hace ocho meses pesaba **exactamente igual** que la de ayer, así que un gusto
@@ -350,6 +410,29 @@ def normalize_subject(name: str) -> str:
 def subject_key(subject_type: str, subject_name: str) -> tuple[str, str]:
     """La clave con la que se comparan dos sujetos: el tipo, más el nombre normalizado."""
     return (subject_type.strip().lower(), normalize_subject(subject_name))
+
+
+def normalize_muscle_group(raw: str) -> str:
+    """Un grupo muscular en su forma canónica, o el nombre normalizado si no se conoce.
+
+    Devuelve el nombre tal cual cuando ya es canónico, el canónico cuando lo que llegó es un
+    alias (`triceps` → `arms`), y el nombre **normalizado pero intacto** cuando no está en
+    ninguno de los dos lados. Ese último caso es el default documentado que la 4.5.2 pide en
+    lugar de un `KeyError` o un silencio, y devuelve el nombre y no un `"other"` a propósito:
+    mapear todo lo desconocido a una sola clave fusionaría grupos distintos en uno —dos
+    músculos que nadie nombró todavía compartirían ventana y se taparían el estímulo—, y
+    `WorkoutExerciseRepository.get_user_muscle_groups_trained` ya gastó `"other"` para
+    significar otra cosa (`muscle_group IS NULL`).
+
+    O sea: para **leer** un estímulo, un grupo desconocido sigue siendo su propio grupo. Para
+    **proponer** una rotación, quien propone recorre `MUSCLE_GROUPS`, que es cerrado, así que
+    un grupo desconocido nunca se sugiere. Las dos direcciones son distintas y ninguna
+    inventa.
+    """
+    normalized = normalize_subject(raw)
+    if normalized in MUSCLE_GROUPS:
+        return normalized
+    return _MUSCLE_GROUP_ALIASES.get(normalized, normalized)
 
 
 def candidate_subject(candidate: dict[str, Any]) -> tuple[str, str] | None:
@@ -856,14 +939,20 @@ def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
     diccionario, así que sigue siendo una función de sus argumentos y se puede testear sin
     sesión—.
 
-    Los ejercicios **no** están todavía, y no es un olvido: los candidatos de actividad
-    salen de una lista de ocho actividades escrita a mano en `activity_generator`, cuyos
-    nombres en su mayoría no existen en el catálogo de `ExerciseType` ("biking" contra
-    "Cycling", "gym" y "swimming" que no están), así que el atributo resolvería para unos y
-    para otros no, en silencio. Reemplazar esa lista por el catálogo es la 4.5, y ahí los
-    ejercicios entran acá con el mismo shape —una entrada más en este índice, ninguna otra
-    cosa cambia—. Cuál de sus dos atributos discrimina depende de ese mismo reemplazo: para
-    una actividad es la intensidad, para un ejercicio de gimnasio es el grupo muscular.
+    Los ejercicios **no** están todavía, y lo que falta ya no es la lista hardcodeada: la
+    4.5.2 la sacó y los candidatos de actividad salen del catálogo de `ExerciseType`. Lo que
+    falta es que los dos lados usen el mismo nombre. El catálogo está en inglés ("Bench
+    Press", "Cycling") y las señales de `repeated_activity` las escribe una captura en
+    castellano ("press de banca", "bicicleta"), y `ExerciseType` **no tiene `aliases_json`**
+    —`FoodItem` sí, y es exactamente por eso que los alimentos resuelven acá—. Sin esa
+    columna un índice de ejercicios se llenaría de entradas que ninguna señal matchea: no
+    resolvería mal, resolvería nada.
+
+    Agregar la columna es una migración y v3 no tiene presupuesto de migración (`0003` está
+    gastada), así que la 4.5.8 entra por el otro lado: el grupo muscular, que **sí** comparten
+    los dos vocabularios desde que existe `MUSCLE_GROUPS`. Un candidato de catálogo declara su
+    grupo y una captura lo graba con la misma clave, así que ahí el atributo discrimina de
+    verdad. La intensidad queda para cuando el nombre del ejercicio pueda resolverse.
     """
     index: dict[tuple[str, str], tuple[str, str]] = {}
     for canonical_name, category, aliases in FoodRepository(db).name_categories():

@@ -35,6 +35,7 @@ from app.core.clock import as_utc, local_now, local_today, to_local
 from app.models.meal import MealItemConsumed
 from app.models.user import User
 from app.models.workout import ExerciseType
+from app.recommendations.learning import normalize_muscle_group
 from app.repositories.body_metric_repo import BodyMetricRepository
 from app.repositories.meal_repo import MealRepository
 from app.repositories.workout_repo import ExerciseTypeRepository, WorkoutRepository
@@ -180,6 +181,11 @@ class UserContext:
     #: Días desde el último estímulo, por grupo muscular. Un grupo **ausente** de este
     #: mapa nunca se entrenó, que es distinto de "hace mucho": la diferencia decide si
     #: la app propone empezar o propone volver.
+    #:
+    #: Las claves están en el vocabulario de `learning.MUSCLE_GROUPS` —o son el nombre
+    #: normalizado, cuando la columna trae algo que el vocabulario no conoce—, así que un
+    #: `triceps` grabado por el NLP y un `arms` grabado por el catálogo son **un** grupo acá.
+    #: Sin eso el generador veía dos, y cada uno se perdía el estímulo del otro.
     days_since_muscle_group: Mapping[str, int] = field(default_factory=dict)
     #: RPE anotados en la ventana, del más reciente al más viejo.
     recent_effort: tuple[int, ...] = ()
@@ -211,8 +217,12 @@ class UserContext:
         return round(sum(self.recent_effort) / len(self.recent_effort), 1)
 
     def days_since_training(self, muscle_group: str) -> int | None:
-        """Días desde el último estímulo de ese grupo, o `None` si nunca."""
-        return self.days_since_muscle_group.get(muscle_group.strip().lower())
+        """Días desde el último estímulo de ese grupo, o `None` si nunca.
+
+        Pregunta por el grupo canónico: quien pregunte por "triceps" recibe lo que sabemos de
+        "arms", porque es el mismo músculo con dos nombres y el mapa está armado con uno solo.
+        """
+        return self.days_since_muscle_group.get(normalize_muscle_group(muscle_group))
 
 
 def build_user_context(db: Session, user: User) -> UserContext:
@@ -256,11 +266,7 @@ def build_user_context(db: Session, user: User) -> UserContext:
             float(m.sleep_hours) for m in reversed(metrics) if m.sleep_hours is not None
         ),
         days_since_last_workout=_days_since(last_workout, now),
-        days_since_muscle_group={
-            group: days
-            for group, moment in last_by_group.items()
-            if (days := _days_since(moment, now)) is not None
-        },
+        days_since_muscle_group=_days_since_by_group(last_by_group, now),
         recent_effort=tuple(
             workout_repo.get_recent_perceived_effort(
                 user.id, household_id, days=_EFFORT_WINDOW_DAYS
@@ -272,6 +278,34 @@ def build_user_context(db: Session, user: User) -> UserContext:
         exercise_catalog=tuple(ExerciseTypeRepository(db).list_all()),
         blood_panel=_blood_panel(db, user.id, today),
     )
+
+
+def _days_since_by_group(last_by_group: Mapping[str, datetime], now: datetime) -> dict[str, int]:
+    """Días desde el último estímulo por grupo **canónico**.
+
+    La colapsada de alias pasa acá y no en el repositorio por la regla de capas:
+    `repositories/` es la capa de abajo y no puede importar de `app/recommendations/`, que es
+    donde vive el vocabulario. Y no pasa en el generador porque entonces cada generador que
+    quisiera leer el mapa tendría que colapsarlo de nuevo — el contrato de este módulo es
+    "una sola lectura por corrida", y una clave que significa dos cosas distintas según quién
+    la lea no es una sola lectura.
+
+    Cuando dos claves crudas caen en el mismo grupo (`triceps` y `arms`) gana **la más
+    reciente**, o sea el menor número de días: el músculo se entrenó ese día, y quedarse con
+    la más vieja diría que hace más tiempo del que hace y propondría volver a algo que se
+    hizo ayer.
+    """
+    collapsed: dict[str, int] = {}
+    for raw_group, moment in last_by_group.items():
+        days = _days_since(moment, now)
+        if days is None:
+            continue
+        group = normalize_muscle_group(raw_group)
+        if not group:
+            continue
+        current = collapsed.get(group)
+        collapsed[group] = days if current is None else min(current, days)
+    return collapsed
 
 
 def _days_since(moment: datetime | None, now: datetime) -> int | None:

@@ -228,8 +228,13 @@ class SuggestionService:
           "crossfit", "cardio", "running", "hiit", "zumba"—. Lo que no aparece es lo que la
           casa escribiría en castellano y el mapa no tiene: *"odio correr"*, *"caminar"*,
           *"pesas"* no enseñan nada hoy. Ensancharlo toca el parser de capturas y no solo
-          esto, y la 4.5 reemplaza esa lista fija por `ExerciseType` de todos modos: ahí es
-          donde corresponde, con los nombres que la base ya tiene.
+          esto. Y **no alcanza con cambiar la lista por `ExerciseType`** —que es lo que la
+          4.5 daba por hecho—: el catálogo también está en inglés ("Bench Press",
+          "Cycling") y no tiene `aliases_json` donde poner la forma castellana, así que el
+          cambio movería los nombres de lugar sin ganar un solo término. Lo que falta es la
+          columna de alias, o sea una migración; `docs/v3-plan.md` lo deja anotado como el
+          problema de datos que es. Lo que la 4.5.2 **sí** unificó es el grupo muscular, que
+          es por dónde entra el aprendizaje de ejercicios mientras el nombre no resuelva.
         """
         reason = (feedback.feedback_notes or "").strip()
         if not reason:
@@ -293,9 +298,7 @@ class SuggestionService:
                 len(mined),
             )
 
-    def save_preference(
-        self, user_id: int, data: RecommendationPreferenceCreate
-    ) -> None:
+    def save_preference(self, user_id: int, data: RecommendationPreferenceCreate) -> None:
         self.repo.upsert_preference(
             user_id=user_id,
             item_type=data.item_type,

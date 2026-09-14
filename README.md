@@ -344,7 +344,7 @@ The engine lives in `app/recommendations/` and is composed of four stages.
 Three generators produce raw suggestion dicts:
 
 - **`meal_generator`** — suggests meals based on recent eating patterns, pantry availability, and nutritional goals
-- **`activity_generator`** — suggests workouts based on workout history, preferred activities, and recovery signals
+- **`activity_generator`** — suggests workouts from the seeded `ExerciseType` catalog, the person's preferred activities, and a per-muscle-group recovery window: it proposes the group that has been past *its* window the longest (legs need 3 days, core 1), never a group still recovering, and no high-intensity exercise the day after a session. The muscle-group vocabulary is `learning.MUSCLE_GROUPS`, which the catalog and the NLP's exercise map both conform to. With an empty catalog — a freshly created database — it emits its rest, consistency and rotation cards and logs that it has no named exercises to offer, rather than falling back to a hardcoded list
 - **`pantry_generator`** — identifies low-stock items and shopping recommendations at the household level
 
 ### Stage 2 — Hard constraint filtering (`filters.py`)

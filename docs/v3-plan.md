@@ -1867,7 +1867,7 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       ejercicios vacío). El que más importa es el del borde de día: una comida de las 22:00
       locales le sumaba los macros al día UTC siguiente, y el test lo fija derivando el instante
       del offset configurado en vez de asumir que la app corre en Buenos Aires.
-- [ ] **4.5.2 — Catálogo de ejercicios real y ventanas de recuperación que sean ventanas.**
+- [x] **4.5.2 — Catálogo de ejercicios real y ventanas de recuperación que sean ventanas.**
       Fuera `_DEFAULT_ACTIVITIES` (las 8 hardcodeadas), dentro `ExerciseType` (20 filas que
       `seed.py:160-180` siembra y que `docker-compose.yml:44` corre al arrancar). Y
       `_MUSCLE_RECOVERY` deja de ser una lista de claves: hoy `rested_muscles = set(claves) −
@@ -1892,6 +1892,62 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       siembra—, así que hace falta un camino honesto para catálogo vacío: no emitir tarjeta con
       nombre de actividad (las de descanso, constancia y balance muscular no necesitan nombre)
       y loguearlo una vez. Eso permite borrar las 8 sin reponerlas disfrazadas de fallback.
+- [x] **El vocabulario único se resolvió como la *unión*, y por eso el seed no cambió una
+      fila.** `learning.MUSCLE_GROUPS` son los ocho del NLP más `arms` y `full_body` menos
+      `triceps`/`biceps`, o sea `chest, shoulders, arms, back, legs, core, cardio, full_body`, con
+      `normalize_muscle_group()` y una tabla de alias al lado. Bajar el catálogo a los ocho del
+      NLP habría obligado a partir `arms` en tríceps y bíceps —una distinción que ningún dato de
+      esta casa sostiene—, mientras subir el NLP a la unión son **dos entradas** de
+      `_EXERCISE_MAP` (`"triceps"` y `"biceps"` pasan a emitir `arms`) y cero filas de `seed.py`.
+      La normalización tiene dos direcciones distintas a propósito: **leyendo** un estímulo un
+      grupo desconocido se queda con su propio nombre (mapearlo a `"other"` fusionaría grupos
+      distintos, y `"other"` ya significa `muscle_group IS NULL` en
+      `get_user_muscle_groups_trained`), **proponiendo** una rotación solo salen los ocho.
+      Las ventanas **no** viven en `learning.py`: el vocabulario es vocabulario y cuántos días
+      tarda un grupo en recuperarse es una regla del generador.
+- [x] **El default de un grupo desconocido son 2 días y está en un test, no en un `assert` de
+      import.** Tres lugares tienen que coincidir —`_RECOVERY_DAYS`, `_ROTATION_PRIORITY` y
+      `MUSCLE_GROUPS`— y lo fija `TestVocabularyAndWindowsAgree` (incluido el seed, parseado del
+      archivo con `ast.literal_eval` porque el seed no corre en los tests). Un `assert` al
+      importar el módulo se lleva la app entera puesta al arrancar; un test rojo no.
+      `_ROTATION_PRIORITY` se declara y **no** se deriva del orden del dict: reusar la
+      inserción convertiría en silencio "cuánto tarda en recuperarse" en "cuánto importa".
+- [x] **El bug de determinismo estaba en dos lugares, no en uno.** El `sorted(rested)[0]` del
+      músculo era el conocido. El otro es que `ExerciseTypeRepository.list_all()` ordena por
+      nombre, así que elegir la primera fila del catálogo habría dado *siempre* "Barbell Row" y
+      "Bench Press" —la misma tarjeta para siempre, el mismo bug con otra cara—. Las dos
+      elecciones ordenan ahora por *cuánto hace que el grupo pasó su ventana*, con desempate por
+      prioridad declarada, y el catálogo emite **una fila por `category`** (dos ejercicios de
+      fuerza son la misma propuesta con distinto nombre).
+- [x] **"Nunca entrenaste esto" y "hace ocho días" son dos tarjetas distintas.** El contexto
+      distingue el caso —la clave no está— y el generador lo respeta: decirle "volvé" a alguien
+      que nunca fue es cómo una app revela que no está mirando. Un grupo nunca entrenado gana
+      sobre todo lo atrasado.
+- [x] **`ExerciseType` no tiene `aliases_json`, y eso cambia por dónde entra la 4.5.8.** El plan
+      daba por hecho que reemplazar la lista del NLP por el catálogo era lo correcto "porque ahí
+      viven los nombres". No: el catálogo también está en inglés ("Bench Press", "Cycling")
+      mientras las capturas de esta casa están en castellano ("press de banca", "bicicleta"), y a
+      diferencia de `FoodItem` —que sí tiene `aliases_json`, y es por qué del lado de la comida
+      el catálogo resuelve— `ExerciseType` no tiene dónde poner las dos formas. Sin esa columna
+      el match por nombre no acierta casi nunca, y agregarla es una migración que v3 no tiene
+      (la `0003` está gastada). Consecuencia concreta: **la 4.5.8 entra por el grupo muscular y
+      no por el nombre del ejercicio**, que es justo lo que este punto unificó. Corregido en los
+      tres lugares que afirmaban lo otro: `rules.find_known_activities`,
+      `workout_service.log_workout` y `suggestion_service._mine_reason`.
+- [x] **Los nombres del catálogo en inglés son un problema de datos, no de msgids.** "Bench
+      Press" y "Barbell Row" ahora se muestran, así que la Fase 5 se los va a encontrar: no se
+      arreglan con `_()` —son filas, no literales— sino traduciendo el seed o agregando la
+      columna de alias. Queda anotado para las Fases 5 y 6 en vez de descubrirse extrayendo.
+- [x] 26 tests nuevos en `tests/test_activity_generator.py`, en su propio módulo porque lo que
+      cambió es una **conducta** y no un contador de candidatos: qué grupo se propone y por qué
+      ese, el empate que rompe por prioridad y no alfabéticamente (armado sumando los mismos días
+      a la ventana de cada grupo, porque el mismo `days_since` para todos **no** es empate), el
+      alias que colapsa —un `triceps` capturado aparece como `arms` a 0 días—, y el catálogo
+      vacío que no emite tarjeta con nombre y lo loguea. El fixture del catálogo es **opt-in a
+      propósito**: uno `autouse` haría que ningún test volviera a medir el caso real de la base
+      recién creada, que es el que fija `test_user_context.py::test_the_exercise_catalog_can_be_empty`.
+      La suite pasa de 593 a **619**, y los 4 errores de mypy que `activity_generator` arrastraba
+      (reuso de variable de loop) desaparecen con la reescritura: 46 → 42.
 - [ ] **4.5.3 — Macros: contar lo que se puede contar, y decir cuánto se contó.** Un
       `MacroTotals` que lleve `items_counted`/`items_total`, porque el total honesto no es el
       total: sumar necesita `food_item_id` **y** una cantidad convertible a gramos, y
@@ -1936,8 +1992,11 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       `HouseholdRepository.list_all()`, y la línea del `README` que dice que no hay llamador en
       producción deja de ser cierta el mismo día.
 - [ ] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
-      `learning.attribute_index` con el grupo muscular / `ExerciseType.category` como atributo
-      (va después de 4.5.2 porque necesita el vocabulario unificado), y se unifica el
+      `learning.attribute_index` con el **grupo muscular** como atributo (va después de 4.5.2
+      porque necesita el vocabulario unificado). `ExerciseType.category` queda afuera y no es un
+      olvido: llegar a la categoría pide resolver el nombre capturado contra el catálogo, y
+      4.5.2 midió que eso no se puede sin `aliases_json` — el grupo, en cambio, las dos puntas ya
+      lo escriben normalizado. Y se unifica el
       `freq_penalty` de `meal_generator:138-139` con el eje de saciedad del scorer: hoy un
       alimento de todos los días se penaliza **dos veces** con dos números que no se conocen.
 

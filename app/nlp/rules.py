@@ -283,6 +283,17 @@ def _extract_time_ref(text: str) -> str | None:
 # Exercise extraction
 # ---------------------------------------------------------------------------
 
+#: Palabra suelta → (nombre canónico del ejercicio, grupo muscular).
+#:
+#: Los grupos que salen de acá tienen que estar en `learning.MUSCLE_GROUPS`, que es el
+#: vocabulario único desde la 4.5.2: lo que se graba leyendo una captura y lo que el
+#: generador de actividad propone se comparan por esta clave, y hasta la 4.5.2 no coincidían
+#: —este mapa emitía `triceps` y `biceps` como grupos propios y el catálogo escribe los dos
+#: como `arms`, así que el mismo músculo quedaba en dos claves y ninguna veía el estímulo de
+#: la otra—. El **nombre** del ejercicio sigue siendo el que se dijo (se muestra en la
+#: pantalla de entrenamientos); lo que conforma al vocabulario es el grupo. Un test lo fija
+#: (`test_every_muscle_group_the_nlp_emits_is_in_the_vocabulary`) para que la próxima entrada
+#: no lo rompa en silencio.
 _EXERCISE_MAP: dict[str, tuple[str, str | None]] = {
     # name: (canonical_name, muscle_group)
     "gym": ("gym", None),
@@ -298,8 +309,8 @@ _EXERCISE_MAP: dict[str, tuple[str, str | None]] = {
     "weights": ("weight training", None),
     "chest": ("chest press", "chest"),
     "shoulders": ("shoulder press", "shoulders"),
-    "triceps": ("triceps", "triceps"),
-    "biceps": ("biceps", "biceps"),
+    "triceps": ("triceps", "arms"),
+    "biceps": ("biceps", "arms"),
     "back": ("back", "back"),
     "legs": ("legs", "legs"),
     "squats": ("squats", "legs"),
@@ -397,9 +408,14 @@ def find_known_activities(text: str) -> list[str]:
     "running", "hiit", "zumba", "core", "gym"— pero la contracara es la que importa: lo que
     la casa escribiría en castellano y el mapa **no** conoce no aparece. *"Odio correr"*,
     *"caminar"*, *"pesas"*, *"natación"* no devuelven nada. Ensanchar el mapa cambiaría
-    también lo que reconoce una captura, así que no se hace de contrabando acá; la 4.5
-    reemplaza esta lista fija por `ExerciseType`, que es donde los nombres ya viven en la
-    base.
+    también lo que reconoce una captura, así que no se hace de contrabando acá.
+
+    Y no lo arregla el catálogo, aunque la 4.5 lo diera por hecho: `ExerciseType` **también**
+    está en inglés ("Bench Press", "Cycling", "Walking") y encima no tiene `aliases_json`
+    donde poner las formas castellanas —`FoodItem` sí la tiene, que es por qué del lado de la
+    comida esto funciona—. Cambiar este mapa por el catálogo movería los nombres de un lugar a
+    otro sin ganar un solo término en castellano. Lo que falta es la columna de alias, o sea
+    una migración; queda anotado en `docs/v3-plan.md` como problema de datos, no de código.
 
     Devuelve solo el nombre, no el `ExerciseRef`: el grupo muscular que `_EXERCISE_MAP`
     también sabe queda afuera a propósito, porque deducir de una frase un veto a un grupo

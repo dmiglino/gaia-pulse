@@ -637,8 +637,10 @@ class TestBuildUserContext:
     def test_the_exercise_catalog_can_be_empty(self, db: Session, diego: User) -> None:
         """Ningún fixture siembra `ExerciseType`, y eso es parte del contrato.
 
-        Quien lo use tiene que funcionar con cero filas en vez de reponer una lista fija
-        —que es exactamente lo que hace hoy `activity_generator._DEFAULT_ACTIVITIES` y lo
-        que 4.5.2 va a cambiar.
+        Quien lo use tiene que funcionar con cero filas en vez de reponer una lista fija.
+        `activity_generator` lo cumple desde la 4.5.2: con el catálogo vacío no emite tarjeta
+        con nombre de ejercicio y lo loguea, en vez de volver a las ocho actividades escritas
+        a mano. Cualquier fixture que siembre el catálogo tiene que ser **opt-in**: si fuera
+        `autouse` este test dejaría de medir el caso que la app se encuentra al arrancar.
         """
         assert build_user_context(db, diego).exercise_catalog == ()

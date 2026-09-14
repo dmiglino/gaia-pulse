@@ -37,11 +37,25 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
 - `app/recommendations/learning.py` is not a fifth stage: it is the shared
   vocabulary of what the app learns —what a subject is (`subject_type` +
   `subject_name`), which `signal_type`s count, temporal decay, confidence by
-  evidence, the attribute level, the time-of-day slot— and both `filters.py`
-  and `scorer.py` read it. New learning logic goes there, not into the stage
-  that happens to need it: a reader and a writer with separate copies of the
-  vocabulary is exactly how `repeated_purchase` ended up in the scorer's
-  positive list with nobody ever writing it.
+  evidence, the attribute level, the time-of-day slot, the muscle groups— and
+  both `filters.py` and `scorer.py` read it. New learning logic goes there, not
+  into the stage that happens to need it: a reader and a writer with separate
+  copies of the vocabulary is exactly how `repeated_purchase` ended up in the
+  scorer's positive list with nobody ever writing it.
+- **The muscle groups are `learning.MUSCLE_GROUPS`, and three places have to
+  agree with it**: that set, `activity_generator._RECOVERY_DAYS` (how many days
+  each group takes to recover) and `activity_generator._ROTATION_PRIORITY` (the
+  tie-break order). `nlp/rules._EXERCISE_MAP` and `seed.py` conform to it too —
+  an exercise *name* stays as it was said, because it is displayed; only its
+  group conforms. `TestVocabularyAndWindowsAgree` fails when they drift; there
+  is deliberately no import-time `assert`, since a module that explodes on load
+  takes the app with it. Note what does **not** live in `learning.py`: the
+  recovery windows themselves. A vocabulary says which groups exist; how long
+  legs need is a rule of the generator that proposes.
+  `normalize_muscle_group()` has two directions on purpose — **reading** a
+  stimulus keeps an unknown group under its own name (mapping it to `"other"`
+  would merge distinct groups, and `"other"` already means `muscle_group IS
+  NULL`), **proposing** a rotation draws only from the closed set.
 - `learning.record_signal()` is the only path that writes a
   `BehaviorSignal` — it validates `subject_type` against `SUBJECT_TYPES` and
   normalizes the name before storing, so a service must never reach for
@@ -71,10 +85,18 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   is what fails; re-derive the bound rather than adjusting the test.
 - When extending intent types or generators, add deterministic
   fixtures/unit tests (`tests/test_nlp.py`, `tests/test_recommendations.py`,
-  `tests/test_learning_signals.py`, `tests/test_household_learning.py`) that
-  don't require a live OpenAI call. The last one guards the union/intersection
-  asymmetry: leave it out of the command and the two rules can be merged into
-  one with the suite still green.
+  `tests/test_learning_signals.py`, `tests/test_household_learning.py`,
+  `tests/test_user_context.py`, `tests/test_activity_generator.py`) that
+  don't require a live OpenAI call. `test_household_learning.py` guards the
+  union/intersection asymmetry: leave it out of the command and the two rules
+  can be merged into one with the suite still green. The split of the last two
+  is the same idea one level down: `test_recommendations.py` checks that every
+  generator declares a valid subject, and those two check that the app *chooses*
+  well — which group, why that one, and what it says when a catalog is empty.
+  **`ExerciseType` is not seeded in tests, and no fixture may make it
+  `autouse`**: an empty catalog is the state of a freshly created database, so
+  an automatic fixture would stop anything from measuring the path the app
+  actually meets at startup (`test_user_context.py::test_the_exercise_catalog_can_be_empty`).
 
 ## Do not
 

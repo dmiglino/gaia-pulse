@@ -83,16 +83,30 @@ class WorkoutService:
                 )
                 #: Y el grupo muscular, que es el sujeto de la rotación que propone
                 #: `activity_generator`. Sale de la columna de la captura y no del
-                #: catálogo: cuando el ejercicio viene sin grupo no se inventa uno
-                #: —resolverlo contra `ExerciseType` es parte de la 4.5, que es donde el
-                #: catálogo entero deja de estar ignorado—.
+                #: catálogo: cuando el ejercicio viene sin grupo no se inventa uno.
+                #:
+                #: Resolverlo contra `ExerciseType` —lo que la 4.5 daba por hecho— **no se
+                #: hace**, y la razón es de datos y no de alcance: el catálogo está en inglés
+                #: ("Bench Press", "Cycling") mientras las capturas de esta casa están en
+                #: castellano ("press de banca", "bicicleta"), y `ExerciseType` no tiene
+                #: `aliases_json` donde poner las dos formas —`FoodItem` sí, que es por qué del
+                #: lado de la comida el catálogo resuelve—. Sin esa columna el match por nombre
+                #: no acertaría casi nunca, y agregarla es una migración que v3 no tiene.
+                #: `docs/v3-plan.md` lo deja anotado como el pendiente que es.
+                #:
+                #: Lo que **sí** conforma es el vocabulario: el grupo pasa por
+                #: `normalize_muscle_group`, así que un "triceps" dicho en una captura y el
+                #: "arms" que escribe el catálogo son el mismo sujeto y no dos. Sin esto la
+                #: señal y el candidato tenían claves distintas y ninguno veía al otro.
+                #: La columna `WorkoutExercise.muscle_group` queda como se capturó, porque es
+                #: lo que la pantalla de entrenamientos muestra.
                 if ex_data.muscle_group:
                     learning.record_signal(
                         self.db,
                         user_id=p_data.user_id,
                         signal_type="repeated_activity",
                         subject_type="muscle_group",
-                        subject_name=ex_data.muscle_group,
+                        subject_name=learning.normalize_muscle_group(ex_data.muscle_group),
                         value=self._effort_weight(ex_data.perceived_effort),
                         source_type="implicit",
                         source_entity_type="workout_session",
