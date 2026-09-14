@@ -37,6 +37,7 @@ from app.schemas.workout import (
     WorkoutParticipantCreate,
     WorkoutSessionCreate,
 )
+from app.services.learning_service import GROUP_ORDER
 from app.services.meal_service import MealService
 from app.services.pantry_service import PantryService
 from app.services.suggestion_service import SuggestionService
@@ -860,3 +861,20 @@ def test_every_signal_type_the_reader_knows_has_a_writer() -> None:
         f"arregló: {orphaned}. O se les da un escritor, o salen de las listas de "
         "`app/recommendations/learning.py`."
     )
+
+
+def test_every_subject_type_the_engine_learns_has_a_place_in_the_panel() -> None:
+    """Lo mismo que el test de arriba, para el otro vocabulario: los tipos de sujeto.
+
+    El panel de la 4.4.8 recorre `GROUP_ORDER` —una tupla, porque un conjunto no tiene
+    orden y una tabla que se reordena entre dos visitas parece que estuviera aprendiendo
+    cuando no pasó nada— y `learned_subjects` devuelve solo tipos de `SUBJECT_TYPES`. Los
+    dos tienen que cubrir exactamente lo mismo: un tipo que el motor aprende y el panel no
+    lista es la opacidad que la 4.4.8 vino a arreglar, y al revés es un grupo que no puede
+    tener filas.
+
+    Este test es lo que sostiene que `learned_profile` no necesite una rama para los tipos
+    que falten. Sin él, esa rama sería código defensivo que nadie ejecuta —y que por lo
+    tanto nadie sabe si funciona— en lugar de una obligación verificada.
+    """
+    assert set(GROUP_ORDER) == learning.SUBJECT_TYPES

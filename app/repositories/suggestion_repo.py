@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -49,9 +49,7 @@ class SuggestionRepository(BaseRepository[Suggestion]):
         )
         return list(self.db.scalars(stmt).all())
 
-    def get_owned(
-        self, suggestion_id: int, user_id: int, household_id: int
-    ) -> Suggestion | None:
+    def get_owned(self, suggestion_id: int, user_id: int, household_id: int) -> Suggestion | None:
         """Una sugerencia, solo si es de quien pregunta.
 
         `respond_to_suggestion` hacía `self.repo.get(suggestion_id)` y nada más: con
@@ -85,9 +83,7 @@ class SuggestionRepository(BaseRepository[Suggestion]):
     #: borró en lugar de arreglarse por duplicado.
 
     def get_user_preferences(self, user_id: int) -> list[RecommendationPreference]:
-        stmt = select(RecommendationPreference).where(
-            RecommendationPreference.user_id == user_id
-        )
+        stmt = select(RecommendationPreference).where(RecommendationPreference.user_id == user_id)
         return list(self.db.scalars(stmt).all())
 
     def upsert_preference(
@@ -134,19 +130,70 @@ class BehaviorSignalRepository(BaseRepository[BehaviorSignal]):
         user_id: int,
         signal_type: str | None = None,
         entity_type: str | None = None,
-        limit: int = 200,
+        limit: int | None = 200,
+        since: datetime | None = None,
     ) -> list[BehaviorSignal]:
+        """Las señales de *user_id*, siempre y solo de *user_id* (regla 4 de `AGENTS.md`).
+
+        *since* y `limit=None` existen para el panel de la 4.4.8, que necesita **todo** lo
+        que el motor lee y no las 200 filas más nuevas: una lista recortada le mostraría a
+        la persona menos de lo que le está moviendo las sugerencias, y sin decírselo. El
+        horizonte lo pone quien llama, con la misma constante que usa el motor
+        (`learning.SIGNAL_HORIZON_DAYS`), así que la consulta queda acotada por fecha en vez
+        de por cantidad — que es como el motor ya consultaba esta tabla.
+
+        *entity_type* se compara **normalizado** y no por igualdad cruda, que es como estaba:
+        `record` baja a minúsculas el `entity_name` pero no el `entity_type`, así que un
+        `WHERE entity_type = 'food'` no alcanzaba una fila vieja guardada como `'Food'`
+        —mientras que `learning.subject_key`, que es quien decide de qué sujeto es una fila,
+        sí la alcanza—. Con las dos mitades normalizadas igual, acotar la consulta por tipo
+        no puede dejar afuera una fila que el código de arriba sí considera del sujeto.
+        """
         stmt = (
             select(BehaviorSignal)
             .where(BehaviorSignal.user_id == user_id)
             .order_by(BehaviorSignal.created_at.desc())
-            .limit(limit)
         )
+        if since is not None:
+            stmt = stmt.where(BehaviorSignal.created_at >= since)
         if signal_type:
             stmt = stmt.where(BehaviorSignal.signal_type == signal_type)
         if entity_type:
-            stmt = stmt.where(BehaviorSignal.entity_type == entity_type)
+            stmt = stmt.where(
+                func.lower(func.trim(BehaviorSignal.entity_type)) == entity_type.strip().lower()
+            )
+        # El tope va último: con el `LIMIT` puesto antes que los `WHERE` el resultado sería
+        # el mismo —SQLAlchemy compone la sentencia, no la ejecuta por partes— pero se leería
+        # como si recortara antes de filtrar, que es lo contrario de lo que hace.
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def delete_ids(self, user_id: int, signal_ids: list[int]) -> int:
+        """Borrar esas filas, y solo si son de *user_id*. Devuelve cuántas borró.
+
+        Recibe ids y no un nombre de sujeto porque el nombre no se puede comparar en SQL:
+        `record` guarda `entity_name.lower()` con los acentos que traía, y los sujetos se
+        comparan **normalizados** (`learning.normalize_subject`, sin tildes). Un `WHERE
+        entity_name = 'brocoli'` no encuentra la fila que dice "brócoli", así que olvidar
+        el brócoli no borraba nada y la pantalla decía que sí. Quien decide qué filas son
+        del sujeto es el servicio, que puede normalizar; acá queda la parte que la base
+        tiene que garantizar, que es el `user_id` — el filtro va en el `DELETE` aunque el
+        servicio ya haya filtrado al leer, porque es la única capa donde un id de otra
+        persona no puede colarse por un bug de arriba.
+        """
+        if not signal_ids:
+            return 0
+        deleted = (
+            self.db.query(BehaviorSignal)
+            .filter(
+                BehaviorSignal.user_id == user_id,
+                BehaviorSignal.id.in_(signal_ids),
+            )
+            .delete(synchronize_session=False)
+        )
+        self.db.flush()
+        return int(deleted)
 
     def record(
         self,

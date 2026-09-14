@@ -16,11 +16,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.recommendations.learning import SUBJECT_TYPES
 from app.web.helpers import templates
 
 env = templates.env
 ui = env.globals["ui"]
 ic = env.globals["ic"]
+dm = env.globals["dm"]
 
 # `avatar`/`attribution` leen `display_name` y `avatar_color`, no el modelo entero.
 FAKE_USER = SimpleNamespace(display_name="Rocío", avatar_color="#6366f1")
@@ -137,6 +139,73 @@ def test_every_tone_is_a_real_token_family(tone: str) -> None:
         css = fh.read()
     for slot in ("soft", "ink", "solid"):
         assert f"--{tone}-{slot}:" in css, f"falta --{tone}-{slot} en app.css"
+
+
+@pytest.mark.parametrize("subject_type", sorted(SUBJECT_TYPES))
+def test_every_subject_type_the_engine_learns_has_a_label_and_an_icon(subject_type: str) -> None:
+    """Los cinco tipos de sujeto tienen que tener rótulo e ícono propios, no el de reserva.
+
+    Los dos macros tienen un fallback —`| title` para el rótulo, `sparkles` para el ícono—
+    y esos fallbacks son para datos viejos, no para los tipos que el motor aprende hoy. Sin
+    este test, agregar un `SUBJECT_TYPES` nuevo saca un grupo titulado "Muscle Group" en
+    inglés dentro de una app en castellano, y nada falla.
+    """
+    label = str(dm.subject_type_label(subject_type))
+    assert label
+    assert label != subject_type.replace("_", " ").title(), "cayó en el rótulo de reserva"
+
+    icon = str(dm.subject_type_icon(subject_type))
+    assert "<svg" in icon
+    assert str(ic.icon("sparkles")) not in icon, "cayó en el ícono de reserva"
+    #: Y el tono tiene que ser una familia real: el macro arma `bg-{{ tone }}-soft` por
+    #: concatenación, así que un tono inventado rinde una clase que Tailwind no genera y el
+    #: ícono sale transparente **sin ningún error** (mismo riesgo que `test_every_tone_*`).
+    assert dm.SUBJECT_TYPE_TONES[subject_type] in TONES
+
+
+@pytest.mark.parametrize(
+    ("band", "expected"),
+    [
+        ("toward", "bg-ok-soft"),
+        ("away", "bg-danger-soft"),
+        ("mixed", "bg-card-alt"),
+    ],
+)
+def test_each_direction_band_gets_its_own_badge(band: str, expected: str) -> None:
+    """Las tres palabras que `SubjectAffinity.direction_band` puede devolver, y sus tonos."""
+    assert expected in str(dm.learned_direction_badge(band))
+
+
+@pytest.mark.parametrize("band", ["plenty", "some", "new"])
+def test_each_confidence_band_gets_its_own_words(band: str) -> None:
+    assert str(dm.learned_confidence_label(band)).strip()
+
+
+def test_an_unknown_band_renders_nothing_instead_of_the_wrong_label() -> None:
+    """Los cortes viven en `SubjectAffinity`, y los macros solo mapean palabra → msgid.
+
+    Si mañana aparece una cuarta banda, el hueco se nota mirando la pantalla; un `{% else %}`
+    que la rotulara con la etiqueta más cercana la mostraría mal y en silencio, que es
+    exactamente el modo de falla que sacó los cortes de la plantilla.
+    """
+    assert str(dm.learned_direction_badge("sideways")).strip() == ""
+    assert str(dm.learned_confidence_label("certain")).strip() == ""
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [(None, ""), (0, None), (1, None), (5, "5")],
+)
+def test_the_recency_label_says_the_first_two_days_in_words(days, expected) -> None:
+    """Decir "hace 0 días" no es una frase, y `None` —una señal sin `created_at`— no rinde nada:
+    una fecha inventada sería peor que un hueco."""
+    out = str(dm.learned_recency_label(days)).strip()
+    if expected == "":
+        assert out == ""
+    elif expected is None:
+        assert out and "0" not in out and "1" not in out
+    else:
+        assert expected in out
 
 
 def test_unknown_icon_falls_back_to_a_visible_glyph() -> None:

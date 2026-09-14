@@ -1463,12 +1463,115 @@ ejercicios esperan la 4.5)
 
 **4.4.8 — Que se pueda ver y corregir lo aprendido**
 
-- [ ] Un panel *"lo que GaiaPulse aprendió de vos"* en el perfil: positivos y negativos por
-      categoría, con **cuántas observaciones** lo respaldan, si son explícitas o inferidas, y
-      hace cuánto. Más un control para olvidar una.
-- [ ] Es la diferencia entre aprender y ser una caja negra, y es lo que lo hace confiable en
-      una casa de dos personas: si el motor deduce mal, el usuario lo ve y lo arregla en un
-      toque en vez de sufrir sugerencias raras sin saber por qué.
+- [x] Un panel *"lo que GaiaPulse fue aprendiendo"* en el perfil
+      (`app/templates/profile/partials/learned.html`), agrupado por tipo de sujeto y ordenado
+      por `GROUP_ORDER`, con las **tres cifras que hacen discutible una deducción**: cuántos
+      registros la respaldan, cuántos de esos fueron **palabras** —`explicit_preference`, o sea
+      una preferencia declarada o un nombre minado del motivo escrito, que es lo que se corrige
+      hablando— y hace cuánto fue el último. Hasta acá
+      `behavior_signals` no tenía **ninguna** lectura de usuario: las cuatro rutas de
+      aprendizaje movían el orden de las sugerencias y lo único que la casa podía hacer con
+      una deducción equivocada era recibir sugerencias raras.
+- [x] Nuevo `app/services/learning_service.py` (`LearnedProfile`, `LearnedGroup`,
+      `LearnedCategory`) como única entrada de lectura: la ruta web no toca
+      `app/recommendations/learning.py` ni los repositorios. `LearnedSubject.days_since` es un
+      **campo** y no una propiedad con su propio reloj, porque la recencia impresa y el
+      descuento por edad de la afinidad tienen que hablar del mismo instante.
+- [x] `POST /profile/learned/forget`: borra las señales del sujeto y devuelve el panel
+      recalculado por HTMX (`hx-target="#learned-panel"`, `hx-swap="outerHTML"`), o un 302 a
+      `/profile/` con el flash puesto cuando no hay JS —el `<form>` lleva `action` además de
+      `hx-post`—. Confirmación en dos pasos con Alpine y **un `x-data` por fila**, igual que
+      el borrado del panel de sangre: sin `confirm()` ni `hx-confirm`, que no se pueden
+      traducir desde una plantilla y no dicen qué se pierde.
+- [x] Olvidar **borra filas**: lo aprendido *es* el conjunto de señales, así que no hace falta
+      una columna de "olvidado" (y no habría: la `0003` ya está gastada). El `DELETE` resuelve
+      los ids en Python y no en SQL, porque `record` guarda `entity_name.lower()` con tildes
+      ("brócoli") y el formulario manda la forma comparable de `normalize_subject` ("brocoli"):
+      un `WHERE entity_name = ?` con lo que el formulario manda borraba cero filas y contestaba
+      que todo bien, que es la peor de las dos formas de fallar. Cero borrados se dice como
+      cero borrados, no como éxito. Y el mensaje nombra el sujeto **como estaba guardado**
+      (`Forgotten.subject_name`) y no lo que llegó: un `PÓLLO!!!` escrito a mano borra las filas
+      de "pollo", y contestar "Olvidado: PÓLLO!!!" sería devolver a la pantalla un texto que la
+      persona nunca guardó, sobre una acción que no se puede deshacer.
+- [x] El panel entero vive **adentro** del target del swap —título, mensaje, grupos,
+      categorías y la nota final—, porque `outerHTML` reemplaza todo eso; y la región viva
+      (`role="status" aria-live="polite"`) envuelve al fragmento desde `profile/index.html` y
+      **no** se intercambia: un `aria-live` que se reemplaza a sí mismo no anuncia su contenido
+      nuevo (el mismo motivo que en `suggestions/partials/list.html`).
+- [x] El bloque de categorías (la generalización de la 4.4.3, lo que hace que rechazar
+      brócoli, coliflor y kale diga algo sobre la espinaca) va **sin botón de olvido y con la
+      explicación de por qué**: una categoría no tiene señales propias —`ATTRIBUTE_SUBJECT_TYPES`
+      está fuera de `SUBJECT_TYPES`, así que `record_signal` la rechaza—, se deriva del catálogo
+      en cada lectura. Se olvida olvidando los alimentos que la sostienen.
+- [x] El panel dice los dos límites que no puede callar sin mentir: olvidar **no es un veto**
+      (si la conducta se repite se vuelve a aprender; el veto real son las restricciones
+      alimentarias y las actividades imposibles, que filtran en vez de reordenar) y el
+      horizonte de lectura (`SIGNAL_HORIZON_DAYS`), para que "no aparece" no se confunda con
+      "se olvidó".
+- [x] **Los dos rótulos falsos, corregidos juntos.** `/profile/` titulaba
+      `recommendation_preferences` como *"Learned Preferences / Preferences learned from your
+      feedback on suggestions"* y `/suggestions/` como *"What we learned about you / Comes from
+      your answers and from what you log"*: esa tabla es lo que la persona **dijo** (captura de
+      texto o formulario), nunca el feedback de una sugerencia, que va a `behavior_signals`.
+      Ahora las dos son *"Lo que nos dijiste"* —se corrige diciendo otra cosa— frente a *"Lo
+      que GaiaPulse fue aprendiendo"* —se corrige olvidando—, y `/suggestions/` linkea al panel
+      del perfil para que la otra mitad no la encuentre solo quien ya sabe que existe.
+- [x] Nuevo macro `dm.learned_recency_label(days)` junto a los de dirección y confianza, para
+      que la forma de decir la recencia viva en el único módulo de rótulos.
+- [x] Los ~35 `msgid` nuevos traducidos al castellano rioplatense en el mismo commit, con
+      `ngettext` en los cuatro plurales. El resto del atraso de i18n (medido: **165 de 515**
+      `msgid` del repo sin entrada en `es_AR`) queda como el punto de la 5.1.
+- [x] 16 tests nuevos en `tests/test_web_learned_panel.py`: que el panel muestre lo que el
+      motor efectivamente lee con las cifras detrás, que el respaldo de una categoría cuente
+      **solo las señales que son una opinión** (posponer no suma un ítem a una conclusión que
+      no movió), que el estado vacío **siga estando**
+      (un panel que solo aparece cuando ya aprendió algo no se puede encontrar antes de
+      aprender nada, que es cuando alguien se pregunta si la app lo está mirando), que las dos
+      pantallas ya no llamen "aprendido" a lo declarado, que olvidar borre y devuelva el
+      fragmento sin la fila, **que el nombre impreso encuentre la fila que lo guarda** (el bug
+      de las tildes), que cero borrados lo diga, que olvidar **no toque las señales del otro
+      miembro** (regla 4 de `AGENTS.md` en el caso que la vuelve concreta), el camino sin HTMX
+      con la barra final del destino, el recorte del nombre largo en vez del 422 que devuelve
+      el texto recibido, y que la recencia se mida contra el mismo instante que la afinidad.
+- [x] **Los dos bloqueos que encontró la revisión del punto, y cómo se cerraron.** El panel
+      estaba listo y decía dos cosas falsas, las dos por el mismo motivo: la pantalla afirmaba
+      una separación que los datos no sostenían.
+      - **B1 — una preferencia declarada aparecía adentro del panel de "lo que aprendimos
+        solos", con un botón de olvido que no podía cumplir.** `save_preference` escribe la fila
+        de `recommendation_preferences` **y** una señal `explicit_preference` en la misma
+        transacción, así que un "no me gusta el hígado" declarado entraba a la agregación como
+        cualquier otra señal. Olvidarlo borraba las señales y dejaba la preferencia —que si es un
+        "no me gusta" **filtra** (`filters.py:57-63`), no reordena— sin ninguna ruta que la borre:
+        un "listo, lo olvidé" sobre algo que sigue vetando. Ahora `LearnedSubject.declared`
+        (detectado por el `explicit_preference` **sin** sugerencia de origen, que es el único
+        camino que escribe las dos filas) suprime el botón y el formulario de confirmación, y en
+        su lugar la fila apunta a `#what-you-told-us`, que es donde eso sí se puede cambiar. Las
+        señales **siguen** en la agregación: sacarlas haría que el panel discrepe del scorer, que
+        es exactamente lo que el panel vino a evitar. Y el subtítulo dejó de decir "no de lo que
+        nos dijiste" y "podés borrar cualquier cosa de acá", porque ninguna de las dos era cierta.
+      - **B2 — "N de lo que dijiste" contaba toques de botón.** Contaba
+        `source_type == "explicit"`, que es también como `respond_to_suggestion` marca el
+        accepted/rejected de un **tap** en una tarjeta. Un solo descarte imprimía "1 de lo que
+        dijiste" al lado de un alimento sobre el que nadie escribió una palabra — y esa distinción
+        es la razón de ser de la línea. Ahora cuenta `signal_type == "explicit_preference"`.
+- [x] **Los cortes salieron de la plantilla.** `SubjectAffinity.direction_band`
+      (`toward`/`away`/`mixed`, borde en ±0.2) y `.confidence_band` (`plenty`/`some`/`new`, en 3×
+      y 1× `half_saturation`) devuelven **palabras**, y los macros de `components/domain.html`
+      solo mapean palabra → rótulo. Una banda desconocida rinde **nada** a propósito: un
+      `{% else %}` que la rotulara con la etiqueta más cercana la mostraría mal y en silencio,
+      mientras que un hueco se ve mirando la pantalla.
+- [x] **La fila muestra un nombre y manda otro**, y está bien: se imprime
+      `LearnedSubject.display_name` —la grafía con tildes de la señal más reciente, porque
+      "brocoli" impreso en una app en castellano se lee como un error de la app— y el campo
+      oculto lleva la clave normalizada, que es la que matchea las dos grafías.
+- [x] **El panel muestra solo los cinco `SUBJECT_TYPES`** que el scorer sabe leer, con dos tests
+      que lo atan: `set(GROUP_ORDER) == learning.SUBJECT_TYPES` en `test_learning_signals.py`
+      —la obligación que reemplaza a la rama defensiva que se sacó de `learned_profile`— y uno
+      parametrizado en `test_components.py` que exige rótulo, ícono y tono **propios** por tipo,
+      así que un sexto tipo no puede salir titulado "Muscle Group" en inglés por el fallback.
+      Otros cuatro tests de componentes cubren las bandas: una por badge, una por rótulo de
+      confianza, la banda desconocida que no rinde nada, y la recencia que dice los dos primeros
+      días con palabras.
 - [ ] `Suggestion.evidence_summary` ya existe en el modelo y hoy nadie lo escribe: es el lugar
       natural para guardar la explicación computada que 4.5 produce.
 
@@ -1523,7 +1626,21 @@ ejercicios esperan la 4.5)
       nada, que es justamente por lo que se pasan de largo. La 4.4.7 dejó cinco
       (`Prefer to say why?`, `What put you off?`, `e.g. we do not like broccoli`, el `hint`
       del campo, y el `aria-label` `Not for us, with this reason`). Se buscan comparando los
-      `_()` de `app/templates/` contra el catálogo, no de memoria.
+      `_()` de `app/templates/` contra el catálogo, no de memoria. **Medido en la 4.4.8: 515
+      `msgid` extraídos del repo (plantillas *y* Python), 165 sin entrada en `es_AR`.** La
+      extracción necesita un archivo de mapeo con los patrones **relativos al directorio de
+      entrada**, o `pybabel` devuelve un solo `msgid` y parece que no hay nada que traducir:
+
+      ```ini
+      [python: **.py]
+      [jinja2: templates/**.html]
+      extensions=jinja2.ext.i18n
+      silent=false
+      ```
+
+      ```bash
+      .venv/bin/pybabel extract -F <cfg> -o /tmp/gp.pot --no-location --sort-output app
+      ```
 - [ ] Recompilar el catálogo `es_AR` (`_ensure_mo_compiled` ya recompila `.po`→`.mo` al
       arrancar).
 
@@ -1577,8 +1694,14 @@ Para alguien que quiere entender el estado de la app, no usarla. Estructura pens
 - [ ] Por área, tres columnas honestas: **lo que ya estaba en la v2**, **lo que la v3
       cambió**, y **lo que sigue igual a propósito**. Áreas: funcionamiento (los 13
       defectos y el onboarding huérfano), diseño (tokens, modo oscuro, macros), la capa de
-      inteligencia (el reloj, la memoria por sujeto, el aprendizaje de 4.4), i18n y
-      accesibilidad, y la red de tests.
+      inteligencia (el reloj, la memoria por sujeto, el aprendizaje de 4.4 **y el panel que
+      lo hace visible y reversible**), i18n y accesibilidad, y la red de tests.
+- [ ] Dentro de esa área, la vuelta de tuerca que conviene contar aparte porque es la que
+      cambia la relación con la app y no solo su comportamiento: en la v2 el aprendizaje era
+      inauditable —`behavior_signals` no tenía ninguna lectura de usuario— y en la v3 se ve,
+      se cuestiona con las cifras que lo respaldan y se borra. Y el rótulo falso que había
+      que corregir para que eso fuera legible: dos pantallas llamaban "aprendido" a lo que la
+      persona había **declarado**.
 - [ ] **Lo que quedó afuera y por qué**, con nombre y razón: la validación de CSRF, el LLM
       en el camino de recomendación, la edición inline del NLP, el build de Tailwind, la
       normalización de los marcadores de sangre. Un documento que solo cuenta lo que se hizo
@@ -1617,6 +1740,15 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       porcentaje de confianza, y qué **no** significa (no es una recomendación médica).
 - [ ] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
       captura mal interpretada, y qué mira la app para dejar de repetirse.
+- [ ] **Ver lo que aprendió, y desdecirlo** (4.4.8): que el perfil muestra lo que la app
+      dedujo sola, con cuántas veces lo vio y cuándo fue la última, y que se puede olvidar
+      cualquier cosa de esa lista en un toque. Y las dos cosas que hay que entender para que
+      el gesto sirva: que **olvidar no es prohibir** —si la conducta se repite se vuelve a
+      aprender, así que lo que no se quiere nunca más va en las restricciones alimentarias o
+      en las actividades imposibles— y que la lista es **de cada uno**: olvidar lo tuyo no
+      toca lo del otro, aunque compartan la casa y la despensa. Más la distinción que la
+      pantalla ahora nombra: *"lo que nos dijiste"* se corrige diciendo otra cosa, *"lo que
+      GaiaPulse fue aprendiendo"* se corrige olvidándolo.
 - [ ] Una página final de "trucos": las acciones rápidas del Home, el modo oscuro, la
       despensa como fuente de las sugerencias de comida.
 
@@ -1721,13 +1853,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 |
-|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** |
-| `ruff check .` | 292 findings | **288** | **256** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** |
-| `sync_agent_assets.py --check` | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 |
+|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
@@ -1740,7 +1872,11 @@ sobre el árbol con la 4.4.7 aplicada.
 > `engine.py`, `suggestion_service.py` y `test_recommendations.py`, o sea código nuevo
 > escrito con la forma que esos mismos archivos ya usaban en cada línea vecina. La regla
 > aplica a todo el repo y su corrección es el barrido pendiente, no un arreglo local que
-> dejaría un archivo con dos convenciones de la misma cosa.
+> dejaría un archivo con dos convenciones de la misma cosa. La 4.4.8 sumó otras 4 del
+> mismo `UP017` (`learning_service.py` y `test_web_learned_panel.py`) y **bajó una** de
+> largo de línea en `web/suggestions.py`, que era código propio: la deuda ajena se
+> reporta, la propia se arregla. Los dos archivos nuevos y los seis tocados pasan
+> `black --check` limpios, que es por qué la columna baja de 50 a 48.
 
 > `alembic check` **no corre localmente**: no hay PostgreSQL en la máquina
 > (`connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection

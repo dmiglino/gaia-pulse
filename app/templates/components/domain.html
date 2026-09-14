@@ -371,6 +371,85 @@
 {%- endmacro %}
 
 
+{#- ── Lo que la app aprendió sola ──────────────────────────────────────────────
+    Los sujetos del aprendizaje (`learning.SUBJECT_TYPES`) y las dos cifras que lo
+    describen: para qué lado y con cuánto respaldo.
+
+    La diferencia con los macros de arriba importa y la pantalla la tiene que dejar
+    ver: `preference_signal_badge` muestra lo que la persona **dijo** (una fila de
+    `recommendation_preferences`, escrita por una captura de texto), y esto muestra
+    lo que el motor **dedujo** de la conducta. Se rotulan distinto a propósito: una
+    se corrige escribiendo otra cosa, la otra se corrige olvidándola. -#}
+{%- set SUBJECT_TYPE_ICONS = {
+  'food': 'meal', 'exercise': 'bolt', 'muscle_group': 'fire',
+  'biomarker': 'analysis', 'habit': 'clock',
+} -%}
+{%- set SUBJECT_TYPE_TONES = {
+  'food': 'food', 'exercise': 'move', 'muscle_group': 'move',
+  'biomarker': 'body', 'habit': 'brand',
+} -%}
+
+
+{% macro subject_type_label(subject_type) -%}
+{%- set labels = {
+  'food': _('Food'), 'exercise': _('Activities'), 'muscle_group': _('Muscle groups'),
+  'biomarker': _('Blood markers'), 'habit': _('Habits'),
+} -%}
+{{- labels.get(subject_type | lower if subject_type else '',
+               subject_type | replace('_', ' ') | title) -}}
+{%- endmacro %}
+
+
+{% macro subject_type_icon(subject_type, class='w-5 h-5') -%}
+{%- set key = subject_type | lower if subject_type else '' -%}
+{%- set tone = SUBJECT_TYPE_TONES.get(key, 'brand') -%}
+<span class="flex-shrink-0 w-9 h-9 rounded-control flex items-center justify-center
+             bg-{{ tone }}-soft text-{{ tone }}-ink" aria-hidden="true">
+  {{ ic.icon(SUBJECT_TYPE_ICONS.get(key, 'sparkles'), class) }}
+</span>
+{%- endmacro %}
+
+
+{#- Los dos rótulos de una afinidad reciben la **palabra** que decidió
+    `SubjectAffinity.direction_band` / `.confidence_band`, no el flotante: los cortes se
+    derivan de `_EVIDENCE_HALF_SATURATION` y de la aritmética de `n/(n+k)`, así que
+    puestos acá quedaban lejos de la constante que los justifica y cambiarla hacía que el
+    rótulo mintiera sin que nada fallara. Acá queda el mapeo palabra → msgid, que es lo
+    que una plantilla sí tiene que decidir. Un valor desconocido no rinde nada, para que
+    una banda nueva se note como un hueco y no como una etiqueta equivocada. -#}
+{% macro learned_direction_badge(band, size='sm') -%}
+{%- if band == 'toward' -%}
+{{ ui.badge(_('You go for it'), tone='ok', icon='check', size=size) }}
+{%- elif band == 'away' -%}
+{{ ui.badge(_('You pass on it'), tone='danger', icon='x', size=size) }}
+{%- elif band == 'mixed' -%}
+{{ ui.badge(_('It depends'), tone='neutral', size=size) }}
+{%- endif -%}
+{%- endmacro %}
+
+
+{% macro learned_confidence_label(band) -%}
+{%- if band == 'plenty' -%}{{ _('Seen it plenty of times') }}
+{%- elif band == 'some' -%}{{ _('Seen it a few times') }}
+{%- elif band == 'new' -%}{{ _('Only just noticed it') }}
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- Hace cuánto fue la última señal. `LearnedSubject.days_since` ya viene calculado
+    contra el mismo instante que descontó la afinidad, así que acá no hay reloj: solo
+    la forma de decirlo. Los dos primeros días llevan palabra en vez de número porque
+    "hace 0 días" no es una frase, y `None` no rinde nada — es el borde de una señal
+    sin `created_at`, y una fecha inventada sería peor que un hueco. -#}
+{% macro learned_recency_label(days) -%}
+{%- if days is none -%}
+{%- elif days == 0 -%}{{ _('today') }}
+{%- elif days == 1 -%}{{ _('yesterday') }}
+{%- else -%}{{ ngettext('%(num)d day ago', '%(num)d days ago', days) }}
+{%- endif -%}
+{%- endmacro %}
+
+
 {#- ── Nivel de actividad base ──────────────────────────────────────────────────
     `User.baseline_activity_level` guarda las cinco claves en minúscula que
     escriben el onboarding y el perfil. El perfil las mostraba de **dos** formas

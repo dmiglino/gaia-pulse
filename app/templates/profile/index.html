@@ -80,11 +80,22 @@
       `/suggestions/`: `avoid` era rose acá y `warn` allá, `possible_sometimes`
       emerald acá y neutro allá — la misma preferencia se veía distinta en dos
       pantallas. Y las dos claves se imprimían crudas (`possible_sometimes`,
-      `food`). Van por `dm`, que es el único mapa. -#}
-  <section>
-    {{ ui.section_title(_('Learned Preferences'),
-                        subtitle=_('Preferences learned from your feedback on suggestions'),
-                        icon='bulb') }}
+      `food`). Van por `dm`, que es el único mapa.
+
+      El título decía "Learned Preferences" / "Preferences learned from your feedback on
+      suggestions", y las dos mitades eran falsas: estas filas son
+      `recommendation_preferences`, que las escribe una captura de texto ("no me gusta el
+      hígado") o el formulario de preferencias — nunca el feedback de una sugerencia, que
+      va a `behavior_signals`. Con el panel de abajo mostrando lo que el motor **sí**
+      dedujo, dos secciones tituladas "aprendido" en la misma pantalla serían
+      indistinguibles: esta es lo que dijiste, la otra es lo que se dedujo. -#}
+  {#- El `id` es el destino del "cambialo arriba" de las filas declaradas del panel de
+      abajo: esa fila no tiene botón de olvido porque lo que hay que cambiar es la
+      preferencia, y está acá. -#}
+  <section id="what-you-told-us">
+    {{ ui.section_title(_('What you told us'),
+                        subtitle=_('What you said in your own words. These filter suggestions, and you change them by saying something else.'),
+                        icon='user') }}
     {% call ui.card(padding='', class='overflow-hidden') %}
       <ul class="divide-y divide-line list-none m-0 p-0">
         {% for p in preferences %}
@@ -98,6 +109,14 @@
     {% endcall %}
   </section>
   {% endif %}
+
+  {#- La región viva envuelve al panel y **no** se intercambia: el swap de olvidar
+      apunta a `#learned-panel`, que está adentro. Un `aria-live` que se reemplaza a sí
+      mismo no anuncia su contenido nuevo (mismo motivo que en `suggestions/index.html`),
+      así que el "listo, lo olvidé" no llegaría a un lector de pantalla. -#}
+  <div role="status" aria-live="polite">
+    {% include "profile/partials/learned.html" %}
+  </div>
 
   <section>
     {{ ui.section_title(_('Household'), icon='home') }}

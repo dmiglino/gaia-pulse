@@ -12,7 +12,14 @@ from app.web.helpers import get_template_context, templates
 router = APIRouter()
 
 _VALID_FEEDBACK_STATUSES = {"accepted", "rejected", "snoozed", "dismissed"}
-_VALID_PREFERENCE_SIGNALS = {"likes", "dislikes", "impossible", "possible_sometimes", "avoid", "preferred"}
+_VALID_PREFERENCE_SIGNALS = {
+    "likes",
+    "dislikes",
+    "impossible",
+    "possible_sometimes",
+    "avoid",
+    "preferred",
+}
 
 
 def _redirect_with_flash(url: str, message: str, category: str) -> RedirectResponse:
@@ -107,10 +114,11 @@ def suggestion_feedback(
 
     # El motivo se recorta acá y no en el servicio, por el mismo criterio que
     # `item_name` en `save_preference`: es el borde donde entra texto de un formulario.
-    # `feedback_notes` es una columna `Text` sin tope y además viaja al `context_json` de
-    # cada señal minada, así que sin recorte un solo POST escribe filas de cualquier
-    # tamaño. 500 caracteres es holgado para "no nos gusta el brócoli" — el `maxlength`
-    # del input dice lo mismo, y esto es lo que lo hace cierto.
+    # `feedback_notes` es una columna `Text` sin tope, así que sin recorte un solo POST
+    # escribe filas de cualquier tamaño. Y el largo no es solo almacenamiento: el motivo se
+    # mina contra el catálogo entero, donde el tope de sujetos acota el trabajo pero no el
+    # texto. 500 caracteres es holgado para "no nos gusta el brócoli" — el `maxlength` del
+    # input dice lo mismo, y esto es lo que lo hace cierto.
     reason = feedback_notes.strip()[:500]
 
     svc = SuggestionService(db)
@@ -127,9 +135,7 @@ def suggestion_feedback(
     # distinguir un id inexistente de uno ajeno. La ruta `/api/v1` contesta el 404 en
     # JSON, que es lo que le corresponde; acá la respuesta es SSR.
     if suggestion is None:
-        return _invalid(
-            request, _("That suggestion is no longer available."), status_code=404
-        )
+        return _invalid(request, _("That suggestion is no longer available."), status_code=404)
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(
             "suggestions/partials/dismissed.html",

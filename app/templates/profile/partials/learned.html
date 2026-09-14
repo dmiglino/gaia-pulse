@@ -1,0 +1,187 @@
+{#- Lo que GaiaPulse aprendió solo, y el botón para desdecirlo.
+
+    Este fragmento es el target de `POST /profile/learned/forget` con
+    `hx-swap="outerHTML"`, así que **todo** lo que tenga que seguir en pantalla después
+    de olvidar algo vive acá adentro: el título, los grupos, las categorías y la nota
+    del final. Lo único que necesita del contexto es `learned` (que pone la ruta) más
+    los dos opcionales `learned_message` / `learned_message_tone`; los macros y
+    `csrf_token` son globals del entorno.
+
+    El mensaje viaja adentro del fragmento y no por el flash porque el flash lo rinde
+    `base.html`, que no está en la respuesta cuando el swap reemplaza una sección. La
+    región viva que lo anuncia está en `profile/index.html` y **no** se intercambia: un
+    lector de pantalla no anuncia el contenido inicial de un `aria-live` recién
+    insertado, así que puesta acá no anunciaría nunca (mismo motivo que
+    `suggestions/partials/list.html`).
+
+    Por qué existe la pantalla: las cuatro rutas de aprendizaje mueven el orden de las
+    sugerencias desde `behavior_signals`, una tabla que hasta la 4.4.8 no tenía ninguna
+    lectura de usuario. Un motor que aprende sin que se pueda ver qué aprendió no es
+    inteligente, es opaco — y sin forma de corregirlo, lo único que la casa podía hacer
+    con una deducción equivocada era recibir sugerencias raras. -#}
+<section id="learned-panel" class="space-y-4">
+
+  {#- El subtítulo decía "Deduced from what you log, not from what you told us. You can
+      drop any of it.", y las dos mitades eran falsas para las mismas filas: una
+      preferencia declarada ("no me gusta el hígado") escribe **las dos** cosas —la fila
+      de `recommendation_preferences` que se ve arriba y una señal `explicit_preference`
+      que se agrega acá—, así que parte de esto sí viene de lo que dijiste; y esas filas
+      no se pueden soltar desde acá, porque borrar la señal deja intacta la preferencia
+      que filtra las sugerencias. Se dice de dónde sale y qué hace, y el poder soltarlo
+      lo dice cada fila con su propio control. -#}
+  {{ ui.section_title(_('What GaiaPulse figured out'),
+                      subtitle=_('Built from what you log and how you answer suggestions. It changes the order of what gets suggested, and never rules anything out.'),
+                      icon='sparkles') }}
+
+  {%- if learned_message %}
+  {{ ui.notice(learned_message, tone=learned_message_tone | default('info', true)) }}
+  {%- endif %}
+
+  {%- if learned.is_empty %}
+  {#- Sin acción: el estado vacío se sale registrando, y el CTA de registrar ya es el
+      botón dominante de la barra de navegación en todas las pantallas. Repetirlo acá
+      sugeriría que hay algo especial que hacer para que la app aprenda, y no hay: el
+      aprendizaje es el subproducto del uso normal. -#}
+  {{ ui.empty_state(_('Nothing learned yet'),
+                    text=_('Log a few meals and workouts and this fills up on its own. Nothing here is a rule — it only changes the order of the suggestions.'),
+                    icon='bulb') }}
+  {%- else %}
+
+  {%- for group in learned.groups %}
+  {% call ui.card(padding='', class='overflow-hidden') %}
+    <div class="px-5 py-3.5 flex items-center gap-3 border-b border-line bg-card-alt">
+      {{ dm.subject_type_icon(group.subject_type) }}
+      <p class="text-sm font-semibold text-ink flex-1 min-w-0">
+        {{ dm.subject_type_label(group.subject_type) }}
+      </p>
+      <span class="text-xs text-ink-subtle flex-shrink-0">
+        {{ ngettext('%(num)d thing', '%(num)d things', group.rows | length) }}
+      </span>
+    </div>
+    <ul class="divide-y divide-line list-none m-0 p-0">
+      {%- for row in group.rows %}
+      {#- Un `x-data` por fila y no uno por panel: con un solo estado compartido,
+          confirmar en un alimento abriría el "¿seguro?" de los veinte. -#}
+      <li class="px-5 py-3.5" x-data="{ confirming: false }">
+        <div class="flex items-start gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              {#- El nombre **como se escribió**, no la clave con la que se compara: la
+                  agregación normaliza para poder juntar "Brócoli" con "brocoli", y esa
+                  forma sin tildes es una herramienta interna. Mostrada, una casa que
+                  escribe en castellano lee sus propios alimentos mal escritos y no
+                  reconoce lo que la app aprendió. La clave sigue viajando en el campo
+                  oculto, que es donde hace falta. -#}
+              <span class="text-sm font-medium text-ink">{{ row.display_name }}</span>
+              {{ dm.learned_direction_badge(row.affinity.direction_band) }}
+            </div>
+            {#- Las tres cifras que hacen discutible una deducción: cuántas veces,
+                cuántas de esas las dijiste con palabras, y cuándo fue la última. Sin
+                ellas el panel sería una caja negra de otro color. -#}
+            <p class="mt-1 text-xs text-ink-subtle">
+              {{ dm.learned_confidence_label(row.affinity.confidence_band) }}
+              · {{ ngettext('%(num)d record', '%(num)d records', row.observations) }}
+              {%- if row.said_observations %}
+              · {{ _('%(num)d from what you said', num=row.said_observations) }}
+              {%- endif %}
+              {%- if row.days_since is not none %}
+              · {{ dm.learned_recency_label(row.days_since) }}
+              {%- endif %}
+            </p>
+          </div>
+          {#- Una fila declarada no lleva botón de olvido, y no es una restricción de la
+              interfaz: la preferencia vive en `recommendation_preferences`, que
+              `apply_hard_constraints` lee sin descuento. Borrar la señal dejaría la
+              preferencia filtrando igual, así que el botón hubiera dicho "olvidado" sin
+              cambiar nada de lo que la persona quería cambiar. Se la manda a donde eso
+              sí se cambia. El ancla existe siempre que exista esta fila: las dos las
+              escribe `save_preference` en la misma transacción. -#}
+          {%- if row.declared %}
+          <p class="flex-shrink-0 text-xs text-ink-subtle text-right max-w-[9rem]">
+            {{ _('You told us this') }}
+            <a href="#what-you-told-us" class="underline hover:text-ink">{{ _('change it above') }}</a>
+          </p>
+          {%- else %}
+          {#- Borrado en dos pasos, igual que el del panel de sangre: sin `confirm()`
+              de JS (no se puede traducir desde una plantilla sin meter el msgid en una
+              expresión) y sin `hx-confirm` (mismo problema, y no dice qué se pierde). -#}
+          <div class="flex-shrink-0" x-show="!confirming">
+            {{ ui.btn(tone='ghost', size='icon', icon='trash', type='button',
+                      aria_label=_('Forget %(subject)s', subject=row.display_name),
+                      attrs='@click="confirming = true"') }}
+          </div>
+          {%- endif %}
+        </div>
+        {%- if not row.declared %}
+        <div x-show="confirming" x-cloak class="mt-2 flex flex-wrap items-center gap-2">
+          <p class="text-xs text-ink-muted mr-1">
+            {#- Qué se va y qué no: decía "This drops the records behind it", que en una
+                fila deducida de un motivo escrito se puede leer como que se borra la
+                frase que la persona escribió. Se borran las señales; el texto queda
+                donde se escribió y las preferencias de arriba no se tocan. -#}
+            {{ _('This drops the records behind this line — not your preferences above, and not the words you wrote. If it happens again, it gets learned again.') }}
+          </p>
+          <form method="post" action="/profile/learned/forget" class="inline"
+                hx-post="/profile/learned/forget"
+                hx-target="#learned-panel" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+            <input type="hidden" name="subject_type" value="{{ row.subject_type }}" />
+            <input type="hidden" name="subject_name" value="{{ row.subject_name }}" />
+            {{ ui.btn(_('Forget it'), tone='danger', size='sm', icon='trash') }}
+          </form>
+          {{ ui.btn(_('Keep it'), tone='secondary', size='sm', type='button',
+                    attrs='@click="confirming = false"') }}
+        </div>
+        {%- endif %}
+      </li>
+      {%- endfor %}
+    </ul>
+  {% endcall %}
+  {%- endfor %}
+
+  {%- if learned.categories %}
+  {#- La generalización, que no es la suma de lo puntual: es lo que hace que rechazar
+      brócoli, coliflor y kale diga algo sobre la espinaca. Va después de los grupos
+      porque se lee como su conclusión, y **sin** botón de olvido: una categoría no
+      tiene señales propias, se deriva del catálogo en cada lectura. Se olvida
+      olvidando los alimentos que la sostienen, y eso hay que decirlo en vez de dejar
+      un botón que no podría hacer nada.
+
+      El rótulo va por `dm.food_category_label` porque hoy `ATTRIBUTE_SUBJECT_TYPES`
+      es exactamente `{"food_category"}`; cuando entren los ejercicios (4.5),
+      `LearnedCategory` va a tener que decir de qué atributo es. -#}
+  {% call ui.card() %}
+    {{ ui.section_title(_('Patterns across categories'),
+                        subtitle=_('What it concluded about whole groups, from the items above.'),
+                        icon='bulb', tone='food') }}
+    <ul class="space-y-2.5 list-none m-0 p-0">
+      {%- for cat in learned.categories %}
+      <li class="flex items-center gap-3">
+        <span class="text-sm text-ink flex-1 min-w-0 truncate">
+          {{ dm.food_category_label(cat.name) }}
+        </span>
+        <span class="text-xs text-ink-subtle flex-shrink-0">
+          {{ ngettext('%(num)d item', '%(num)d items', cat.subjects) }}
+        </span>
+        {{ dm.learned_direction_badge(cat.affinity.direction_band) }}
+      </li>
+      {%- endfor %}
+    </ul>
+    <p class="mt-4 text-xs text-ink-subtle">
+      {{ _('These are not stored on their own. Forget the items that back one and it goes with them.') }}
+    </p>
+  {% endcall %}
+  {%- endif %}
+
+  {#- Los dos límites que la pantalla no puede callar sin mentir: olvidar no es un veto
+      —la conducta se vuelve a leer— y el veto de verdad son las restricciones
+      alimentarias y las actividades imposibles de más arriba, que el motor lee sin
+      descuento por edad. Y el horizonte, para que "no aparece" no se confunda con "se
+      olvidó": una señal más vieja que la ventana sigue guardada, solo dejó de pesar. -#}
+  {{ ui.notice(_('Forgetting is not a ban: if the behaviour repeats, it gets learned again. To rule something out for good, use the dietary restrictions and impossible activities above — those filter suggestions instead of just reordering them.'),
+               tone='info', icon='info',
+               title=ngettext('Looking at the last %(num)d day',
+                              'Looking at the last %(num)d days', learned.horizon_days)) }}
+
+  {%- endif %}
+</section>

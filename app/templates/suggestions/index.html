@@ -29,14 +29,21 @@
   </div>
 
   {% if preferences %}
-  {#- Lo que el motor ya aprendió, visible. `item_type` y `preference_signal` son
-      claves de base en inglés (`food`, `possible_sometimes`) y se imprimían crudas;
-      ahora pasan por `dm`. Las señales están en primera persona porque la tabla es
-      la de quien la mira: `get_user_preferences` filtra por su `user_id`. -#}
+  {#- Lo que la persona dijo, visible. `item_type` y `preference_signal` son claves de
+      base en inglés (`food`, `possible_sometimes`) y se imprimían crudas; ahora pasan
+      por `dm`. Las señales están en primera persona porque la tabla es la de quien la
+      mira: `get_user_preferences` filtra por su `user_id`.
+
+      El título era "What we learned about you" / "Comes from your answers and from what
+      you log", y la segunda mitad era falsa: `recommendation_preferences` se escribe
+      desde una captura de texto o desde el formulario de preferencias, no desde lo que
+      se registra. Lo que sale de la conducta es `behavior_signals`, que tiene su propio
+      panel en el perfil (4.4.8) — y con dos secciones tituladas "aprendido" no había
+      forma de saber cuál se corrige escribiendo y cuál olvidando. -#}
   <section class="mt-8">
-    {{ ui.section_title(_('What we learned about you'),
-                        subtitle=_('Comes from your answers and from what you log'),
-                        icon='bulb') }}
+    {{ ui.section_title(_('What you told us'),
+                        subtitle=_('What you said in your own words. What the engine deduced on its own lives in your profile.'),
+                        icon='user') }}
     {% call ui.card(padding='', class='overflow-hidden') %}
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
@@ -60,6 +67,13 @@
         </table>
       </div>
     {% endcall %}
+    {#- El puente a la otra mitad. Sin él la distinción entre lo dicho y lo deducido se
+        queda en una frase del subtítulo, y el panel del perfil solo lo encuentra quien
+        ya sabe que existe. -#}
+    <div class="mt-3">
+      {{ ui.btn(_('See what GaiaPulse figured out on its own'), href='/profile/#learned-panel',
+                tone='ghost', size='sm', icon='sparkles', icon_right='arrow-right') }}
+    </div>
   </section>
   {% endif %}
 

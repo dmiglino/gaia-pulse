@@ -1722,3 +1722,157 @@ msgstr "Anotar cuánto dormiste"
 
 msgid "Open the pantry"
 msgstr "Abrir la despensa"
+
+# ─── Lo que la app aprendió sola (4.4.8) ─────────────────────────────────────
+# `recommendation_preferences` es lo que la persona dijo y `behavior_signals` es lo
+# que el motor dedujo: las dos mitades se rotulan distinto a propósito, porque una
+# se corrige escribiendo otra cosa y la otra olvidándola.
+
+msgid "What you told us"
+msgstr "Lo que nos dijiste"
+
+msgid "What you said in your own words. These filter suggestions, and you change them by saying something else."
+msgstr "Lo que dijiste con tus palabras. Esto filtra las sugerencias, y se cambia diciendo otra cosa."
+
+msgid "What you said in your own words. What the engine deduced on its own lives in your profile."
+msgstr "Lo que dijiste con tus palabras. Lo que el motor dedujo solo está en tu perfil."
+
+msgid "See what GaiaPulse figured out on its own"
+msgstr "Ver lo que GaiaPulse dedujo solo"
+
+msgid "What GaiaPulse figured out"
+msgstr "Lo que GaiaPulse fue aprendiendo"
+
+msgid "Built from what you log and how you answer suggestions. It changes the order of what gets suggested, and never rules anything out."
+msgstr "Se arma con lo que registrás y con cómo respondés las sugerencias. Cambia el orden de lo que se sugiere, y nunca descarta nada."
+
+msgid "Nothing learned yet"
+msgstr "Todavía no aprendió nada"
+
+msgid "Log a few meals and workouts and this fills up on its own. Nothing here is a rule — it only changes the order of the suggestions."
+msgstr "Registrá unas comidas y unos entrenamientos y esto se llena solo. Nada de acá es una regla: solo cambia el orden de las sugerencias."
+
+# Los tipos de sujeto del aprendizaje (`learning.SUBJECT_TYPES`). "Food" ya está más
+# arriba, con el mismo sentido.
+
+msgid "Activities"
+msgstr "Actividades"
+
+msgid "Muscle groups"
+msgstr "Grupos musculares"
+
+msgid "Blood markers"
+msgstr "Marcadores de sangre"
+
+msgid "Habits"
+msgstr "Hábitos"
+
+# La dirección de la afinidad. En segunda persona porque el panel es de quien lo
+# mira, y el del medio dice "depende" y no "te da igual": una dirección cerca de cero
+# significa que pasaron las dos cosas, no que no pasó ninguna.
+
+msgid "You go for it"
+msgstr "Lo elegís"
+
+msgid "You pass on it"
+msgstr "Lo esquivás"
+
+msgid "It depends"
+msgstr "Depende"
+
+msgid "Seen it plenty of times"
+msgstr "Lo vi muchas veces"
+
+msgid "Seen it a few times"
+msgstr "Lo vi algunas veces"
+
+msgid "Only just noticed it"
+msgstr "Recién lo estoy notando"
+
+msgid "today"
+msgstr "hoy"
+
+msgid "yesterday"
+msgstr "ayer"
+
+msgid "%(num)d thing"
+msgid_plural "%(num)d things"
+msgstr[0] "%(num)d cosa"
+msgstr[1] "%(num)d cosas"
+
+msgid "%(num)d record"
+msgid_plural "%(num)d records"
+msgstr[0] "%(num)d registro"
+msgstr[1] "%(num)d registros"
+
+msgid "%(num)d from what you said"
+msgstr "%(num)d de lo que dijiste"
+
+msgid "%(num)d item"
+msgid_plural "%(num)d items"
+msgstr[0] "%(num)d ítem"
+msgstr[1] "%(num)d ítems"
+
+msgid "Looking at the last %(num)d day"
+msgid_plural "Looking at the last %(num)d days"
+msgstr[0] "Mirando el último día"
+msgstr[1] "Mirando los últimos %(num)d días"
+
+msgid "Patterns across categories"
+msgstr "Patrones por categoría"
+
+msgid "What it concluded about whole groups, from the items above."
+msgstr "Lo que concluyó sobre grupos enteros, a partir de los de arriba."
+
+msgid "These are not stored on their own. Forget the items that back one and it goes with them."
+msgstr "Esto no se guarda por separado: olvidá los ítems que lo sostienen y se va con ellos."
+
+# Olvidar. El texto tiene que decir las dos cosas que la pantalla no puede callar sin
+# mentir: que borra filas, y que no es un veto.
+
+msgid "Forget %(subject)s"
+msgstr "Olvidar %(subject)s"
+
+msgid "Forget it"
+msgstr "Olvidalo"
+
+msgid "This drops the records behind this line — not your preferences above, and not the words you wrote. If it happens again, it gets learned again."
+msgstr "Esto borra los registros que sostienen esta línea: no tus preferencias de arriba, ni lo que escribiste. Si vuelve a pasar, se aprende de nuevo."
+
+# Una preferencia declarada aparece en el panel —el motor la lee como cualquier otra señal—
+# pero no lleva botón de olvido: la fila de `recommendation_preferences` seguiría filtrando.
+# El texto manda a donde eso sí se cambia.
+
+msgid "You told us this"
+msgstr "Esto nos lo dijiste"
+
+msgid "change it above"
+msgstr "cambialo arriba"
+
+msgid "Forgetting is not a ban: if the behaviour repeats, it gets learned again. To rule something out for good, use the dietary restrictions and impossible activities above — those filter suggestions instead of just reordering them."
+msgstr "Olvidar no es una prohibición: si la conducta se repite, se vuelve a aprender. Para descartar algo de verdad, usá las restricciones alimentarias y las actividades imposibles de más arriba, que filtran las sugerencias en vez de solo reordenarlas."
+
+msgid "Forgotten: %(subject)s. If it happens again, it gets learned again."
+msgstr "Olvidado: %(subject)s. Si vuelve a pasar, se aprende de nuevo."
+
+msgid "There was nothing left to forget about that."
+msgstr "No quedaba nada para olvidar de eso."
+
+# Las cinco categorías de alimento que `dm.food_category_label` rotula y que no tenían
+# traducción: el panel de aprendido (4.4.8) las imprime en el bloque de categorías, que es
+# la primera pantalla donde se leen como una conclusión y no como el filtro de una lista.
+# Las otras cuatro del macro (Protein, Grains, Dairy, Other) ya estaban.
+msgid "Vegetables"
+msgstr "Verduras"
+
+msgid "Fruit"
+msgstr "Frutas"
+
+msgid "Fats"
+msgstr "Grasas"
+
+msgid "Drinks"
+msgstr "Bebidas"
+
+msgid "Packaged"
+msgstr "Envasados"

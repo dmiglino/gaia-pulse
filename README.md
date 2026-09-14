@@ -357,6 +357,26 @@ At most **5** subjects are mined per reason (`SuggestionService._MAX_MINED_SUBJE
 
 Household-scoped suggestions (pantry/shopping) skip user-level filtering and are stored with `scope_type="household"`.
 
+### Stage 5 — Seeing it and taking it back
+
+Everything above happens in a background job, which means the person it is about never sees it. `/profile/` renders what the engine actually reads, from `LearningService.learned_profile()`: every subject with a signal inside the horizon, grouped by subject type, with the direction, the confidence label, how many records back it, how many of those were **words** and not behaviour, and how long ago the last one was. Below the subjects sit the category-level conclusions (Stage 3's attribute generalization), which is where "we rejected broccoli, cauliflower and kale" becomes an opinion about vegetables.
+
+Four things the panel is precise about, because each one was a way of showing something false:
+
+- **Only the five types in `learning.SUBJECT_TYPES`** (`food`, `exercise`, `muscle_group`, `biomarker`, `habit`) — the ones the scorer knows how to read. A signal of any other `entity_type` is inert, and listing it in a table ordered by "this is what is moving your suggestions most" would say otherwise. A test (`test_every_subject_type_the_engine_learns_has_a_place_in_the_panel`) ties `SUBJECT_TYPES` to the panel's group order, and another ties each type to its own label, icon and tone, so adding a sixth type cannot quietly render an English `| title` heading in a Spanish app.
+- **The word count is `signal_type="explicit_preference"`, not `source_type="explicit"`.** The latter is also how `respond_to_suggestion` marks a **tap** on a card, so counting it printed "1 from what you said" next to a food nobody had written a word about — which is precisely the distinction the line exists to draw.
+- **The cutoffs live in Python, not in the template.** `SubjectAffinity.direction_band` (`toward` / `away` / `mixed`, edge at ±0.2) and `.confidence_band` (`plenty` / `some` / `new`, at 3× and 1× `half_saturation`) return words; the macros in `components/domain.html` only map word → label, and an unknown band renders **nothing** on purpose. A `{% else %}` that labelled a new band with the nearest existing label would be wrong and silent; a gap is visible.
+- **A declared preference is shown but has no Forget button.** A row is `declared` when its `explicit_preference` signal has no source suggestion, which is only `save_preference` — the one path that writes the `recommendation_preferences` row in the same transaction. Forgetting deletes signals, so the preference would survive (still *filtering*, not reordering, if it is a dislike), and no route deletes it. The row points at `#what-you-told-us` instead, which is where it can actually be changed.
+
+`POST /profile/learned/forget` deletes a subject's signals for the acting user and returns the recalculated panel. There is no "forgotten" column and none is needed: what has been learned *is* the set of signals, so removing them is what forgetting means. Two consequences the screen states rather than hides:
+
+- **Forgetting is not a ban.** The next matching meal, purchase or workout teaches the same thing again. A permanent exclusion is a dietary restriction or an impossible activity — those filter candidates instead of reordering them.
+- **A category has no button**, because it has no rows of its own: `ATTRIBUTE_SUBJECT_TYPES` sits outside `SUBJECT_TYPES`, so `record_signal` rejects it and the category is derived from the food catalogue on every read. It goes away when the items behind it do.
+
+The subject ids to delete are resolved in Python, not in SQL: `BehaviorSignalRepository.record` stores `entity_name.lower()` with its accents (`brócoli`) while the form submits the comparable form from `learning.normalize_subject` (`brocoli`). A `WHERE entity_name = ?` fed by the form would delete nothing and report success. Zero deletions is reported as zero deletions.
+
+So the row shows one name and submits another: the visible text is `LearnedSubject.display_name` — the accented spelling from the most recent signal, because `brocoli` printed in a Spanish app reads as a bug in the app — and the hidden field carries the normalized key, which is what matches across both spellings. For the same reason the confirmation echoes the name **as it was stored** (`Forgotten.subject_name`) and not what arrived in the form: a hand-written `PÓLLO!!!` deletes the rows of `pollo`, and answering "Forgotten: PÓLLO!!!" would hand back text the person never saved, about an action that cannot be undone.
+
 ---
 
 ## Shared / Household Data Design
@@ -403,17 +423,34 @@ pytest tests/
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**48 tests** across 7 files:
+**509 tests** across 24 files:
 
 | File | Coverage area |
 |---|---|
 | `test_nlp.py` | NLP rule parsing — meal, workout, metric, stock, preference intents |
+| `test_nlp_service.py` | The two-layer pipeline, the confirmation gate, the replay guard |
+| `test_nlp_openai_adapter.py` | Layer 2 — function schema, deserialization, failure fallback |
 | `test_pantry.py` | Pantry stock add/consume, low-stock detection |
 | `test_meals.py` | Meal creation, per-user item isolation |
 | `test_workouts.py` | Workout session and per-user exercise isolation |
 | `test_body_metrics.py` | Body metric logging and retrieval |
-| `test_recommendations.py` | Candidate scoring, hard constraint filtering, behavior signal learning |
+| `test_recommendations.py` | Candidate scoring, hard constraint filtering, subject suppression |
+| `test_learning_signals.py` | The learning axes — affinity, decay, attribute level, slot, satiety, reason mining |
 | `test_notifications.py` | Notification creation, read/dismiss lifecycle |
+| `test_notification_jobs.py` | The scheduled jobs — absences detected, subject dedup, escalation, retirement |
+| `test_clock.py` | Local time, quiet hours, day bounds |
+| `test_actions.py` | Every notification and suggestion resolving to one primary action |
+| `test_dashboard.py` | Dashboard aggregation and chart series |
+| `test_components.py` | The Jinja macro library — `ui`, `icons`, `domain` |
+| `test_web_auth.py` | Login, logout, session cookie, the redirect a page route owes |
+| `test_web_pages.py` | Smoke of every page route against 200 |
+| `test_web_pages_populated.py` | The same pages with data in them |
+| `test_web_capture.py` | The capture flow end to end, including the confirmation screen |
+| `test_web_fragments.py` | The HTMX fragments and the routes their `hx-*` attributes point at |
+| `test_web_history.py` | History tabs and their cards |
+| `test_web_onboarding.py` | The four-step wizard and the gate that forces it |
+| `test_web_profile.py` | Profile reads and writes, declared preferences |
+| `test_web_learned_panel.py` | The learned panel and forgetting a subject |
 
 Run with coverage:
 

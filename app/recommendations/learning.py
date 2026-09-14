@@ -220,6 +220,11 @@ _SATIETY_HALF_LIFE_DAYS = 1.5
 #: app debería empezar a ofrecer otra cosa.
 _SATIETY_HALF_SATURATION = _EVIDENCE_HALF_SATURATION
 
+#: A partir de qué dirección se dice "vas para este lado" en vez de "depende". No mueve
+#: ningún score —el scorer usa la dirección entera— y existe solo para poder decirla en
+#: palabras: es el ancho de la zona donde las señales se contradicen entre sí.
+_DIRECTION_BAND_EDGE = 0.2
+
 
 def half_life_days(source_type: str) -> float:
     """La semivida que le corresponde a una señal según su `source_type`."""
@@ -497,6 +502,42 @@ class SubjectAffinity:
         """Lo que el scorer usa: la opinión ponderada por la certeza, en `[-1, 1]`."""
         return self.direction * self.confidence
 
+    @property
+    def direction_band(self) -> str:
+        """La dirección en una de tres palabras: `toward`, `away` o `mixed`.
+
+        El corte existe porque el punto medio no es "neutro" sino "las dos cosas": comer
+        algo seis veces y rechazar una sugerencia de eso mismo da una dirección cerca de
+        cero, y decir "te da igual" sobre eso sería falso — lo honesto es "depende".
+
+        Vive acá y no en la plantilla, que es donde estaba: los cortes se derivan de esta
+        aritmética, así que puestos en un `{% if %}` de Jinja quedaban a un `git grep` de
+        distancia de la constante que los justifica, y cambiar `_EVIDENCE_HALF_SATURATION`
+        hacía que el rótulo empezara a mentir sin que nada fallara. La plantilla mapea la
+        palabra a un msgid, que es lo suyo.
+        """
+        if self.direction >= _DIRECTION_BAND_EDGE:
+            return "toward"
+        if self.direction <= -_DIRECTION_BAND_EDGE:
+            return "away"
+        return "mixed"
+
+    @property
+    def confidence_band(self) -> str:
+        """Cuánto respaldo hay, en una de tres palabras: `plenty`, `some` o `new`.
+
+        Los cortes están puestos en evidencia y no en confianza porque es la misma cosa
+        dicha donde se entiende: `n / (n + k) >= 0.5` es exactamente `n >= k`, y `>= 0.75`
+        es `n >= 3k`. O sea que las tres palabras son "menos de dos observaciones", "dos o
+        más" y "seis o más" con la vara de `half_saturation` —la puntual o la de atributo,
+        que es el triple—, y no dos números sueltos que hay que volver a derivar.
+        """
+        if self.evidence >= 3 * self.half_saturation:
+            return "plenty"
+        if self.evidence >= self.half_saturation:
+            return "some"
+        return "new"
+
     def without(self, part: SubjectAffinity) -> SubjectAffinity:
         """Lo mismo, descontando lo que *part* aportó. Conserva la vara de evidencia.
 
@@ -551,6 +592,164 @@ def subject_affinities(
         nets[key] = nets.get(key, 0.0) + weight
         evidences[key] = evidences.get(key, 0.0) + abs(weight)
     return {key: SubjectAffinity(net=net, evidence=evidences[key]) for key, net in nets.items()}
+
+
+@dataclass(frozen=True)
+class LearnedSubject:
+    """Lo aprendido sobre un sujeto, contado para que una **persona** lo pueda leer.
+
+    `SubjectAffinity` es la forma que necesita el scorer: dos flotantes descontados por la
+    edad, de los que salen una dirección y una confianza. Sirven para ordenar candidatos y
+    no sirven para mostrarle a nadie: "evidencia 4.31" no es una frase.
+
+    Esto agrega las tres cosas que hacen falta para que el panel de la 4.4.8 no sea una caja
+    negra con otro color —**cuántas** veces se vio, **cuántas** de esas las dijo la persona
+    con palabras, y **cuándo** fue la última—, sin recalcular la opinión por otro camino: la
+    dirección y la confianza son las mismas de `subject_affinities`, así que el panel no
+    puede discrepar de lo que el motor hace. Si discrepara, el panel sería una segunda
+    implementación del aprendizaje, que es peor que no tener panel.
+    """
+
+    subject_type: str
+    subject_name: str
+    #: El nombre como se escribió, para mostrar: "brócoli" y no "brocoli". `subject_name`
+    #: es la clave —sin tildes ni puntuación, que es lo que permite que las dos mitades del
+    #: nombre matcheen— y sirve para comparar y para volver a encontrar las filas, pero
+    #: impreso en una app en español se lee como un error de la app. Sale de la señal más
+    #: reciente: si dos filas lo escribieron distinto, gana la última, que es la que la
+    #: persona vio cuando lo registró.
+    display_name: str
+    #: La misma opinión que lee el scorer, sin recalcular: dirección, confianza, fuerza.
+    affinity: SubjectAffinity
+    #: Cuántas filas la sostienen, **sin descontar por edad**. La evidencia descontada es
+    #: la que decide cuánto pesa; esta es la que se puede decir en voz alta ("6 registros").
+    observations: int
+    #: Cuántas de esas fueron **palabras** y no conducta: `signal_type="explicit_preference"`,
+    #: que es lo que escriben una preferencia declarada y los nombres minados del motivo que
+    #: la persona escribió al responder una tarjeta.
+    #:
+    #: Contaba `source_type == "explicit"`, y eso era falso: `respond_to_suggestion` marca
+    #: así el accepted/rejected de un **tap** en una tarjeta, sin una palabra de por medio.
+    #: Un solo descarte imprimía "1 de lo que dijiste" al lado de un alimento sobre el que
+    #: la persona nunca escribió nada — y la distinción que el panel promete es justo esa,
+    #: porque separa lo que se corrige escribiendo de lo que se corrige con conducta.
+    said_observations: int
+    #: Si esto además está declarado en `recommendation_preferences`, o sea si es una fila
+    #: de "lo que nos dijiste". Se detecta por el `explicit_preference` que **no** viene de
+    #: una sugerencia: `save_preference` escribe la preferencia y la señal juntas, y es el
+    #: único camino que hace las dos cosas.
+    #:
+    #: El panel lo necesita para no ofrecer un botón que no puede cumplir: olvidar borra
+    #: señales, y la preferencia declarada seguiría ahí —filtrando, no ordenando, si es un
+    #: "no me gusta" (`filters.py`)— sin ninguna ruta que la borre. Un "listo, lo olvidé"
+    #: sobre algo que sigue filtrando es la peor de las dos formas de fallar.
+    declared: bool
+    #: Cuándo fue la última vez que algo lo confirmó. `None` solo si ninguna de las filas
+    #: tiene `created_at` —una señal recién grabada y todavía sin volcar—, que es un borde
+    #: de tests y no de producción, pero un `None` es más honesto que la fecha de hoy.
+    last_seen: datetime | None
+    #: Hace cuántos días fue eso, ya calculado. Es un campo y no una propiedad que lea el
+    #: reloj porque el descuento por edad de `affinity` se calculó contra el `now` que
+    #: recibió `learned_subjects`: una propiedad con su propio `datetime.now()` diría "hace
+    #: 3 días" al lado de una confianza calculada para otro instante, y en los tests —que
+    #: pasan un `now` fijo— las dos cifras hablarían de fechas distintas.
+    days_since: int | None
+
+    @property
+    def logged_observations(self) -> int:
+        """Las que salieron de la conducta. Se deriva para que no puedan discrepar."""
+        return self.observations - self.said_observations
+
+
+def _days_since(moment: datetime | None, reference: datetime) -> int | None:
+    """Cuántos días enteros pasaron, con piso en cero.
+
+    El piso existe porque una señal grabada en el mismo request que la lectura puede tener
+    un `created_at` unos microsegundos posterior al `reference` —y un "hace -1 días" es
+    peor que redondear a "hoy"—.
+    """
+    if moment is None:
+        return None
+    return max(0, (reference - as_utc(moment)).days)
+
+
+def learned_subjects(
+    signals: list[BehaviorSignal], *, now: datetime | None = None
+) -> list[LearnedSubject]:
+    """Todo lo que la app aprendió, ordenado por cuánto está moviendo las sugerencias.
+
+    Mismo filtro que `subject_affinities` —lo que no es una opinión no aparece, así que
+    posponer una tarjeta no se muestra como si fuera un gusto— y mismo horizonte que lee el
+    motor, que lo pone quien llama. Las dos cosas juntas son lo que hace que el panel sea
+    *el* aprendizaje y no un informe parecido.
+
+    El orden es por `|strength|` y no por evidencia ni por fecha: lo primero que la persona
+    ve es lo que más le está cambiando las sugerencias, que es lo que querría corregir si
+    estuviera mal. Con desempate por evidencia y después por nombre, para que dos corridas
+    con los mismos datos den la misma lista —una tabla que se reordena sola entre dos
+    visitas parece que estuviera aprendiendo cuando no pasó nada—.
+
+    Y **solo** los tipos de `SUBJECT_TYPES`, que es lo que el scorer sabe leer. Hasta la 4.4
+    una preferencia declarada de tipo "ingredient" escribía señales con ese `entity_type`
+    (`suggestion_service.py`), y el scorer —que pregunta por `"food"`— nunca las miraba: son
+    filas inertes. Mostrarlas en una lista cuyo orden dice "esto es lo que más te está
+    cambiando las sugerencias", con un grupo titulado "Ingredient" por el rótulo de
+    emergencia de la plantilla, es exactamente la clase de cosa que el panel vino a
+    arreglar. No aparecen, y el `record_signal` de la 4.4 ya no las escribe.
+    """
+    reference = now or datetime.now(tz=timezone.utc)
+    affinities = subject_affinities(signals, now=reference)
+    observations: dict[tuple[str, str], int] = {}
+    said: dict[tuple[str, str], int] = {}
+    declared: set[tuple[str, str]] = set()
+    display: dict[tuple[str, str], str] = {}
+    last_seen: dict[tuple[str, str], datetime] = {}
+    for signal in signals:
+        if signal.signal_type not in POSITIVE_SIGNAL_TYPES | NEGATIVE_SIGNAL_TYPES:
+            continue
+        key = subject_key(signal.entity_type, signal.entity_name)
+        if key[0] not in SUBJECT_TYPES or not key[1]:
+            continue
+        observations[key] = observations.get(key, 0) + 1
+        if signal.signal_type == "explicit_preference":
+            said[key] = said.get(key, 0) + 1
+            #: Sin sugerencia de origen es `save_preference`, que escribió también la fila
+            #: de `recommendation_preferences`; con sugerencia son los nombres minados del
+            #: motivo escrito, que son palabras igual pero no están declaradas en ninguna
+            #: parte —y por eso sí se pueden olvidar desde acá—.
+            if signal.source_entity_type is None:
+                declared.add(key)
+        if signal.created_at is not None:
+            seen = as_utc(signal.created_at)
+            if key not in last_seen or seen > last_seen[key]:
+                last_seen[key] = seen
+                display[key] = signal.entity_name
+        display.setdefault(key, signal.entity_name)
+
+    rows = [
+        LearnedSubject(
+            subject_type=subject_type,
+            subject_name=subject_name,
+            display_name=display.get((subject_type, subject_name), subject_name),
+            affinity=affinity,
+            observations=observations.get((subject_type, subject_name), 0),
+            said_observations=said.get((subject_type, subject_name), 0),
+            declared=(subject_type, subject_name) in declared,
+            last_seen=last_seen.get((subject_type, subject_name)),
+            days_since=_days_since(last_seen.get((subject_type, subject_name)), reference),
+        )
+        for (subject_type, subject_name), affinity in affinities.items()
+        if subject_type in SUBJECT_TYPES
+    ]
+    rows.sort(
+        key=lambda row: (
+            -abs(row.affinity.strength),
+            -row.affinity.evidence,
+            row.subject_type,
+            row.subject_name,
+        )
+    )
+    return rows
 
 
 def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
