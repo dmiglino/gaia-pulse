@@ -1,4 +1,5 @@
 """GaiaPulse — main FastAPI application factory."""
+
 import logging
 from contextlib import asynccontextmanager
 from typing import Any
@@ -9,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.security_headers import security_headers
 from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import FLASH_COOKIE_NAME, clear_flash
 from app.web.helpers import templates
@@ -28,6 +30,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     logger.info("Starting GaiaPulse v%s (%s)", settings.app_version, settings.app_env)
 
     from app.jobs.scheduler import start_scheduler, stop_scheduler
+
     start_scheduler()
 
     yield
@@ -88,6 +91,8 @@ def create_app() -> FastAPI:
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 
+    app.middleware("http")(security_headers)
+
     # API routes
     app.include_router(api_router)
 
@@ -137,6 +142,7 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host=settings.app_host,
