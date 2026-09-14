@@ -1231,16 +1231,15 @@ ejercicios esperan la 4.5)
       sujeto propio, que una categoría **nunca** es un veto, que un alimento que el catálogo
       no conoce no tiene categoría, que el índice lee los alias, y que `food_category` no es
       un sujeto grabable.
-- [ ] **Los ejercicios no están en el índice todavía, y no es un olvido.** Los candidatos de
-      actividad salen de una lista de ocho actividades escrita a mano en
-      `activity_generator`, cuyos nombres en su mayoría no existen en el catálogo de
+- [x] **Los ejercicios no estaban en el índice, y no era un olvido.** Los candidatos de
+      actividad salían de una lista de ocho actividades escrita a mano en
+      `activity_generator`, cuyos nombres en su mayoría no existían en el catálogo de
       `ExerciseType` ("biking" contra "Cycling", "gym" y "swimming" que no están), así que el
-      atributo resolvería para unos y para otros no, **en silencio**. Reemplazar esa lista
-      por el catálogo es la 4.5, y ahí los ejercicios entran con el mismo shape: una entrada
-      más en `attribute_index`, ninguna otra cosa cambia. Cuál de sus dos atributos
-      discrimina depende de ese mismo reemplazo —para una actividad es la intensidad, para un
-      ejercicio de gimnasio es el grupo muscular—, porque el seed le pone
-      `muscle_group="full_body"` a casi todo el cardio.
+      atributo resolvía para unos y para otros no, **en silencio**. → **Resuelto en la 4.5.8**:
+      `activity_generator` pasó a leer el catálogo real, y `attribute_index` ganó el segundo
+      vocabulario, `("exercise", nombre) → ("muscle_group", grupo)`, normalizado con
+      `normalize_muscle_group`. Este casillero quedó sin tildar mientras el código ya lo
+      resolvía; lo corrige el checkpoint de la 6 al releer el plan contra el árbol.
 
 **4.4.5 — Gusto con contexto horario** ✅ hecho
 
@@ -1635,8 +1634,12 @@ ejercicios esperan la 4.5)
       Otros cuatro tests de componentes cubren las bandas: una por badge, una por rótulo de
       confianza, la banda desconocida que no rinde nada, y la recencia que dice los dos primeros
       días con palabras.
-- [ ] `Suggestion.evidence_summary` ya existe en el modelo y hoy nadie lo escribe: es el lugar
-      natural para guardar la explicación computada que 4.5 produce.
+- [x] `Suggestion.evidence_summary` ya existía en el modelo y nadie lo escribía: era el lugar
+      natural para guardar la explicación computada que produce la 4.5. → **Resuelto**:
+      `engine.py` lo escribe desde `item.get("evidence_summary")` al persistir, y
+      `explain.py` documenta las tres mitades que se pisaban (`text`, `evidence_summary`,
+      `rationale`) para que no vuelvan a confundirse. Mismo caso que el de arriba: el código
+      ya lo tenía resuelto y el casillero quedó atrás.
 
 **4.4.9 — El aprendizaje es por persona, siempre** ✅ hecho
 
