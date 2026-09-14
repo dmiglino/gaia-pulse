@@ -7,7 +7,7 @@ from datetime import date
 from sqlalchemy.orm import Session
 
 from app.integrations.blood_analysis_parser import analyze_file
-from app.models.blood_analysis import BloodAnalysis
+from app.models.blood_analysis import BloodAnalysis, BloodMarker
 from app.repositories.blood_repo import BloodAnalysisRepository
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,25 @@ class BloodAnalysisService:
             lab_name=result.lab_name,
             file_name=filename,
             raw_text=result.raw_text,
-            values_json=result.values,
             ai_summary=result.ai_summary,
             parsing_method=result.parsing_method,
             status="analyzed",
         )
+        #: El parser sigue devolviendo un `dict` por marcador (fase 7.7 solo cambia cómo
+        #: se guarda, no cómo se extrae): una fila por clave, no un blob por panel.
+        for marker_key, data in result.values.items():
+            record.markers.append(
+                BloodMarker(
+                    marker_key=marker_key,
+                    value=data["value"],
+                    unit=data.get("unit"),
+                    ref_min=data.get("ref_min"),
+                    ref_max=data.get("ref_max"),
+                    status=data.get("status") or "unknown",
+                    display_name=data.get("display_name") or marker_key.replace("_", " ").title(),
+                    category=data.get("category") or "other",
+                )
+            )
         self.db.add(record)
         self.db.flush()
         return record

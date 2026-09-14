@@ -57,19 +57,15 @@ class BloodAnalysisRepository(BaseRepository[BloodAnalysis]):
         —se guarda para que la persona vea que la subida falló— y esa parte la resuelve
         el `WHERE`; el caso que se escapa es el otro: `analyze_file` devuelve
         `values: dict` con `default_factory=dict`, así que un archivo que el parser
-        recorrió sin encontrar nada se guarda como `analyzed` con `values_json = {}`.
-        Un `IS NOT NULL` no distingue `{}` de un blob con datos, y entonces una subida
-        ilegible de hoy tapaba el panel bueno del mes pasado — exactamente lo que este
-        método existe para evitar.
+        recorrió sin encontrar nada se guarda como `analyzed` sin ninguna fila en
+        `blood_markers`. Sin este filtro, una subida ilegible de hoy tapaba el panel
+        bueno del mes pasado — exactamente lo que este método existe para evitar.
 
-        El "no vacío" se evalúa en Python y no en SQL porque "este JSON tiene claves" no
-        se escribe igual en SQLite y en Postgres, y la regla 5 de `AGENTS.md` pide que
-        las dos se comporten igual. No es un scan: el orden lo pone la base y los
-        paneles de una persona se cuentan por unidades, así que en la práctica se lee la
-        primera fila.
+        No es un scan: el orden lo pone la base y los paneles de una persona se cuentan
+        por unidades, así que en la práctica se lee la primera fila.
 
         Devuelve la fila entera. Quien solo quiera los marcadores puede pedirle
-        `values_json`, pero la fecha tiene que poder llegar al motor.
+        `markers`, pero la fecha tiene que poder llegar al motor.
         """
         stmt = (
             select(BloodAnalysis)
@@ -81,4 +77,4 @@ class BloodAnalysisRepository(BaseRepository[BloodAnalysis]):
             )
             .order_by(BloodAnalysis.analysis_date.desc(), BloodAnalysis.created_at.desc())
         )
-        return next((row for row in self.db.scalars(stmt) if row.values_json), None)
+        return next((row for row in self.db.scalars(stmt) if row.markers), None)

@@ -1,11 +1,14 @@
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class BloodAnalysis(Base):
@@ -26,12 +29,6 @@ class BloodAnalysis(Base):
     # Extracted content
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Structured biomarker values.
-    # Shape: {"hemoglobin": {"value": 14.2, "unit": "g/dL", "ref_min": 13.5,
-    #          "ref_max": 17.5, "status": "normal", "display_name": "Hemoglobin",
-    #          "category": "blood_count"}}
-    values_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-
     # LLM-generated narrative summary
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -47,16 +44,50 @@ class BloodAnalysis(Base):
     )
 
     # relationships
-    from typing import TYPE_CHECKING
-    if TYPE_CHECKING:
-        from app.models.user import User
     user: Mapped["User"] = relationship("User", back_populates="blood_analyses")
-
-    def markers_with_status(self, status: str) -> dict[str, Any]:
-        """Return only markers whose status matches (e.g. 'low', 'high')."""
-        if not self.values_json:
-            return {}
-        return {k: v for k, v in self.values_json.items() if v.get("status") == status}
+    #: Cada marcador, su propia fila (fase 7.7). Antes vivía en `values_json`, un blob
+    #: por panel: comparar el mismo marcador entre dos paneles significaba traer los dos
+    #: blobs completos y comparar a mano en Python. `order_by` fija un orden estable para
+    #: la pantalla — sin él, el orden de un `dict` no es un contrato.
+    markers: Mapped[list["BloodMarker"]] = relationship(
+        "BloodMarker",
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+        order_by="BloodMarker.marker_key",
+    )
 
     def __repr__(self) -> str:
         return f"<BloodAnalysis id={self.id} user={self.user_id} date={self.analysis_date}>"
+
+
+class BloodMarker(Base):
+    """Un valor de laboratorio dentro de un panel: `analysis_id` + `marker_key` únicos.
+
+    Lo que reemplaza a `BloodAnalysis.values_json`. La fila, no el blob, es lo que
+    habilita una tendencia por SQL: `SELECT ... WHERE marker_key = 'ferritin' ORDER BY
+    analysis_id` es una consulta; contra un JSON por panel era traer todos los paneles y
+    comparar en Python.
+    """
+
+    __tablename__ = "blood_markers"
+    __table_args__ = (
+        UniqueConstraint("analysis_id", "marker_key", name="uq_blood_markers_analysis_marker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    analysis_id: Mapped[int] = mapped_column(
+        ForeignKey("blood_analyses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    marker_key: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    value: Mapped[float] = mapped_column(Numeric(10, 3), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ref_min: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
+    ref_max: Mapped[float | None] = mapped_column(Numeric(10, 3), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category: Mapped[str] = mapped_column(String(30), nullable=False, default="other")
+
+    analysis: Mapped["BloodAnalysis"] = relationship("BloodAnalysis", back_populates="markers")
+
+    def __repr__(self) -> str:
+        return f"<BloodMarker id={self.id} analysis={self.analysis_id} key={self.marker_key}>"

@@ -161,25 +161,25 @@ def health_detail(
     abnormal = []
     normal = []
     unevaluated = []
-    if analysis.values_json:
-        for key, data in analysis.values_json.items():
-            status = data.get("status", "normal")
-            entry = {
-                "key": key,
-                "display_name": data.get("display_name", key),
-                "value": data.get("value"),
-                "unit": data.get("unit", ""),
-                "ref_min": data.get("ref_min"),
-                "ref_max": data.get("ref_max"),
-                "status": status,
-                "category": data.get("category", ""),
-            }
-            if status in _ABNORMAL_STATUSES:
-                abnormal.append(entry)
-            elif status == "normal":
-                normal.append(entry)
-            else:
-                unevaluated.append(entry)
+    for marker in analysis.markers:
+        #: `Numeric` vuelve como `Decimal` — sin el `float()`, `14.2` se mostraba
+        #: `"14.200"` en la pantalla (el cero de más de `Numeric(10, 3)`, visible).
+        entry = {
+            "key": marker.marker_key,
+            "display_name": marker.display_name,
+            "value": float(marker.value),
+            "unit": marker.unit or "",
+            "ref_min": float(marker.ref_min) if marker.ref_min is not None else None,
+            "ref_max": float(marker.ref_max) if marker.ref_max is not None else None,
+            "status": marker.status,
+            "category": marker.category,
+        }
+        if marker.status in _ABNORMAL_STATUSES:
+            abnormal.append(entry)
+        elif marker.status == "normal":
+            normal.append(entry)
+        else:
+            unevaluated.append(entry)
 
     ctx["abnormal_markers"] = abnormal
     ctx["normal_markers"] = normal

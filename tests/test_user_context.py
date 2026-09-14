@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import local_today
 from app.core.config import get_settings
-from app.models.blood_analysis import BloodAnalysis
+from app.models.blood_analysis import BloodAnalysis, BloodMarker
 from app.models.body_metric import BodyMetricLog
 from app.models.food import FoodItem
 from app.models.household import Household
@@ -284,9 +284,17 @@ class TestLatestAnalyzedPanel:
             user_id=user.id,
             analysis_date=when,
             status=status,
-            values_json=values,
             file_name="lab.pdf",
         )
+        for marker_key, data in (values or {}).items():
+            row.markers.append(
+                BloodMarker(
+                    marker_key=marker_key,
+                    value=data["value"],
+                    status=data.get("status") or "unknown",
+                    display_name=data.get("display_name") or marker_key.title(),
+                )
+            )
         db.add(row)
         db.flush()
         return row
@@ -696,14 +704,15 @@ class TestBuildUserContext:
         )
         _workout(db, diego, when=now - timedelta(days=2), exercises=[("chest", 8)])
         _meal(db, diego, when=_local_noon_today(), items=[("banana", banana, 150.0, "g")])
-        db.add(
-            BloodAnalysis(
-                user_id=diego.id,
-                analysis_date=date(2026, 1, 1),
-                status="analyzed",
-                values_json={"ferritin": {"value": 12, "status": "low"}},
-            )
+        panel = BloodAnalysis(
+            user_id=diego.id,
+            analysis_date=date(2026, 1, 1),
+            status="analyzed",
         )
+        panel.markers.append(
+            BloodMarker(marker_key="ferritin", value=12, status="low", display_name="Ferritin")
+        )
+        db.add(panel)
         db.flush()
 
         context = build_user_context(db, diego)

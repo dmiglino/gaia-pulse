@@ -368,11 +368,25 @@ def _trend(values: Sequence[float | None], days: int) -> Trend | None:
 
 def _blood_panel(db: Session, user_id: int, today: date) -> BloodPanel | None:
     latest = BloodAnalysisService(db).get_latest_analysis(user_id)
-    if latest is None or not latest.values_json:
+    if latest is None or not latest.markers:
         return None
     age = (today - latest.analysis_date).days if latest.analysis_date else None
+    #: `blood_generator` espera el mismo `dict` que antes venía de `values_json` — la
+    #: 7.7 cambió cómo se guarda el marcador, no la forma que ve el motor.
+    values = {
+        marker.marker_key: {
+            "value": float(marker.value),
+            "unit": marker.unit,
+            "ref_min": float(marker.ref_min) if marker.ref_min is not None else None,
+            "ref_max": float(marker.ref_max) if marker.ref_max is not None else None,
+            "status": marker.status,
+            "display_name": marker.display_name,
+            "category": marker.category,
+        }
+        for marker in latest.markers
+    }
     return BloodPanel(
-        values=latest.values_json,
+        values=values,
         analysis_date=latest.analysis_date,
         #: Igual que `_days_since`: un panel fechado mañana no tiene antigüedad
         #: negativa.

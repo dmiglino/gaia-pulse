@@ -1,4 +1,4 @@
-from app.models.blood_analysis import BloodAnalysis
+from app.models.blood_analysis import BloodAnalysis, BloodMarker
 from app.models.body_metric import BodyMetricLog
 from app.models.food import FoodItem
 from app.models.household import Household
@@ -14,6 +14,7 @@ from app.models.workout import ExerciseType, WorkoutExercise, WorkoutParticipant
 
 __all__ = [
     "BloodAnalysis",
+    "BloodMarker",
     "Household",
     "User",
     "BodyMetricLog",

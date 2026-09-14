@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.blood_analysis import BloodAnalysis
+from app.models.blood_analysis import BloodAnalysis, BloodMarker
 from app.models.food import FoodItem
 from app.models.household import Household
 from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
@@ -168,26 +168,30 @@ def seeded(
         status="analyzed",
         parsing_method="regex",
         ai_summary="Colesterol levemente elevado.",
-        values_json={
-            "ldl": {
-                "display_name": "LDL",
-                "value": 145,
-                "unit": "mg/dL",
-                "ref_min": 0,
-                "ref_max": 130,
-                "status": "high",
-                "category": "lipids",
-            },
-            "glucose": {
-                "display_name": "Glucosa",
-                "value": 88,
-                "unit": "mg/dL",
-                "ref_min": 70,
-                "ref_max": 100,
-                "status": "normal",
-                "category": "metabolic",
-            },
-        },
+    )
+    analysis.markers.extend(
+        [
+            BloodMarker(
+                marker_key="ldl",
+                display_name="LDL",
+                value=145,
+                unit="mg/dL",
+                ref_min=0,
+                ref_max=130,
+                status="high",
+                category="lipids",
+            ),
+            BloodMarker(
+                marker_key="glucose",
+                display_name="Glucosa",
+                value=88,
+                unit="mg/dL",
+                ref_min=70,
+                ref_max=100,
+                status="normal",
+                category="metabolic",
+            ),
+        ]
     )
     db.add(analysis)
     db.flush()
@@ -375,7 +379,7 @@ def test_health_detail_renders_its_safety_notice_in_spanish(
     "Out of range" / "In range" / "days ago" en inglés con `DEFAULT_LOCALE=es_AR` — un
     aviso de seguridad que el hogar no lee en su idioma no es un aviso. El otro test de
     esta pantalla no lo atrapa porque afirma sobre "LDL"/"Glucosa", que salen de
-    `values_json`, no del catálogo.
+    `blood_markers`, no del catálogo.
     """
     body = authenticated_client.get(f"/health/{seeded['analysis_id']}").text
     assert "no un diagnóstico" in body
@@ -398,10 +402,14 @@ def test_health_detail_does_not_call_an_unevaluated_marker_normal(
         user_id=diego.id,
         analysis_date=date.today(),
         status="analyzed",
-        values_json={
-            "psa": {"display_name": "PSA", "value": 45, "unit": "ng/mL", "status": "unknown"},
-            "glucose": {"display_name": "Glucosa", "value": 88, "status": "normal"},
-        },
+    )
+    analysis.markers.extend(
+        [
+            BloodMarker(
+                marker_key="psa", display_name="PSA", value=45, unit="ng/mL", status="unknown"
+            ),
+            BloodMarker(marker_key="glucose", display_name="Glucosa", value=88, status="normal"),
+        ]
     )
     db.add(analysis)
     db.flush()
@@ -423,9 +431,7 @@ def test_health_detail_hides_the_age_of_a_future_dated_panel(
     2099: dos hechos contradictorios en pantalla, y el más prominente era el falso. Si la
     antigüedad no se puede afirmar, no se muestra.
     """
-    analysis = BloodAnalysis(
-        user_id=diego.id, analysis_date=date(2099, 1, 1), status="analyzed", values_json={}
-    )
+    analysis = BloodAnalysis(user_id=diego.id, analysis_date=date(2099, 1, 1), status="analyzed")
     db.add(analysis)
     db.flush()
 
