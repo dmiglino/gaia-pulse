@@ -1876,3 +1876,470 @@ msgstr "Bebidas"
 
 msgid "Packaged"
 msgstr "Envasados"
+
+# ─── Grupos musculares ───────────────────────────────────────────────────────
+# Con `msgctxt` porque `msgid` es global y estas palabras son cortas: "Back" ya
+# está más arriba como el "Volver" de los botones de retroceso, así que sin
+# contexto el grupo muscular salía rotulado "Volver" — traducido y mal. El
+# contexto lo pone `pgettext('muscle group', …)` en `components/domain.html`.
+
+msgctxt "muscle group"
+msgid "Chest"
+msgstr "Pecho"
+
+msgctxt "muscle group"
+msgid "Shoulders"
+msgstr "Hombros"
+
+msgctxt "muscle group"
+msgid "Arms"
+msgstr "Brazos"
+
+msgctxt "muscle group"
+msgid "Back"
+msgstr "Espalda"
+
+msgctxt "muscle group"
+msgid "Legs"
+msgstr "Piernas"
+
+msgctxt "muscle group"
+msgid "Core"
+msgstr "Abdomen"
+
+msgctxt "muscle group"
+msgid "Cardio"
+msgstr "Cardio"
+
+msgctxt "muscle group"
+msgid "Full body"
+msgstr "Cuerpo completo"
+
+# ─── Tipos de entrenamiento y contexto de comida ─────────────────────────────
+# Los valores de enum de la base, que hasta la 5.1 salían con `| title`.
+
+msgid "Gym"
+msgstr "Gimnasio"
+
+msgid "At home"
+msgstr "En casa"
+
+msgid "Outdoors"
+msgstr "Al aire libre"
+
+msgid "Cardio"
+msgstr "Cardio"
+
+msgid "Sports"
+msgstr "Deportes"
+
+msgid "Yoga"
+msgstr "Yoga"
+
+msgid "Out"
+msgstr "Afuera"
+
+msgid "Travelling"
+msgstr "De viaje"
+
+msgid "Restaurant"
+msgstr "Restaurante"
+
+msgid "Somewhere else"
+msgstr "En otro lugar"
+
+# ─── Movimientos de despensa ─────────────────────────────────────────────────
+
+msgid "Used"
+msgstr "Consumido"
+
+msgid "Thrown out"
+msgstr "Tirado"
+
+msgid "Adjusted"
+msgstr "Ajustado"
+
+msgid "Adjust"
+msgstr "Ajustar"
+
+msgid "Save stock change"
+msgstr "Guardar el cambio de stock"
+
+msgid "How to apply it"
+msgstr "Cómo aplicarlo"
+
+#, python-format
+msgid "Quantity in %(unit)s"
+msgstr "Cantidad en %(unit)s"
+
+msgid "Stock updated."
+msgstr "Stock actualizado."
+
+msgid "Invalid stock adjustment."
+msgstr "Ajuste de stock inválido."
+
+msgid "Pantry item not found."
+msgstr "Artículo de la despensa no encontrado."
+
+msgid "Pantry items"
+msgstr "Artículos de la despensa"
+
+msgid "Pantry history"
+msgstr "Historial de la despensa"
+
+msgid "What the house has right now"
+msgstr "Lo que hay en casa ahora"
+
+msgid "Every purchase, use and adjustment, newest first"
+msgstr "Cada compra, uso y ajuste, del más nuevo al más viejo"
+
+msgid "Every purchase and every consumption shows up here, newest first."
+msgstr "Cada compra y cada consumo aparecen acá, del más nuevo al más viejo."
+
+msgid "Add purchase"
+msgstr "Agregar compra"
+
+msgid "Log a purchase"
+msgstr "Registrar una compra"
+
+msgid "View pantry"
+msgstr "Ver la despensa"
+
+msgid "Search items"
+msgstr "Buscar artículos"
+
+msgid "Only low stock"
+msgstr "Solo stock bajo"
+
+#, python-format
+msgid "Alerts under %(qty)s"
+msgstr "Avisa por debajo de %(qty)s"
+
+#, python-format
+msgid "%(num)d running low"
+msgstr "%(num)d por acabarse"
+
+msgid "Try another category, or clear the filters to see the whole pantry."
+msgstr "Probá otra categoría, o limpiá los filtros para ver toda la despensa."
+
+# ─── Home ────────────────────────────────────────────────────────────────────
+
+msgid "Log what happened"
+msgstr "Registrá lo que pasó"
+
+msgid "Start capturing"
+msgstr "Empezar a capturar"
+
+msgid "One line in your own words is enough — meals, workouts, weigh-ins and pantry moves all come out of the same box."
+msgstr "Con una línea en tus palabras alcanza — las comidas, los entrenamientos, los pesajes y los movimientos de la despensa salen todos de la misma caja."
+
+msgid "Last at"
+msgstr "Última a las"
+
+msgid "No time recorded"
+msgstr "Sin horario registrado"
+
+msgid "Nothing eaten on the record yet."
+msgstr "Todavía no hay nada comido registrado."
+
+msgid "No movement logged today."
+msgstr "Sin movimiento registrado hoy."
+
+msgid "A walk counts. Log it and it lands here."
+msgstr "Una caminata cuenta. Registrala y aparece acá."
+
+msgid "Read them"
+msgstr "Leerlas"
+
+#, python-format
+msgid "%(count)s unread notifications"
+msgstr "%(count)s notificaciones sin leer"
+
+msgid "Suggestions for you"
+msgstr "Sugerencias para vos"
+
+msgid "View all"
+msgstr "Ver todo"
+
+msgid "Open dashboard"
+msgstr "Abrir estadísticas"
+
+msgid "Log meal"
+msgstr "Registrar comida"
+
+msgid "Log workout"
+msgstr "Registrar entrenamiento"
+
+msgid "Log weight"
+msgstr "Registrar peso"
+
+msgid "Log metric"
+msgstr "Registrar métrica"
+
+msgid "Nothing logged today"
+msgstr "Nada registrado hoy"
+
+# ─── Historial, filtros y paginación ─────────────────────────────────────────
+
+msgid "Log history"
+msgstr "Historial de registros"
+
+msgid "Everything logged, newest first"
+msgstr "Todo lo registrado, del más nuevo al más viejo"
+
+msgid "Meals, workouts and weigh-ins all land here as you log them."
+msgstr "Las comidas, los entrenamientos y los pesajes aparecen acá a medida que los registrás."
+
+msgid "Record type"
+msgstr "Tipo de registro"
+
+msgid "Sections"
+msgstr "Secciones"
+
+msgid "Filter by person"
+msgstr "Filtrar por persona"
+
+msgid "Filter by day"
+msgstr "Filtrar por día"
+
+msgid "Filter by category"
+msgstr "Filtrar por categoría"
+
+msgid "Apply filters"
+msgstr "Aplicar filtros"
+
+msgid "Clear filters"
+msgstr "Limpiar filtros"
+
+msgid "Household member"
+msgstr "Integrante del hogar"
+
+msgid "Household members"
+msgstr "Integrantes del hogar"
+
+# "Más recientes"/"Más antiguos" y no "Más nuevas": la lista mezcla comidas,
+# entrenamientos y pesajes, así que el rótulo no puede concordar en género.
+
+msgid "Newer"
+msgstr "Más recientes"
+
+msgid "Older"
+msgstr "Más antiguos"
+
+msgid "Back to the newest"
+msgstr "Volver a lo más nuevo"
+
+msgid "Pagination"
+msgstr "Paginación"
+
+msgid "Nothing on this page."
+msgstr "Nada en esta página."
+
+msgid "Nothing here matches"
+msgstr "Nada coincide acá"
+
+msgid "Try another day, or look at the whole household."
+msgstr "Probá otro día, o mirá todo el hogar."
+
+#, python-format
+msgid "Nothing logged for %(name)s yet"
+msgstr "Todavía no hay nada registrado para %(name)s"
+
+msgid "No meals match these filters"
+msgstr "Ninguna comida coincide con estos filtros"
+
+msgid "No workouts match these filters"
+msgstr "Ningún entrenamiento coincide con estos filtros"
+
+msgid "No meals yet."
+msgstr "Sin comidas todavía."
+
+msgid "No workouts yet."
+msgstr "Sin entrenamientos todavía."
+
+msgid "No exercises yet."
+msgstr "Sin ejercicios todavía."
+
+msgid "No weigh-ins yet"
+msgstr "Sin pesajes todavía"
+
+msgid "No weigh-ins yet."
+msgstr "Sin pesajes todavía."
+
+msgid "No duration recorded"
+msgstr "Sin duración registrada"
+
+msgid "Log a meal and it shows up here with who was at the table."
+msgstr "Registrá una comida y aparece acá con quién estuvo en la mesa."
+
+msgid "Describe a meal in your own words on the Capture screen and it lands here."
+msgstr "Contá una comida con tus palabras en la pantalla de Captura y aparece acá."
+
+msgid "A walk counts. Describe it in your own words on the Capture screen and it lands here."
+msgstr "Una caminata cuenta. Contala con tus palabras en la pantalla de Captura y aparece acá."
+
+msgid "Say \"peso 78 kilos\" in Capture and it lands here, with the trend."
+msgstr "Decí \"peso 78 kilos\" en Captura y aparece acá, con la tendencia."
+
+msgid "That meal is not available."
+msgstr "Esa comida no está disponible."
+
+# ─── Estadísticas ────────────────────────────────────────────────────────────
+
+msgid "Statistics"
+msgstr "Estadísticas"
+
+msgid "How the last 30 days went"
+msgstr "Cómo fueron los últimos 30 días"
+
+msgid "Last 7 days"
+msgstr "Últimos 7 días"
+
+msgid "Last 30 days"
+msgstr "Últimos 30 días"
+
+msgid "Last 4 weeks"
+msgstr "Últimas 4 semanas"
+
+msgid "in 30 days"
+msgstr "en 30 días"
+
+msgid "in the past 4 weeks"
+msgstr "en las últimas 4 semanas"
+
+msgid "Active days"
+msgstr "Días activos"
+
+msgid "/ 30"
+msgstr "/ 30"
+
+msgid "Days with a meal or a workout"
+msgstr "Días con una comida o un entrenamiento"
+
+msgid "A day counts as active with a meal or a workout"
+msgstr "Un día cuenta como activo con una comida o un entrenamiento"
+
+msgid "Activity calendar"
+msgstr "Calendario de actividad"
+
+msgid "Meals by type"
+msgstr "Comidas por tipo"
+
+msgid "Breakfast, lunch, dinner and snacks split up here once you log them."
+msgstr "El desayuno, el almuerzo, la cena y las colaciones se separan acá cuando los registrás."
+
+msgid "Workouts per week"
+msgstr "Entrenamientos por semana"
+
+msgid "Workouts this week"
+msgstr "Entrenamientos esta semana"
+
+msgid "Every session you log adds a bar here."
+msgstr "Cada sesión que registrás agrega una barra acá."
+
+msgid "Muscle groups trained"
+msgstr "Grupos musculares entrenados"
+
+msgid "Name the exercises inside a workout and this shows which groups you cover."
+msgstr "Nombrá los ejercicios dentro de un entrenamiento y acá se ve qué grupos cubrís."
+
+msgid "minutes in total"
+msgstr "minutos en total"
+
+# ─── Métricas corporales ─────────────────────────────────────────────────────
+
+msgid "Body metrics"
+msgstr "Métricas corporales"
+
+msgid "Weight, body fat, waist and sleep"
+msgstr "Peso, grasa corporal, cintura y sueño"
+
+msgid "The dashboard draws these measurements over time."
+msgstr "Las estadísticas dibujan estas medidas a lo largo del tiempo."
+
+msgid "Current weight"
+msgstr "Peso actual"
+
+msgid "Last weigh-in"
+msgstr "Último pesaje"
+
+#, python-format
+msgid "%(delta)s kg in 30 days"
+msgstr "%(delta)s kg en 30 días"
+
+msgid "No change in 30 days"
+msgstr "Sin cambios en 30 días"
+
+msgid "Log your weight a few times and the trend line shows up here."
+msgstr "Registrá tu peso unas cuantas veces y la línea de tendencia aparece acá."
+
+# "Músculo" y no "Muscular": el rótulo va delante de la masa muscular en kg.
+msgid "Muscle"
+msgstr "Músculo"
+
+msgid "km"
+msgstr "km"
+
+msgid "RPE"
+msgstr "RPE"
+
+msgid "Perceived effort, from 1 to 10"
+msgstr "Esfuerzo percibido, de 1 a 10"
+
+# ─── Panel de sangre ─────────────────────────────────────────────────────────
+
+#, python-format
+msgid "Panel #%(num)d"
+msgstr "Panel n.º %(num)d"
+
+# ─── Notificaciones y sugerencias ────────────────────────────────────────────
+
+msgid "Dismiss message"
+msgstr "Descartar mensaje"
+
+msgid "Dismiss suggestion"
+msgstr "Descartar sugerencia"
+
+msgid "Noted — thanks."
+msgstr "Anotado — gracias."
+
+msgid "Prefer to say why?"
+msgstr "¿Preferís decir por qué?"
+
+msgid "What put you off?"
+msgstr "¿Qué no te gustó?"
+
+msgid "e.g. we do not like broccoli"
+msgstr "p. ej. no nos gusta el brócoli"
+
+msgid "Not for us, with this reason"
+msgstr "No es para nosotros, con este motivo"
+
+#, python-format
+msgid "You have %(num)d unread notification."
+msgid_plural "You have %(num)d unread notifications."
+msgstr[0] "Tenés %(num)d notificación sin leer."
+msgstr[1] "Tenés %(num)d notificaciones sin leer."
+
+#, python-format
+msgid "%(num)d unused suggestion"
+msgid_plural "%(num)d unused suggestions"
+msgstr[0] "%(num)d sugerencia sin usar"
+msgstr[1] "%(num)d sugerencias sin usar"
+
+# ─── Lo que la app aprendió (perfil) ─────────────────────────────────────────
+
+msgid "muscle group"
+msgstr "grupo muscular"
+
+msgid "food group"
+msgstr "grupo de alimentos"
+
+msgid "Built from what you log and how you answer suggestions. Mostly it changes the order of what gets suggested; a recent no you tapped also keeps that subject off the list for a while."
+msgstr "Se arma con lo que registrás y con cómo respondés las sugerencias. Sobre todo cambia el orden de lo que se sugiere; un \"no\" que tocaste hace poco además mantiene ese tema fuera de la lista por un tiempo."
+
+msgid "Forgetting is not a ban: if the behaviour repeats, it gets learned again. A no you tapped recently does keep that subject off the list, but only for a few weeks. To rule something out for good, use the dietary restrictions and impossible activities above — those never expire."
+msgstr "Olvidar no es una prohibición: si la conducta se repite, se vuelve a aprender. Un \"no\" que tocaste hace poco sí mantiene ese tema fuera de la lista, pero solo por unas semanas. Para descartar algo definitivamente, usá las restricciones alimentarias y las actividades imposibles de arriba — esas no vencen nunca."
+
+msgid "Name a food or an activity and GaiaPulse learns about that, instead of about the wording of this card."
+msgstr "Nombrá un alimento o una actividad y GaiaPulse aprende sobre eso, en lugar de sobre cómo está redactada esta tarjeta."

@@ -145,8 +145,12 @@
       <ul class="list-none m-0 p-0">
         {% for session in today_workouts[:3] %}
         <li class="flex items-center gap-3 py-2.5 border-t border-line first:border-t-0 first:pt-0">
+          {#- Por el macro y no por `| title`: la columna guarda las claves en inglés
+              (`gym`, `outdoor`), así que esta era la última pantalla que rotulaba un
+              enum crudo — "Gym" en una app en castellano. El macro también cubre el
+              caso `else`, que acá estaba escrito una segunda vez como `_('Workout')`. -#}
           <span class="text-sm font-medium text-ink truncate">
-            {{ session.workout_type | title if session.workout_type else _('Workout') }}
+            {{ dm.workout_type_label(session.workout_type) }}
           </span>
           {%- if session.duration_minutes %}
           <span class="text-xs text-ink-subtle tabular-nums whitespace-nowrap">{{ session.duration_minutes }} {{ _('min') }}</span>

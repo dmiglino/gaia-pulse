@@ -2334,58 +2334,136 @@ panel de 4.4.8, nuevos `app/core/clock.py` y `app/recommendations/context.py`, n
 
 ### Fase 5 — i18n, accesibilidad y red de seguridad
 
+> **Al abrir la fase, casi toda la lista ya estaba hecha — y no por olvido de
+> tacharla.** Las fases 3 y 4 reescribieron pantalla por pantalla, y cada reescritura
+> hizo la i18n y la accesibilidad de *esa* pantalla en el momento: es más barato
+> traducir un template que se está reescribiendo que volver después a buscarlo. Lo que
+> quedó al llegar acá es lo que ninguna reescritura de pantalla podía cerrar sola —
+> **el catálogo**, que es un archivo global y no pertenece a ninguna pantalla. De ahí
+> la lección que vale para el resto del plan: los ítems se verifican contra el código
+> al empezar el punto, no se creen tachados ni sin tachar.
+
 **5.1 — i18n**
 
-- [ ] Traducir `health/detail.html` (hoy con **cero** `_()`) y
-      `suggestions/partials/dismissed.html`.
-- [ ] Mapear los valores de enum a etiquetas traducibles en vez de `|title`.
-- [ ] Plurales con `ngettext`.
-- [ ] Sacar el glifo de `_('✓ Confirm & Save')`.
-- [ ] **Los `msgid` que las fases 3 y 4 agregaron y que no tienen entrada en el `.po`.** No
+- [x] Traducir `health/detail.html` (hoy con **cero** `_()`) y
+      `suggestions/partials/dismissed.html`. **Ya estaba**: las dos se rescribieron en la
+      Fase 3 y salieron traducidas, con `ngettext` para los contadores de marcadores, los
+      badges por macro y la confirmación de borrado en dos pasos.
+- [x] Mapear los valores de enum a etiquetas traducibles en vez de `|title`. **Hecho en
+      la Fase 3** con la familia de macros de `components/domain.html` (contexto de comida,
+      tipo de entrenamiento, categoría de alimento, movimiento de despensa, categoría de
+      notificación, `source_type`, `item_type`, señal, `subject_type`, nivel, estado). Los
+      `| title` que quedan ahí son los **fallback** de cada macro, que es donde tienen que
+      estar: un valor que el enum no declara se muestra legible en vez de desaparecer.
+      La 5.1 cerró el único que faltaba, `home.html:149` (`session.workout_type | title`,
+      que imprimía "Gym" en una app en castellano y además reescribía el caso `else` del
+      macro por segunda vez).
+- [x] Plurales con `ngettext`. **Ya estaba**, y el rastro quedó en los huérfanos del
+      catálogo: `'You have'`, `'unread notification.'`, `'unread notifications.'`,
+      `'person'`, `'people'`, `'item tracked'` son los fragmentos partidos a mano de la v2,
+      cada mitad su propio `msgid`. Un plural partido en dos entradas no es traducible:
+      el orden de las palabras es parte de lo que cambia entre idiomas.
+- [x] Sacar el glifo de `_('✓ Confirm & Save')`. **Ya estaba**: es
+      `_('Confirm & Save')` + `icon='check'`. El msgid con el glifo quedó huérfano en el
+      catálogo, que es la prueba de que el cambio se hizo y nadie limpió atrás.
+- [x] **Los `msgid` que las fases 3 y 4 agregaron y que no tienen entrada en el `.po`.** No
       son plantillas sin `_()` —esas son las dos de arriba—: son llamadas correctas cuyo
       texto castellano nunca se escribió, así que `gettext` devuelve el inglés y no falla
-      nada, que es justamente por lo que se pasan de largo. La 4.4.7 dejó cinco
-      (`Prefer to say why?`, `What put you off?`, `e.g. we do not like broccoli`, el `hint`
-      del campo, y el `aria-label` `Not for us, with this reason`). Se buscan comparando los
-      `_()` de `app/templates/` contra el catálogo, no de memoria. **Medido con la 4.4.8 ya
-      aplicada: 517 `msgid` extraídos del repo (plantillas *y* Python), 126 sin entrada en
-      `es_AR`.** (La cifra que este punto decía antes —165 de 515— se había tomado antes de
-      que entraran las 41 traducciones de la 4.4.8: hay que re-medir al empezar el punto, no
-      confiar en el número escrito.) La extracción necesita un archivo de mapeo con los
-      patrones **relativos al directorio de entrada**, o `pybabel` devuelve un solo `msgid` y
-      parece que no hay nada que traducir:
+      nada, que es justamente por lo que se pasan de largo. **Éste era el trabajo real de la
+      5.1**, y el único que ninguna reescritura de pantalla podía cerrar: el catálogo es un
+      archivo global, así que no le toca a ninguna pantalla en particular y se lo salta cada
+      una. Se buscan comparando los `_()` del repo contra el catálogo, no de memoria.
+      **Medido al abrir el punto: 528 `msgid` extraídos, 139 sin entrada** — no los 126 que
+      decía este renglón, porque las 4.5.x agregaron trece más. Es la tercera vez que el
+      número escrito acá estaba viejo (165→126→139), y de ahí que el cierre no sea la lista
+      de traducciones sino un test: `tests/test_i18n_catalog.py` extrae y compara en cada
+      corrida, así que el próximo `msgid` sin castellano falla en vez de mostrarse en inglés.
+      Cobertura al cerrar: **706 de 706 (100%)**.
 
-      ```ini
-      [python: **.py]
-      [jinja2: templates/**.html]
-      extensions=jinja2.ext.i18n
-      silent=false
-      ```
+      El mapeo va **relativo al directorio de entrada**, o `pybabel` devuelve un solo `msgid`
+      y parece que no hay nada que traducir. El repo ya tenía `babel.cfg` en la raíz con los
+      patrones relativos a la raíz, así que el comando corre con `.` de entrada:
 
       ```bash
-      .venv/bin/pybabel extract -F <cfg> -o /tmp/gp.pot --no-location --sort-output app
+      .venv/bin/pybabel extract -F babel.cfg -o /tmp/gp.pot --no-location --sort-output .
+      .venv/bin/pybabel compile -d app/locales -D messages --statistics
       ```
-- [ ] **Los `msgid` con contexto que agregó la 4.5.8, y la razón por la que existen.** Los ocho
+- [x] **Los `msgid` con contexto que agregó la 4.5.8, y la razón por la que existen.** Los ocho
       grupos musculares de `dm.muscle_group_label` van con `pgettext('muscle group', …)` porque
       `_('Back')` ya estaba en el catálogo como el "Volver" de los dos botones de la app, así que
-      el grupo `back` salía rotulado "Volver" — traducido, sin fallar, y mal. Dos consecuencias
-      para este punto: la extracción tiene que llevar el keyword `pgettext:1c,2` (está en los
-      defaults de Babel; **confirmarlo contra el mapping file** en vez de asumirlo, porque un
-      keyword que no matchea no falla: los ocho simplemente no aparecen en el `.pot`), y las
-      entradas llevan `msgctxt`, así que un `.po` editado a mano tiene que escribirlo. Y
-      "Volver" es una colisión medida, no hipotética: al revisar el resto de los rótulos cortos
-      —`Core`, `Arms`, `Cardio`, `Back`, y los valores de enum que este mismo punto va a mapear—
-      la pregunta a hacerse es si la palabra ya significa otra cosa en otra pantalla.
-- [ ] Recompilar el catálogo `es_AR` (`_ensure_mo_compiled` ya recompila `.po`→`.mo` al
-      arrancar).
+      el grupo `back` salía rotulado "Volver" — traducido, sin fallar, y mal. **Confirmado, no
+      asumido:** `pgettext:1c,2` está en los defaults de Babel y la extracción devuelve los ocho
+      con su `msgctxt`. Como un keyword que no matchea **no falla** —los ocho simplemente no
+      aparecerían, y una cobertura del 100% sobre una lista a la que le faltan ocho no dice
+      nada— eso quedó afirmado en un test propio
+      (`test_the_extraction_actually_sees_the_contextual_labels`), y la colisión que originó
+      todo en otro (`Back` → "Volver" vs `[muscle group] Back` → "Espalda"). Del resto de los
+      rótulos cortos que había que revisar: `Core` quedó "Abdomen", y `Cardio` conviven dos
+      entradas —el tipo de entrenamiento y el grupo muscular— que traducen igual pero son
+      dos casillas distintas, que es exactamente lo que hace falta el día que una cambie.
+- [x] Recompilar el catálogo `es_AR` (`_ensure_mo_compiled` ya recompila `.po`→`.mo` al
+      arrancar). El `.mo` está trackeado, así que se commitea compilado; el auto-compile es
+      la red para cuando alguien edita el `.po` y no lo compila, no un reemplazo.
+- [x] **Podar las entradas muertas del catálogo.** Al cerrar el punto quedaban **178** que
+      ningún `_()` pide más: los rótulos Title Case de la v2 (`Log Meal`, `Quick Actions`),
+      los que llevaban la flecha adentro del msgid (`View all →`), las dos promesas que la
+      Fase 1 sacó del login, el `'✓ Confirm & Save'` con el glifo, y los fragmentos de los
+      plurales partidos a mano. Un huérfano no llega al usuario —`gettext` solo busca los
+      `msgid` vivos— así que **no** se le puso test: fallar la suite por una traducción de
+      más castigaría sacar un texto durante el desarrollo. Pero dos de ellos eran las
+      versiones anteriores de los párrafos largos del panel de aprendizaje, y una todavía
+      afirmaba que lo aprendido *"never rules anything out"*, que la 4.4 volvió falso. Eso es
+      lo que hace la poda algo más que orden: un archivo del que alguien puede copiar no
+      debería tener adentro la versión vieja de una afirmación.
 
 **5.2 — Accesibilidad**
 
-- [ ] `aria-label` en todos los botones icon-only.
-- [ ] Labels en los inputs que no los tienen.
-- [ ] `role="tab"`/`aria-selected` en los grupos de tabs.
-- [ ] `role="status"` en los fragmentos que HTMX intercambia.
-- [ ] Confirmación en el borrado destructivo de `health/detail.html`.
+Este punto se cerró **auditando, sin escribir código**, y por el mismo motivo que la
+5.1: las fases 2 y 3 hicieron la accesibilidad de cada pantalla al reescribirla, y sobre
+todo la hicieron en los macros, que es donde un `aria-label` se pone una vez y sale en
+las 29 pantallas. Lo que no se pudo cerrar así fue el catálogo — la 5.1 — porque no
+pertenece a ninguna pantalla.
+
+Queda escrito qué se verificó y cómo, porque un ítem tachado sin evidencia es lo que hizo
+que esta lista llegara acá desactualizada.
+
+- [x] **`aria-label` en todos los botones icon-only.** Ya estaban. `ui.btn` recibe
+      `aria_label` y `size='icon'` no rinde texto, así que el rótulo se pone en el
+      llamador y el macro lo emite siempre; los botones a mano que quedan
+      (`capture/index.html`, `login.html`, `flash_message.html`) lo traen. **Y una
+      lección sobre cómo auditar esto:** `grep '<button' | grep -v aria-label` marcó 12
+      botones y los 12 estaban bien — `grep` mira una línea y el atributo está en la
+      siguiente. Un grep línea a línea no puede auditar atributos de HTML multilínea:
+      hay que abrir cada uno.
+- [x] **Labels en los inputs que no los tienen.** Verificado con un chequeo que sí sirve
+      —parsear cada `<input>` completo y cruzar su `id` con los `for=` del archivo— sobre
+      los 9 que quedaron marcados: **los 9 tienen rótulo**. Ocho envuelven el input en un
+      `<label>` con texto visible (los filtros de persona y de categoría, el sexo y el
+      nivel de actividad del onboarding, el "solo bajo stock"), que es rotulado implícito y
+      no necesita `for`; los grupos llevan además `<fieldset>` + `<legend class="sr-only">`,
+      que es lo que le da nombre al *grupo* y no solo a cada opción. Los otros dos
+      (`health/index.html:33`, `onboarding/index.html:218`) lo reciben de
+      `ui.field_wrap`, que emite `<label for="{{ for_id }}">`.
+- [x] **`role="tab"`/`aria-selected` en los grupos de tabs: se decidió que no.** No es un
+      hueco pendiente, es un ítem que la Fase 2 resolvió al revés de como lo pedía este
+      plan, y con razón — está documentado en `components/ui.html:233-243`. Las pestañas
+      son navegación: cada item es un `<a href>` que hace una carga de página completa.
+      `role="tab"` promete un `role="tabpanel"` asociado por `aria-controls`, `tabindex`
+      móvil y navegación por flechas; nada de eso existe, y encima **reemplaza** el rol de
+      enlace, así que la lista de enlaces del lector de pantalla dejaría de encontrarlos.
+      El patrón correcto para pestañas-que-son-navegación es `<nav aria-label>` + `<ul>` +
+      `aria-current="page"`, que es lo que hay. `test_components.py` lo fija en las dos
+      direcciones: exige el `aria-current` y **prohíbe** el `role="tab"`, para que nadie lo
+      "arregle" leyendo este renglón sin leer el macro.
+- [x] **`role="status"` en los fragmentos que HTMX intercambia.** En 10 plantillas: el
+      badge de notificaciones, el resultado de la confirmación de captura, los flash, la
+      lista y el descarte de sugerencias, el panel del perfil.
+- [x] **Confirmación en el borrado destructivo de `health/detail.html`.**
+      `health/detail.html:155-171`: dos pasos con Alpine, **sin `confirm()` de JS**, por
+      dos razones que están escritas ahí — el diálogo del navegador no se puede traducir
+      sin meter el msgid dentro de una expresión de JS, y no puede decir *qué* se pierde.
+      La confirmación propia sí lo dice ("esto también borra sus marcadores y el texto
+      leído del archivo") y ofrece "Conservarlo" como salida.
 
 **5.3 — Los primeros tests de la capa web**
 
