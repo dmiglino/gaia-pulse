@@ -2476,19 +2476,106 @@ que esta lista llegara acá desactualizada.
 
 **5.3 — Los primeros tests de la capa web**
 
-Usando el fixture `client` de `tests/conftest.py:51` que hoy nunca se usa:
+El encabezado de este punto —"los primeros"— y su premisa —"el fixture `client` de
+`tests/conftest.py:51` que hoy nunca se usa"— quedaron viejos hace tres fases. La medición
+antes de escribir nada: **30 módulos, 699 tests**, y seis de esos módulos son de la capa
+web. Cinco de los siete ítems ya estaban cerrados por las fases que los necesitaron,
+porque un test que fija el comportamiento se escribe con el comportamiento y no después.
 
-- [ ] Smoke de las 29 páginas contra 200.
-- [ ] El gate de onboarding.
-- [ ] **Que cada `hx-post`/`hx-get` de las plantillas apunte a una ruta que existe** — el
-      test que hubiera atrapado los 4 defectos de ruteo de la sección A.
-- [ ] Horario de silencio.
-- [ ] Dedup por sujeto.
-- [ ] Que un sujeto rechazado quede suprimido **sin arrastrar candidatos no relacionados**.
-- [ ] El bucle de aprendizaje de 4.4: que una comida registrada emita señal implícita, que
-      una señal vieja pese menos que una reciente (decaimiento), que un solo descarte **no**
-      vete un sujeto pero seis sí, que el nivel de atributo exija más evidencia que el
-      puntual, y que la señal de un miembro **no** afecte las sugerencias del otro.
+Así que el trabajo real de la 5.3 fue **medir qué faltaba de verdad** y escribir eso. Y lo
+que faltaba resultó ser, las dos veces, el mismo modo de falla que produjo las 139
+traducciones de la 5.1: **una lista mantenida a mano que deja de coincidir con el código y
+no avisa.**
+
+- [x] **Smoke de las páginas contra 200.** `tests/test_web_pages.py` desde la Fase 3, más
+      `test_web_pages_populated.py` para las mismas pantallas con datos adentro. No son 29:
+      29 son las **plantillas**; las rutas de página GET son **19** — las 13 de `PAGES` más
+      seis que se cubren aparte y ahora están declaradas.
+- [x] **El gate de onboarding.** `tests/test_web_onboarding.py`, ocho tests, incluida la
+      rama de HTMX (un `HX-Redirect` en lugar de un 302, que el navegador no vería).
+- [x] **Que cada `hx-post`/`hx-get` de las plantillas apunte a una ruta que existe.**
+      Nuevo `tests/test_web_routes.py`. Lo que había era medio test: el
+      `test_no_template_htmx_call_targets_the_json_api` de `test_web_fragments.py` verifica
+      la regla de enrutamiento dual —que ninguna plantilla apunte a `/api/`— y una ruta web
+      **inexistente** pasa ese test sin toser, porque no empieza con `/api/`. Ahora se
+      resuelve el destino de verdad contra el router: **33 destinos**, uno por caso de test.
+
+      Tres cosas se aprendieron escribiéndolo, y las tres están en el docstring del módulo
+      porque cada una es una trampa que la próxima persona va a pisar:
+
+      1. **Los comentarios de Jinja se sacan antes de extraer.** `components/ui.html`
+         documenta la regla de `attrs` con un ejemplo que contiene
+         `hx-post="/meals/…/delete"`, una ruta que no existe ni tiene que existir. La
+         primera versión del extractor reportó ese ejemplo como defecto: un test que
+         acusa a la documentación de su propia regla.
+      2. **Caminar `app.routes` no sirve.** Las rutas web viven dentro de dos envoltorios
+         `_IncludedRouter` cuyo `.routes` está vacío y cuyo `.original_router.routes`
+         devuelve los paths **sin el prefijo** (`/badge`, no `/notifications/badge`). Hay
+         un `effective_route_contexts()` que sí los resuelve, pero es privado de FastAPI y
+         atar un test a eso es cambiarlo por una rotura en el próximo `pip install -U`. Las
+         dos alternativas públicas que sí funcionan: `app.openapi()["paths"]` para
+         enumerar y `Route.matches(scope)` de Starlette para resolver — el mismo protocolo
+         que usa el router en cada request, así que maneja el anidamiento solo.
+      3. **El método de un `action` es el del `<form>`, no POST.** Los filtros de pantry y
+         de comidas son formularios `method="get"` que empujan la query a la URL; darlos
+         por POST hace fallar el test contra una ruta que existe. Y `Match.PARTIAL` —el
+         path existe pero el método no— es justamente el caso que hay que reportar, así
+         que solo cuenta `Match.FULL`.
+
+      El único destino que **no** se puede resolver estáticamente es el `{{ action }}` de
+      `ui.day_person_filters`, que es un parámetro del macro: no existe hasta que se rinde.
+      Está saltado con el motivo escrito y no queda hueco, porque sus dos llamadores pasan
+      literales y esos sí se resuelven donde se escriben.
+- [x] **Los cinco destinos que existían solo por el redirect de la barra final.**
+      `action="/pantry"` y los dos `hx-get="/pantry"` de `pantry/index.html`, el
+      `hx-get="/meals?offset="` y el `hx-get="/workouts?offset="` de los parciales de
+      lista, y los dos llamadores de `day_person_filters` que pasaban `'/meals'` y
+      `'/workouts'`. Ninguno estaba roto —`redirect_slashes` los rescataba con un 307— y
+      por eso llevaban ahí desde la Fase 3: **un 307 no se ve, se paga.** Dos viajes por
+      cada tecla del buscador de pantry, y HTMX recién intercambia con la segunda
+      respuesta. El proyecto ya había tomado esta decisión en `home.html:196`, escrita como
+      comentario en una plantilla; ahora es un test —
+      `test_no_template_target_relies_on_a_redirect`— cuya condición es la definición
+      exacta de "depende del redirect": el destino no resuelve, y con la barra sí.
+- [x] **Que el smoke cubra *todas* las páginas.** `PAGES` es una lista escrita a mano, así
+      que una página nueva no entra sola — y una página que ningún test rinde es exactamente
+      la que se rompe en un barrido de plantillas sin que nada avise. El test nuevo deriva
+      las rutas GET de `app.openapi()` y exige la igualdad en las **dos** direcciones:
+      `PAGES` ∪ `SMOKE_EXCLUSIONS` no puede dejar afuera ninguna ruta, y tampoco puede
+      nombrar una que ya no existe. Las seis exclusiones dejan de ser un comentario y pasan
+      a ser datos, cada una con el test que sí la cubre.
+- [x] **Horario de silencio.** `tests/test_clock.py`, y mejor de lo que pedía este plan: la
+      lista de jobs que pueden hablar **se deriva** leyendo `app/jobs/` con `ast` y siguiendo
+      las llamadas hasta el punto fijo, en vez de enumerarse a mano. Un job nuevo que
+      notifique sin pasar por el gate falla el test sin que nadie lo agregue a ninguna lista
+      — que es precisamente lo que las otras dos listas de este punto no hacían.
+- [x] **Dedup por sujeto.** `tests/test_notification_jobs.py`, `TestSubjectRetirement` y
+      `test_one_notification_per_item_and_not_one_more_tomorrow` /
+      `test_it_speaks_again_only_when_the_item_gets_emptier`: se avisa una vez por sujeto y
+      se vuelve a avisar solo si empeora.
+- [x] **Que un sujeto rechazado quede suprimido sin arrastrar candidatos no relacionados.**
+      `test_recommendations.py::test_strongly_rejected_activity_filtered_out` — rechazar
+      "running" saca "running" y **deja** "biking", que es el bug de bolsa-de-palabras de la
+      F4 en su forma más chica. Al lado están los tres casos que lo delimitan: el mismo
+      nombre bajo otro tipo es otro sujeto, el acento no parte un sujeto en dos, y un
+      descarte no es un rechazo.
+- [x] **El bucle de aprendizaje de 4.4**, los cinco sub-ítems, en `test_learning_signals.py`
+      (52 tests) y `test_recommendations.py`: señal implícita por comida registrada
+      (`test_each_item_becomes_one_signal_pointing_back_at_the_meal`), decaimiento
+      (`test_an_old_meal_barely_counts_next_to_a_recent_one`), evidencia
+      (`test_one_observation_moves_less_than_six`,
+      `test_one_observation_is_a_hint_and_twenty_are_a_rule`), nivel atributo
+      (`test_the_attribute_needs_more_evidence_than_the_subject`) y aislamiento entre
+      miembros (`test_the_other_members_silence_is_not_yours`).
+
+      **Una corrección a este plan, no al código:** el renglón decía "que un solo descarte
+      **no** vete un sujeto pero seis sí", y eso mezcla dos mecanismos que la 4.4 dejó
+      separados a propósito. El veto es del filtro y **un solo "no" deliberado alcanza** —
+      `test_a_single_deliberate_rejection_still_vetoes`, y tiene que ser así porque "dije
+      que no y me lo volvió a ofrecer" es el peor resultado posible. Lo de "una pista contra
+      una regla" es del **score**, no del veto: `_EVIDENCE_HALF_SATURATION` hace que una
+      observación pese un tercio de la certeza y seis tres cuartos. El plan se escribió
+      antes de que existiera esa distinción; el código está bien y el renglón estaba mal.
 
 ---
 

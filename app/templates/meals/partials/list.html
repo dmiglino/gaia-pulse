@@ -18,7 +18,7 @@
 {% endfor %}
 
 {%- if has_more %}
-{% set more_attrs %}hx-get="/meals?offset={{ next_offset }}" hx-include="#meal-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#meals-spinner"{% endset %}
+{% set more_attrs %}hx-get="/meals/?offset={{ next_offset }}" hx-include="#meal-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#meals-spinner"{% endset %}
 <div class="flex justify-center pt-1">
   {{ ui.btn(_('Load more'), tone='secondary', type='button', icon_right='chevron-down', attrs=more_attrs) }}
 </div>

@@ -473,7 +473,7 @@ the app's and passes or fails for reasons that have nothing to do with the code.
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**699 tests** across 30 files:
+**735 tests** across 31 files:
 
 | File | Coverage area |
 |---|---|
@@ -503,6 +503,7 @@ The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides 
 | `test_web_pages_populated.py` | The same pages with data in them |
 | `test_web_capture.py` | The capture flow end to end, including the confirmation screen |
 | `test_web_fragments.py` | The HTMX fragments and the routes their `hx-*` attributes point at |
+| `test_web_routes.py` | That every URL written in a template resolves — right method, no redirect — and that the page smoke covers every page route |
 | `test_web_history.py` | History tabs and their cards |
 | `test_web_onboarding.py` | The four-step wizard and the gate that forces it |
 | `test_web_profile.py` | Profile reads and writes, declared preferences |

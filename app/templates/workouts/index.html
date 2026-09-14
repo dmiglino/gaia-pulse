@@ -23,7 +23,7 @@
     {{ ui.btn(_('Log workout'), href='/capture?prefill=workout', tone='primary', icon='plus') }}
   {% endcall %}
 
-  {{ ui.day_person_filters('/workouts', 'workout-filters', '#workout-list', '#workouts-spinner',
+  {{ ui.day_person_filters('/workouts/', 'workout-filters', '#workout-list', '#workouts-spinner',
                            users, filter_date=filter_date, filter_user_id=filter_user_id) }}
 
   {{ ui.spinner('workouts-spinner') }}

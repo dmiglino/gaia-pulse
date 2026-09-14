@@ -8,7 +8,7 @@
 {% endfor %}
 
 {%- if has_more %}
-{% set more_attrs %}hx-get="/workouts?offset={{ next_offset }}" hx-include="#workout-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#workouts-spinner"{% endset %}
+{% set more_attrs %}hx-get="/workouts/?offset={{ next_offset }}" hx-include="#workout-filters" hx-target="this" hx-swap="outerHTML" hx-indicator="#workouts-spinner"{% endset %}
 <div class="flex justify-center pt-1">
   {{ ui.btn(_('Load more'), tone='secondary', type='button', icon_right='chevron-down', attrs=more_attrs) }}
 </div>

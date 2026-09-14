@@ -16,7 +16,7 @@
     {{ ui.btn(_('Log meal'), href='/capture?prefill=meal', tone='primary', icon='plus') }}
   {% endcall %}
 
-  {{ ui.day_person_filters('/meals', 'meal-filters', '#meal-list', '#meals-spinner',
+  {{ ui.day_person_filters('/meals/', 'meal-filters', '#meal-list', '#meals-spinner',
                            users, filter_date=filter_date, filter_user_id=filter_user_id) }}
 
   {{ ui.spinner('meals-spinner') }}
