@@ -1,5 +1,4 @@
 """Shared helpers for web route handlers: template rendering with auth context."""
-import hashlib
 import logging
 from datetime import date, datetime
 from functools import lru_cache
@@ -61,9 +60,9 @@ class CompatJinja2Templates(Jinja2Templates):
 
 
 templates = CompatJinja2Templates(directory="app/templates")
-templates.env.globals["csrf_token"] = lambda request: hashlib.sha256(
-    f"{request.url.path}:{request.client.host if request.client else 'local'}".encode()
-).hexdigest()
+# `app.core.csrf.csrf_protection` sets this on every request, before routing —
+# it is the value it will also check the `csrf_token` form field against.
+templates.env.globals["csrf_token"] = lambda request: request.state.csrf_token
 templates.env.globals["locale"] = _settings.default_locale
 # `home.html` ya llamaba a `now()` detrás de un `{% if now is defined %}`, y el
 # global nunca había existido: el saludo quedaba clavado en "buenas tardes" y la

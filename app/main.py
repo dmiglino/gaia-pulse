@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.core.csrf import csrf_protection
 from app.core.security_headers import security_headers
 from app.web.exceptions import OnboardingRequiredError
 from app.web.flash import FLASH_COOKIE_NAME, clear_flash
@@ -52,6 +53,13 @@ def create_app() -> FastAPI:
 
     # Static files
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+    # Starlette wraps middlewares in registration order, and the *last*
+    # registered ends up *outermost* (it wraps everything added before it) —
+    # so this must be registered before the others, not after, for its 403
+    # short-circuit to still pass back out through `security_headers` and
+    # `privacy_headers` instead of skipping them entirely.
+    app.middleware("http")(csrf_protection)
 
     @app.middleware("http")
     async def consume_flash(request: Request, call_next: Any) -> Any:

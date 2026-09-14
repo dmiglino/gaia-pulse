@@ -1,10 +1,13 @@
 """Test configuration and shared fixtures."""
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.csrf import CSRF_COOKIE_NAME
 from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
@@ -68,6 +71,9 @@ def db() -> Session:
     connection.close()
 
 
+TEST_CSRF_TOKEN = "test-fixture-csrf-token"
+
+
 @pytest.fixture
 def client(db: Session) -> TestClient:
     def override_get_db():
@@ -75,8 +81,27 @@ def client(db: Session) -> TestClient:
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app, raise_server_exceptions=False) as c:
+        # Every real page already renders the matching hidden `csrf_token` field
+        # (see app/core/csrf.py) — mirror that here once instead of adding it to
+        # every one of this suite's `.post()` calls. A test that wants to exercise
+        # the CSRF check itself calls `TestClient.post(c, ...)` to bypass this.
+        c.cookies.set(CSRF_COOKIE_NAME, TEST_CSRF_TOKEN)
+        c.post = _with_csrf_token(c.post)  # type: ignore[method-assign]
         yield c
     app.dependency_overrides.clear()
+
+
+def _with_csrf_token(post: Any) -> Any:
+    def wrapped(url: str, *args: Any, **kwargs: Any) -> Any:
+        if not str(url).startswith("/api/"):
+            data = kwargs.get("data")
+            if data is None:
+                kwargs["data"] = {"csrf_token": TEST_CSRF_TOKEN}
+            elif isinstance(data, dict) and "csrf_token" not in data:
+                kwargs["data"] = {**data, "csrf_token": TEST_CSRF_TOKEN}
+        return post(url, *args, **kwargs)
+
+    return wrapped
 
 
 @pytest.fixture
