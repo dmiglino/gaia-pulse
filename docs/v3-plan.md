@@ -2830,6 +2830,117 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
 
 ---
 
+### Fase 7 — Cerrar los huecos documentados
+
+Pedido explícito del usuario tras el checkpoint de la Fase 6: cerrar, hasta donde tenga
+sentido, los huecos que `docs/gaiapulse-v3.md` §5 dejó anotados como "lo que quedó
+afuera", más los dos deferrals internos del propio plan (el leak de `logger.exception` y
+el mapeo identidad de `muscle_group`). Con una condición explícita del usuario que rige
+toda la fase: **simplicidad por sobre over-engineering, código óptimo y performante** —
+cada punto reusa el servicio/repositorio/patrón que ya existe en vez de crear una capa
+nueva, y ningún punto agrega una abstracción para un caso que no está pedido.
+
+Tres de los dieciséis ítems originales **no entran** en esta fase, por decisión explícita
+del usuario tomada en el checkpoint:
+
+- **Build step de Tailwind / CSP completa.** Se mantiene la restricción de no introducir
+  build de frontend. La 7.1 cierra las cabeceras que no dependen de eso
+  (`X-Frame-Options`, `Referrer-Policy`, HSTS) y deja la CSP parcial, con
+  `style-src 'unsafe-inline'` documentado como atado a esa restricción.
+- **LLM en el camino de recomendación.** Se mantiene la decisión de determinismo sobre
+  explicabilidad; el motor sigue siendo 100% determinista.
+- **Superficie conversacional.** Es una feature nueva, no un upgrade de algo existente;
+  queda fuera de este esfuerzo para brainstormearse aparte, con su propio diseño y su
+  propia revisión de `security-privacy`.
+
+El mapeo identidad `("muscle_group", g) → ("muscle_group", g)` en `attribute_index()`
+tampoco se implementa: el propio docstring de `app/recommendations/learning.py` ya
+argumenta en contra (el rationale quedaría idéntico al sujeto que explica), así que este
+punto se cierra **documentando la decisión como definitiva**, no agregando código.
+
+**7.1 — Lo de menor riesgo, sin migración**
+
+- [ ] Editar/borrar una comida, un entrenamiento o un pesaje desde la web, reusando los
+      `DELETE` que ya existen en `app/api/{meals,workouts,body_metrics}.py` y el mismo
+      patrón de confirmación que ya usa `app/web/health.py` para borrar un análisis de
+      sangre.
+- [ ] Umbral de stock bajo: una ruta que escriba `low_stock_threshold` desde la grilla de
+      `pantry/partials/stock_grid.html`, junto al control de ajuste que ya existe.
+- [ ] Cabeceras de seguridad que no dependen del build step: `X-Frame-Options`,
+      `X-Content-Type-Options`, `Referrer-Policy`, HSTS condicionado a HTTPS, y una CSP
+      tan ajustada como permite el CDN de Tailwind/HTMX/Alpine/Chart.js.
+- [ ] El leak de `logger.exception` en los 4 jobs de `app/jobs/`: un helper compartido que
+      no propague el `__str__` de un `IntegrityError`/`StatementError` (que puede incluir
+      parámetros de bind) al log.
+- [ ] Dos huecos chicos del parser: `docena` como cantidad (12 unidades) y el apóstrofo
+      como minutos (`entrené 30'`).
+
+**7.2 — Validación de CSRF**
+
+- [ ] El token ya se genera y se renderiza (`app/web/helpers.py`); falta que alguna ruta
+      POST lo valide. Revisión `security-privacy` propia, como pide `AGENTS.md` para todo
+      lo que toca sesión.
+
+**7.3 — La hora que menciona la frase**
+
+- [ ] Leer `time_reference` cuando la frase usa un relativo no ambiguo (hoy/ayer) para
+      sellar el registro en esa fecha en vez de siempre `now`, más un campo de corrección
+      de fecha/hora en la pantalla de confirmación — porque una captura que puede aterrizar
+      en cualquier día necesita poder corregirse.
+
+**7.4 — Anclar la fecha del panel de sangre a su etiqueta**
+
+- [ ] `blood_analysis_parser._extract_date` deja de tomar la primera fecha del documento y
+      busca patrones anclados a una etiqueta ("Fecha de extracción", "Collected"). Más una
+      ruta para corregir la fecha de un panel ya cargado — `app/web/health.py` solo tiene
+      índice, alta, detalle y borrado hoy.
+
+**7.5 — Nombres de actividad en castellano**
+
+- [ ] Migración `0004`: columna de alias en `exercise_types` (mismo shape que
+      `FoodItem.aliases_json`). Sembrar los alias en castellano de los 20 ejercicios, y que
+      el parser y `attribute_index` los resuelvan igual que ya hacen con los alimentos.
+
+**7.6 — Objetivo nutricional declarado (por persona)**
+
+- [ ] Migración `0005`: un campo nuevo en `User` para el objetivo (`goals_json` ya existe
+      pero es `list[str]` de etiquetas — no sirve para esto sin pisar su significado).
+      Alcance del MVP: proteína, fibra y calorías, por persona, con validación de rango y
+      un disclaimer de que no es prescripción clínica. La tarjeta de macros pasa a comparar
+      contra el objetivo declarado cuando existe, y sigue comparando contra el propio
+      promedio cuando no.
+
+**7.7 — Normalizar los marcadores de sangre**
+
+- [ ] Migración `0006`: tabla nueva (`blood_markers` o similar: `analysis_id`, `marker_key`,
+      `value`, `unit`, `reference_range`) en vez del blob JSON, con su propia migración de
+      datos para los análisis ya cargados. Habilita tendencia por SQL en vez de comparar a
+      mano contra el panel anterior.
+
+**7.8 — Edición inline de los intents del NLP**
+
+- [ ] Después de la 7.3, para no cambiar dos contratos de confirmación a la vez. Editar un
+      campo discreto del intent (cantidad, nombre de alimento, fecha) sin tener que
+      reescribir la frase entera.
+
+**7.9 — Mezclar temas en una sola frase (segmentar oraciones)**
+
+- [ ] La última a propósito: es un cambio de diseño de `app/nlp/rules.py` con riesgo real
+      sobre las ~40 aserciones en castellano existentes. Se hace con tests de segmentación
+      escritos primero, y corriendo la suite de NLP completa después de cada paso interno,
+      no de una sola vez al final.
+
+**7.10 — Remember-me y recuperación de contraseña**
+
+- [ ] Remember-me: variar el `max_age` de la cookie de sesión según el checkbox (ya
+      existente en el template, hoy ignorado), sin infraestructura nueva.
+- [ ] Recuperación de contraseña real: settings de SMTP en `.env.example` (sin secreto
+      real), un servicio de envío de mail, migración `0007` para una tabla de tokens de
+      reset con expiración, y la pantalla de "olvidé mi contraseña" ya prevista pero
+      apuntando a `href="#"` hoy.
+
+---
+
 ## Estrategia de commits
 
 Branch: **`v3`**. Commits **parciales y atómicos por funcionalidad** — no un commit gigante
