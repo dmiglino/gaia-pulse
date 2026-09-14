@@ -32,9 +32,17 @@ class TestStockAdd:
         assert any("bell pepper" in n or "pepper" in n for n in names)
 
     def test_purchase_quantities(self, parser: _ParserProxy) -> None:
+        # Este test existía con la frase de acá y una sola aserción, `result is not None`,
+        # que se cumple hasta cuando el parser no entiende nada: la frase salía como `mixed`
+        # con confianza 0.10 —o sea, sin nada que confirmar— y el test pasaba igual. Ahora
+        # pide lo que la frase promete.
         result = parser.parse("Compramos 2 kilos de arroz y 500 gramos de pasta", speaking_user="diego")
-        # Even if in Spanish, quantities should be extracted or confidence should be low
-        assert result is not None
+        stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+        assert stock is not None
+        by_name = {i.food_name.lower(): i for i in stock.items}
+        assert set(by_name) == {"arroz", "pasta"}
+        assert (by_name["arroz"].quantity, by_name["arroz"].unit) == (2.0, "kg")
+        assert (by_name["pasta"].quantity, by_name["pasta"].unit) == (500.0, "g")
 
     def test_consume_stock(self, parser: _ParserProxy) -> None:
         result = parser.parse("We used 4 tomatoes for lunch", speaking_user="diego")
@@ -151,3 +159,313 @@ class TestConfidence:
     def test_garbage_input_low_confidence(self, parser: _ParserProxy) -> None:
         result = parser.parse("asdfghjklqwerty random words", speaking_user="diego")
         assert result.overall_confidence < 0.5 or len(result.intents) == 0
+
+
+class TestCastellano:
+    """La app está en castellano y hasta acá el parser entendía sobre todo inglés.
+
+    Estos tests existen porque el hueco no se veía como un error: sin un verbo conocido la
+    frase sale como `mixed` con confianza 0.10, se guarda igual en
+    `nlp_ingestion_events` y la pantalla de confirmación no tiene nada que confirmar. No hay
+    excepción, no hay log, no hay nada roto — solo una captura que no sirvió. Cada aserción
+    de acá es una frase que una casa de dos escribe de verdad.
+    """
+
+    # ── Comidas ─────────────────────────────────────────────────────────────
+    def test_first_person_singular_meal(self, parser: _ParserProxy) -> None:
+        result = parser.parse("comí milanesa con puré", speaking_user="diego")
+        meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+        assert meal is not None
+        # El verbo no puede quedar adentro del nombre del alimento, y lo que sigue a "con"
+        # tampoco: igual que "pasta with sauce" en inglés, el ítem es el primero.
+        assert [i.food_name for i in meal.items_per_user["diego"]] == ["milanesa"]
+
+    @pytest.mark.parametrize(
+        ("phrase", "meal_type"),
+        [
+            ("desayuné avena", "breakfast"),
+            ("almorcé pollo", "lunch"),
+            ("cené ensalada", "dinner"),
+            ("merendé tostadas", "snack"),
+        ],
+    )
+    def test_meal_type_comes_from_the_conjugated_verb(
+        self, parser: _ParserProxy, phrase: str, meal_type: str
+    ) -> None:
+        # En inglés el tipo de comida es un sustantivo suelto ("for dinner"); en castellano
+        # está en el verbo y no se repite. Sin eso, toda comida quedaba como "other".
+        result = parser.parse(phrase, speaking_user="diego")
+        meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+        assert meal is not None
+        assert meal.meal_type == meal_type
+
+    def test_first_person_plural_means_both_without_a_pronoun(
+        self, parser: _ParserProxy
+    ) -> None:
+        # "cenamos fideos" es de los dos. El plural vive en el verbo y no se escribe el
+        # pronombre, así que sin la lista de verbos esto se atribuía solo a quien escribió:
+        # una cena compartida entrando como comida de uno.
+        result = parser.parse("cenamos fideos", speaking_user="diego")
+        meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+        assert meal is not None
+        assert meal.participants == ["both"]
+        assert list(meal.items_per_user) == ["both"]
+
+    def test_who_ate_what_in_spanish(self, parser: _ParserProxy) -> None:
+        result = parser.parse(
+            "Diego cenó fideos, Rocío cenó ensalada", speaking_user="diego"
+        )
+        meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+        assert meal is not None
+        assert {k: [i.food_name for i in v] for k, v in meal.items_per_user.items()} == {
+            "diego": ["fideo"],
+            "rocio": ["ensalada"],
+        }
+
+    # ── Despensa ────────────────────────────────────────────────────────────
+    def test_purchase_list_split_by_y(self, parser: _ParserProxy) -> None:
+        result = parser.parse("compré 6 bananas y 1 kg de avena", speaking_user="diego")
+        stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+        assert stock is not None
+        # Sin el separador `y` toda la lista entraba como **un** alimento llamado
+        # "6 bananas y 1 kg de avena".
+        assert [(i.food_name, i.quantity, i.unit) for i in stock.items] == [
+            ("banana", 6.0, None),
+            ("avena", 1.0, "kg"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("phrase", "qty", "unit"),
+        [
+            ("conseguimos 2 kilos de arroz", 2.0, "kg"),
+            ("compramos medio kilo de queso", 0.5, "kg"),
+            ("compré 500 gramos de yerba", 500.0, "g"),
+            ("compré 2 litros de leche", 2.0, "l"),
+            ("compramos 3 unidades de pan", 3.0, "unit"),
+            ("compré una docena de huevos", None, None),
+        ],
+    )
+    def test_spanish_units_normalise(
+        self, parser: _ParserProxy, phrase: str, qty: float | None, unit: str | None
+    ) -> None:
+        # "kilos" y "kg" tienen que llegar a la despensa como la misma unidad, o el mismo
+        # alimento queda partido en dos filas que no se suman. `docena` no está en la lista
+        # a propósito: no hay unidad canónica para mapearla, así que se deja pasar como
+        # nombre en vez de inventar una — y este caso lo fija para que sea una decisión
+        # visible y no un olvido.
+        result = parser.parse(phrase, speaking_user="diego")
+        stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+        assert stock is not None
+        assert stock.items
+        if unit is None:
+            assert stock.items[0].unit is None
+        else:
+            assert (stock.items[0].quantity, stock.items[0].unit) == (qty, unit)
+
+    def test_determiners_are_not_part_of_the_food_name(self, parser: _ParserProxy) -> None:
+        # El nombre que sale de acá se busca contra el catálogo de alimentos: "la última
+        # leche" no encuentra la leche y termina creando un alimento nuevo.
+        result = parser.parse("usé la última leche", speaking_user="diego")
+        consume = next((i for i in result.intents if i.intent_type == "consume_stock"), None)
+        assert consume is not None
+        assert [i.food_name for i in consume.items] == ["leche"]
+
+    # ── Cuerpo ──────────────────────────────────────────────────────────────
+    @pytest.mark.parametrize(
+        ("phrase", "field", "value"),
+        [
+            ("pesé 82 kg", "weight_kg", 82.0),
+            ("dormí 7 horas", "sleep_hours", 7.0),
+            ("dormimos 8 hs", "sleep_hours", 8.0),
+            ("cintura de 80 cm", "waist_cm", 80.0),
+        ],
+    )
+    def test_body_metrics_in_spanish(
+        self, parser: _ParserProxy, phrase: str, field: str, value: float
+    ) -> None:
+        # El caso de dormir es el que muestra que era un descuido y no una decisión:
+        # `_SLEEP_RE` entendía `dormí|dormimos` desde siempre y la unidad seguía siendo solo
+        # `hours`, así que la frase se clasificaba bien y el número no se leía nunca.
+        result = parser.parse(phrase, speaking_user="diego")
+        metric = next((i for i in result.intents if i.intent_type == "log_body_metric"), None)
+        assert metric is not None
+        assert getattr(metric, field) == pytest.approx(value)
+
+    # ── Entrenamiento ───────────────────────────────────────────────────────
+    @pytest.mark.parametrize("phrase", ["corrí 30 minutos", "corrí 30 min", "entrené 30'"])
+    def test_workout_duration_in_spanish(self, parser: _ParserProxy, phrase: str) -> None:
+        result = parser.parse(phrase, speaking_user="diego")
+        workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
+        assert workout is not None
+        if phrase.endswith("'"):
+            # No se lee: la duración con apóstrofo no está soportada, y queda fijado acá para
+            # que se vea que es un hueco conocido y no una regresión.
+            assert workout.duration_minutes is None
+        else:
+            assert workout.duration_minutes == 30
+
+    def test_spanish_workout_has_no_named_exercise(self, parser: _ParserProxy) -> None:
+        # Consecuencia aceptada y documentada: `_EXERCISE_MAP` está en inglés y ampliarlo
+        # necesita una columna de alias en `exercise_types`, o sea una migración. Se
+        # reconoce el entrenamiento y su duración, sin ejercicio nombrado — exactamente
+        # igual que "trained for 45 minutes".
+        result = parser.parse("corrí 30 minutos", speaking_user="diego")
+        workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
+        assert workout is not None
+        assert workout.exercises == []
+
+    # ── Preferencias ────────────────────────────────────────────────────────
+    @pytest.mark.parametrize(
+        ("phrase", "item_name", "signal", "participants"),
+        [
+            ("no me gusta el brócoli", "brócoli", "dislikes", ["diego"]),
+            ("no nos gusta la remolacha", "remolacha", "dislikes", ["both"]),
+            ("odio el pescado", "pescado", "dislikes", ["diego"]),
+            ("no podemos comer gluten", "gluten", "dislikes", ["both"]),
+        ],
+    )
+    def test_preference_subject_is_only_the_food(
+        self,
+        parser: _ParserProxy,
+        phrase: str,
+        item_name: str,
+        signal: str,
+        participants: list[str],
+    ) -> None:
+        # Lo que queda como `item_name` es el **sujeto** contra el que se guarda la
+        # preferencia, y con eso se busca el alimento. Si sobra una palabra de la frase no
+        # se encuentra nada: "no me gusta el brócoli" salía con sujeto "gusta brócoli", que
+        # es una preferencia guardada contra un alimento que no existe.
+        result = parser.parse(phrase, speaking_user="diego")
+        pref = next((i for i in result.intents if i.intent_type == "update_preference"), None)
+        assert pref is not None
+        assert pref.item_name.lower() == item_name
+        assert pref.preference_signal == signal
+        assert pref.participants == participants
+
+    def test_a_spanish_activity_is_a_preference_about_exercise(
+        self, parser: _ParserProxy
+    ) -> None:
+        # El nombre puede no coincidir con el catálogo (eso necesita la columna de alias),
+        # pero el **tipo** tiene que ser el correcto: guardado como preferencia de comida,
+        # "correr" ensucia el filtro de alimentos con una palabra que no es comida y nadie
+        # lo ve nunca.
+        result = parser.parse("prefiero correr", speaking_user="diego")
+        pref = next((i for i in result.intents if i.intent_type == "update_preference"), None)
+        assert pref is not None
+        assert pref.item_type == "exercise"
+
+
+class TestListasQueTienenQueCoincidir:
+    """Los huecos de este parser no aparecen como excepciones: aparecen como un dato feo.
+
+    Un verbo que abre la frase, está en la compuerta y falta en el recorte no lanza nada —
+    deja un alimento llamado "compré 6 bananas". Una palabra de cantidad que está en la
+    tabla y no en el regex se la come el nombre: "dos banana". Estos tests recorren las
+    constantes en vez de repetirlas, así que agregar un verbo a una lista y olvidarse de la
+    otra falla acá.
+    """
+
+    def test_every_meal_verb_is_stripped_from_the_food_name(
+        self, parser: _ParserProxy
+    ) -> None:
+        for verb in nlp_rules._MEAL_VERBS.split("|"):
+            result = parser.parse(f"{verb} milanesa", speaking_user="diego")
+            meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+            assert meal is not None, f"{verb!r} no abre la compuerta de comidas"
+            names = [i.food_name.lower() for v in meal.items_per_user.values() for i in v]
+            assert names == ["milanesa"], f"{verb!r} quedó adentro del alimento: {names}"
+
+    def test_every_stock_add_verb_is_stripped_from_the_item_name(
+        self, parser: _ParserProxy
+    ) -> None:
+        for verb in nlp_rules._STOCK_ADD_VERBS.split("|"):
+            result = parser.parse(f"{verb} 2 bananas", speaking_user="diego")
+            stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+            assert stock is not None, f"{verb!r} no abre la compuerta de la despensa"
+            names = [i.food_name.lower() for i in stock.items]
+            assert names == ["banana"], f"{verb!r} quedó adentro del ítem: {names}"
+
+    def test_every_stock_consume_verb_is_stripped_from_the_item_name(
+        self, parser: _ParserProxy
+    ) -> None:
+        for verb in nlp_rules._STOCK_CONSUME_VERBS.split("|"):
+            result = parser.parse(f"{verb} 2 bananas", speaking_user="diego")
+            consume = next(
+                (i for i in result.intents if i.intent_type == "consume_stock"), None
+            )
+            assert consume is not None, f"{verb!r} no abre la compuerta de consumo"
+            names = [i.food_name.lower() for i in consume.items]
+            assert names == ["banana"], f"{verb!r} quedó adentro del ítem: {names}"
+
+    def test_every_number_word_is_read_as_a_quantity(self) -> None:
+        # `_NUMBER_WORDS` la lee `_parse_qty`, y el único que le pasa algo es el grupo `qty`
+        # de `_QTY_UNIT_ITEM`. Una entrada que ese grupo no reconozca no es solo inútil: la
+        # palabra se la come el nombre del alimento.
+        for word, value in nlp_rules._NUMBER_WORDS.items():
+            items = nlp_rules._extract_items(f"{word} bananas")
+            assert len(items) == 1, f"{word!r} → {items}"
+            assert items[0].qty == value, f"{word!r} no se leyó como cantidad"
+            assert items[0].food_name.lower() == "banana", f"{word!r} → {items[0].food_name!r}"
+
+    def test_every_spanish_unit_has_a_canonical_form(self) -> None:
+        # Si "kilos" y "kg" no normalizan a lo mismo, el mismo alimento queda en dos filas
+        # de la despensa que no se suman nunca.
+        canonical = {
+            "g",
+            "kg",
+            "ml",
+            "l",
+            "oz",
+            "lb",
+            "unit",
+            "slice",
+            "cup",
+            "tbsp",
+            "tsp",
+            "serving",
+        }
+        for written, expected in nlp_rules._UNIT_NORMALISE.items():
+            assert expected in canonical, f"{written!r} normaliza a {expected!r}: no es canónica"
+
+
+class TestElPlaceholderNoPromete:
+    """Lo que la pantalla de captura ofrece como ejemplo tiene que funcionar.
+
+    Este es el test que hubiera encontrado el problema solo: el `placeholder` traducido
+    ofrecía *"corrí 30 min · compré 1 kg de avena"* y las dos frases salían como `mixed` con
+    confianza 0.10. La app le pedía a la casa que escribiera en castellano y después no lo
+    entendía, sin decirlo. Se leen del catálogo y no se copian acá para que cambiar el
+    ejemplo sin probarlo falle.
+    """
+
+    _MSGID = "e.g. we had pasta for dinner · I ran for 30 min · bought 1 kg of oats"
+
+    @staticmethod
+    def _examples(text: str) -> list[str]:
+        cleaned = text.split(".", 1)[1] if text.lower().startswith(("ej.", "e.g.")) else text
+        return [part.strip() for part in cleaned.split("·") if part.strip()]
+
+    def test_the_english_examples_parse(self, parser: _ParserProxy) -> None:
+        for example in self._examples(self._MSGID):
+            result = parser.parse(example, speaking_user="diego")
+            assert result.intents[0].intent_type != "mixed", example
+            assert result.overall_confidence >= 0.5, example
+
+    def test_the_spanish_examples_parse(self, parser: _ParserProxy) -> None:
+        from babel.messages.pofile import read_po
+
+        from tests.test_i18n_catalog import CATALOG
+
+        with CATALOG.open(encoding="utf-8") as f:
+            catalog = read_po(f)
+        message = catalog.get(self._MSGID)
+        assert message is not None and message.string, (
+            "el placeholder de captura ya no está en el catálogo con este msgid"
+        )
+        examples = self._examples(str(message.string))
+        assert examples, "el placeholder traducido no ofrece ningún ejemplo"
+        for example in examples:
+            result = parser.parse(example, speaking_user="diego")
+            assert result.intents[0].intent_type != "mixed", example
+            assert result.overall_confidence >= 0.5, example

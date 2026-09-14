@@ -47,8 +47,27 @@ _ROCIO_PATTERNS = re.compile(
     r"\b(roc[íi]o|roci)\b",
     re.IGNORECASE,
 )
+#: Primera persona del plural, la que dice "esto lo hicimos los dos".
+#:
+#: En inglés la pluralidad viaja en un pronombre suelto ("**we** had pasta"), y por eso
+#: `_WE_PATTERNS` alcanzaba con cuatro palabras. En castellano viaja **en el verbo** y el
+#: pronombre no se escribe: nadie pone "nosotros cenamos fideos", pone "cenamos fideos".
+#: Sin esta lista esa frase se atribuía a una sola persona —la que escribe—, así que una
+#: cena compartida entraba como comida de uno, que es justo lo que esta app no debería
+#: equivocar. Va por lista explícita y no por `\w+amos\b` porque ese atajo convierte
+#: "500 **gramos** de avena" en algo que hicieron los dos.
+_WE_VERBS_ES = (
+    "desayunamos|almorzamos|cenamos|merendamos|comimos|tomamos"
+    "|compramos|conseguimos|usamos|gastamos|terminamos|acabamos"
+    "|entrenamos|corrimos|caminamos|nadamos|hicimos|fuimos"
+    "|pesamos|dormimos"
+    # Las de preferencia: "no **nos** gusta la remolacha" es de los dos, igual que
+    # "we don't like beets", y sin esto quedaba como el gusto de quien escribió.
+    "|preferimos|podemos|queremos|odiamos|detestamos|evitamos"
+)
+
 _WE_PATTERNS = re.compile(
-    r"\b(we|both|us|nosotros)\b",
+    r"\b(we|both|us|nosotros|nos|" + _WE_VERBS_ES + r")\b",
     re.IGNORECASE,
 )
 _I_PATTERNS = re.compile(
@@ -81,6 +100,13 @@ def _resolve_participants(text: str, speaking_user: str) -> list[str]:
 # Quantity / unit parsing
 # ---------------------------------------------------------------------------
 
+#: Cantidades escritas con letras. La tabla la lee `_parse_qty`, y el **único** que le pasa
+#: algo es el grupo `qty` de `_QTY_UNIT_ITEM`: una clave que ese grupo no sepa reconocer es
+#: una entrada muerta. Hasta acá el grupo aceptaba `\d+`, `half`, `a` y `an`, o sea que
+#: `one`…`ten` y `un`…`seis` estaban escritas y nunca se leían — y peor que muertas: sin
+#: reconocer la palabra, el nombre del alimento se la come ("dos bananas" → un alimento
+#: llamado "dos banana"). El grupo `qty` ahora nombra todas las claves de acá; si se agrega
+#: una, hay que agregarla también allá. Un test fija que las dos listas coincidan.
 _NUMBER_WORDS: dict[str, float] = {
     "a": 1,
     "an": 1,
@@ -102,33 +128,47 @@ _NUMBER_WORDS: dict[str, float] = {
     "cuatro": 4,
     "cinco": 5,
     "seis": 6,
+    "medio": 0.5,
+    "media": 0.5,
 }
 
+#: Alternación de las cantidades escritas con letras, armada **desde** `_NUMBER_WORDS` para
+#: que no haya dos listas que se puedan desincronizar. Las más largas primero: si "un" se
+#: probara antes que "una", "una banana" dejaría "a banana" como nombre.
+_NUMBER_WORD_ALT = "|".join(re.escape(w) for w in sorted(_NUMBER_WORDS, key=len, reverse=True))
+
 # Regex: optional leading number, then optional unit, then item name
+#
+# El orden dentro de `unit` **no es cosmético**: la alternación es lo primero que gana, así
+# que una unidad que sea prefijo de otra tiene que ir después de la larga. `kilos?` antes de
+# `kilogramos?` dejaría "gramos de arroz" como nombre del alimento, y `grams?` antes de
+# `gramos?` dejaría "os de arroz". Cada unidad de acá necesita además su entrada en
+# `_UNIT_NORMALISE`, o se guarda tal cual se escribió y "kilos" y "kg" quedan como dos
+# unidades distintas para la misma cosa.
 _QTY_UNIT_ITEM = re.compile(
     r"""
     (?P<qty>
         \d+(?:[.,]\d+)?       # plain number
-        |half                  # "half"
-        |a\b|an\b              # "a" / "an"
+        |(?:""" + _NUMBER_WORD_ALT + r""")\b   # "half", "two", "dos", "media"…
     )?
     \s*
     (?P<unit>
-        kg|g\b|grams?|gram\b
-        |ml|milliliters?
-        |l\b|liters?|litres?
+        kilogramos?|kilos?|kg
+        |gramos?|grams?|gram\b|gr\b|g\b
+        |mililitros?|milliliters?|ml
+        |litros?|liters?|litres?|l\b
         |oz|ounces?
         |lbs?|pounds?
-        |cups?|tablespoons?|tbsp|teaspoons?|tsp
-        |units?|pieces?|pcs?
-        |slices?
-        |servings?
-        |portions?
+        |cucharaditas?|cucharadas?|tablespoons?|tbsp|teaspoons?|tsp
+        |tazas?|cups?
+        |unidades|unidad|units?|pieces?|pcs?
+        |rebanadas?|slices?
+        |porciones|porci[oó]n|servings?|portions?
     )?
     \s*
-    (?:of\s+)?
+    (?:of\s+|de\s+)?
     (?P<name>[a-záéíóúüñ][a-záéíóúüñ\s\-]+?)
-    (?=\s*(?:,|and\b|$|\bwith\b|\bfor\b|\bof\b|\+))
+    (?=\s*(?:,|and\b|$|\bwith\b|\bcon\b|\bfor\b|\bof\b|\+))
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -136,8 +176,32 @@ _QTY_UNIT_ITEM = re.compile(
 _UNIT_NORMALISE: dict[str, str] = {
     "gram": "g",
     "grams": "g",
+    "gramo": "g",
+    "gramos": "g",
+    "gr": "g",
     "kilogram": "kg",
     "kilograms": "kg",
+    "kilogramo": "kg",
+    "kilogramos": "kg",
+    "kilo": "kg",
+    "kilos": "kg",
+    "mililitro": "ml",
+    "mililitros": "ml",
+    "litro": "l",
+    "litros": "l",
+    "cucharada": "tbsp",
+    "cucharadas": "tbsp",
+    "cucharadita": "tsp",
+    "cucharaditas": "tsp",
+    "taza": "cup",
+    "tazas": "cup",
+    "unidad": "unit",
+    "unidades": "unit",
+    "rebanada": "slice",
+    "rebanadas": "slice",
+    "porción": "serving",
+    "porcion": "serving",
+    "porciones": "serving",
     "milliliter": "ml",
     "milliliters": "ml",
     "millilitre": "ml",
@@ -190,13 +254,33 @@ def _parse_qty(raw: str | None) -> float | None:
         return None
 
 
+#: Determinantes que abren un ítem y no forman parte de su nombre. El nombre que sale de acá
+#: se busca después contra el catálogo de alimentos, así que "la última leche" no encuentra
+#: la leche y "usé la última leche" termina creando un alimento nuevo. Se recortan solo los
+#: **definidos** y los posesivos: `un`, `una`, `a` y `an` valen 1 y los lee el grupo `qty`,
+#: recortarlos sería perder la cantidad. Es un `+` porque se apilan ("la última leche").
+_LEADING_DETERMINERS = re.compile(
+    r"^(?:(?:the|el|la|los|las|mi|mis|nuestr[oa]s?|últim[oa]s?|ultim[oa]s?|last)\s+)+",
+    re.IGNORECASE,
+)
+
+#: Un pronombre suelto no es un alimento. Estaba escrito dos veces en `_extract_items`, una
+#: por rama, y solo la rama del regex lo chequeaba con el largo mínimo.
+_ITEM_STOPWORDS = {
+    "we", "i", "you", "they", "he", "she",
+    "nosotros", "yo", "él", "ella", "vos", "tu", "tú",
+}
+
+
 def _extract_items(text: str) -> list[FoodItemRef]:
     """Extract food items with optional quantity/unit from a text segment."""
     items: list[FoodItemRef] = []
-    # Split on commas and 'and' to tokenize
-    segments = re.split(r",\s*|\band\b", text, flags=re.IGNORECASE)
+    # Split on commas and 'and'/'y' to tokenize. Sin el `y` toda una lista escrita en
+    # castellano entraba como **un** alimento: "6 bananas y 1 kg de avena" quedaba como un
+    # ítem llamado "6 bananas y 1 kg de avena".
+    segments = re.split(r",\s*|\band\b|\by\b", text, flags=re.IGNORECASE)
     for seg in segments:
-        seg = seg.strip()
+        seg = _LEADING_DETERMINERS.sub("", seg.strip()).strip()
         if not seg:
             continue
         m = _QTY_UNIT_ITEM.match(seg)
@@ -209,15 +293,15 @@ def _extract_items(text: str) -> list[FoodItemRef]:
                 name = raw_name[:-1]
             else:
                 name = raw_name
-            # Avoid capturing stopwords alone
-            if len(name) < 2 or name.lower() in {"we", "i", "you", "they", "he", "she"}:
-                continue
-            items.append(FoodItemRef(food_name=name, qty=qty, unit=unit))
         else:
             # Fallback: plain name
-            name = seg.strip()
-            if len(name) >= 2 and name.lower() not in {"we", "i", "you", "they", "he", "she"}:
-                items.append(FoodItemRef(food_name=name))
+            qty = None
+            unit = None
+            name = seg
+        # Avoid capturing stopwords alone
+        if len(name) < 2 or name.lower() in _ITEM_STOPWORDS:
+            continue
+        items.append(FoodItemRef(food_name=name, qty=qty, unit=unit))
     return items
 
 
@@ -236,16 +320,34 @@ _TIME_REFS = re.compile(
     re.IGNORECASE,
 )
 
+#: Palabra → tipo de comida. En inglés el sustantivo alcanza porque el verbo es genérico
+#: ("we **had** pasta for **dinner**"); en castellano el tipo de comida vive en el verbo
+#: conjugado y no se repite como sustantivo —nadie escribe "cené la cena"—, así que las
+#: conjugaciones tienen que estar acá o "cenamos fideos" queda como `meal_type="other"`.
+#: Que estén también en la lista que `_build_items_per_user` recorta es inofensivo: ese
+#: recorte pasa después del recorte del verbo, así que la palabra ya no está.
 _MEAL_TYPE_MAP: dict[str, str] = {
     "breakfast": "breakfast",
     "desayuno": "breakfast",
+    "desayunamos": "breakfast",
+    "desayuné": "breakfast",
+    "desayunó": "breakfast",
     "lunch": "lunch",
     "almuerzo": "lunch",
+    "almorzamos": "lunch",
+    "almorcé": "lunch",
+    "almorzó": "lunch",
     "dinner": "dinner",
     "cena": "dinner",
+    "cenamos": "dinner",
+    "cené": "dinner",
+    "cenó": "dinner",
     "supper": "dinner",
     "snack": "snack",
     "merienda": "snack",
+    "merendamos": "snack",
+    "merendé": "snack",
+    "merendó": "snack",
     "brunch": "brunch",
 }
 
@@ -344,8 +446,13 @@ _EXERCISE_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: `_extract_duration_minutes` decide horas contra minutos por la primera letra de la unidad,
+#: así que `horas`/`minutos` caen del lado correcto sin tocar esa función. Sin ellas
+#: "corrí 30 **minutos**" entraba como entrenamiento sin duración, mientras que
+#: "corrí 30 **min**" —lo que ofrece el placeholder— sí se leía: la mitad de un ejemplo.
 _DURATION_RE = re.compile(
-    r"\b(?P<val>\d+(?:\.\d+)?)\s*(?P<unit>hours?|hrs?|h\b|minutes?|mins?|m\b)\b",
+    r"\b(?P<val>\d+(?:\.\d+)?)\s*"
+    r"(?P<unit>horas?|hours?|hrs?|hs\b|h\b|minutos?|minutes?|mins?|m\b)\b",
     re.IGNORECASE,
 )
 
@@ -438,47 +545,89 @@ def _infer_workout_type(text: str, exercises: list[ExerciseRef]) -> str | None:
 # ---------------------------------------------------------------------------
 # Keyword triggers
 # ---------------------------------------------------------------------------
+#
+# Estos cinco regex son la **compuerta**: sin uno de estos verbos la frase no llega a
+# ningún parser y sale como `mixed` con confianza 0.10, o sea sin nada que confirmar.
+# Hasta acá el castellano estaba solo en primera persona del plural —"cenamos",
+# "compramos", "usamos"— y faltaba el singular, que es la mitad de lo que escribe una casa
+# de dos: *"comí milanesa"*, *"compré 6 bananas"*, *"dormí 7 horas"* no entraban. Lo de
+# dormir era el caso más claro de que era un descuido y no una decisión: `_SLEEP_RE` ya
+# entiende `dormí|dormimos` desde siempre, y el valor nunca podía leerse porque la
+# compuerta no dejaba pasar la frase. El *placeholder* de la pantalla de captura, además,
+# ofrecía como ejemplo "compré 1 kg de avena", que es exactamente una de las formas que no
+# funcionaban.
+#
+# Lo que se agrega es solo la compuerta. **Los nombres de ejercicio siguen en inglés** y
+# eso no cambia acá: `find_known_activities` explica por qué (hace falta una columna de
+# alias, o sea una migración). La consecuencia es visible y aceptada: *"corrí 30 minutos"*
+# ahora sí se reconoce como entrenamiento, con su duración, y **sin ejercicio nombrado** —
+# igual que "trained for 45 minutes", que es el caso que el parser ya trataba así.
+
+#: Verbos de comer, una sola vez. Los leen tres cosas que tenían tres listas distintas y se
+#: desincronizaban de a una: la compuerta (`_MEAL_TRIGGERS`), el corte de "quién comió qué"
+#: (`_split_by_user`) y el corte del verbo que abre la frase (`_build_items_per_user`). Que
+#: un verbo esté en la compuerta y no en los cortes no da un error: da un alimento llamado
+#: "comí milanesa con puré". Por eso ahora es una lista y tres lectores.
+_MEAL_VERBS = (
+    "ate|eat|eaten|had|having"
+    "|comí|comió|comimos|comiste"
+    "|desayuné|desayunó|desayunamos"
+    "|almorcé|almorzó|almorzamos"
+    "|cené|cenó|cenamos"
+    "|merendé|merendó|merendamos"
+    "|tomé|tomó|tomamos"
+)
 
 _MEAL_TRIGGERS = re.compile(
-    r"\b(ate|eat|eaten|had|having|breakfast|lunch|dinner|snack|meal|food|comió|comimos|"
-    r"desayunó|almorzó|cenó|desayunamos|almorzamos|cenamos|about to have|going to eat|"
-    r"just ate|just had)\b",
+    r"\b(" + _MEAL_VERBS + r"|breakfast|lunch|dinner|snack|meal|food"
+    r"|about to have|going to eat|just ate|just had)\b",
     re.IGNORECASE,
 )
 
 _WORKOUT_TRIGGERS = re.compile(
     r"\b(went to the gym|trained|training|workout|worked out|exercised|rode|"
     r"went for a (run|bike|swim|walk|ride)|gym|biked|ran|swam|walked|did yoga|"
-    r"did pilates|did hiit|went hiking)\b",
+    r"did pilates|did hiit|went hiking|gimnasio|entrené|entrenamos|corrí|corrimos|"
+    r"caminé|caminamos|nadé|nadamos|pesas|hice ejercicio|hicimos ejercicio)\b",
     re.IGNORECASE,
 )
 
 _BODY_METRIC_TRIGGERS = re.compile(
-    r"\b(weigh|weight|weighed|peso|I weigh|I am|my weight|body fat|waist|sleep|slept|"
-    r"body mass|bmi)\b",
+    r"\b(weigh|weight|weighed|peso|pesé|pesamos|I weigh|I am|my weight|body fat|waist|"
+    r"sleep|slept|dormí|dormimos|cintura|body mass|bmi)\b",
     re.IGNORECASE,
 )
 
-_STOCK_ADD_TRIGGERS = re.compile(
-    r"\b(bought|buy|purchased|got|added|picked up|we have|compramos|compraron|"
-    r"I got|we got)\b",
-    re.IGNORECASE,
+#: Verbos de entrada y de salida de la despensa. Igual que con las comidas, cada lista la
+#: leen dos cosas —la compuerta y el recorte del verbo que abre la frase— y tenerlas
+#: separadas se paga en datos, no en excepciones: un verbo que abre la frase y no está en el
+#: recorte deja el verbo adentro del primer ítem ("compré 6 bananas" → un alimento llamado
+#: "compré 6 bananas"). Las formas largas van antes que las cortas: "ran out of" antes que
+#: "ran out", o el recorte deja el "of" colgando.
+_STOCK_ADD_VERBS = (
+    "bought|buy|purchased|picked up|added|we got|I got|got|we have"
+    "|compramos|compré|compraron|conseguimos|conseguí"
 )
 
-_STOCK_CONSUME_TRIGGERS = re.compile(
-    r"\b(used|consumed|finished|ran out|used up|usamos|gastamos|we used|I used)\b",
-    re.IGNORECASE,
+_STOCK_CONSUME_VERBS = (
+    "ran out of|ran out|used up|we used|I used|used|consumed|finished"
+    "|usamos|usé|gastamos|gasté|terminamos|terminé|acabamos|acabé"
 )
+
+_STOCK_ADD_TRIGGERS = re.compile(r"\b(" + _STOCK_ADD_VERBS + r")\b", re.IGNORECASE)
+
+_STOCK_CONSUME_TRIGGERS = re.compile(r"\b(" + _STOCK_CONSUME_VERBS + r")\b", re.IGNORECASE)
 
 _PREFERENCE_NEG_TRIGGERS = re.compile(
     r"\b(don'?t|do not|no|never|can'?t|cannot|hate|dislike|avoid|not suggest|"
-    r"no me gusta|no nos gusta|imposible|no podemos)\b",
+    r"no me gusta|no nos gusta|no me gustan|no nos gustan|imposible|no podemos|"
+    r"odio|odiamos|detesto|detestamos|no soporto|no soportamos|evitamos)\b",
     re.IGNORECASE,
 )
 
 _PREFERENCE_POS_TRIGGERS = re.compile(
     r"\b(like|love|enjoy|prefer|we like|I like|we love|I love|nos gusta|"
-    r"me gusta|preferimos)\b",
+    r"me gusta|me gustan|nos gustan|me encanta|nos encanta|preferimos|prefiero)\b",
     re.IGNORECASE,
 )
 
@@ -495,8 +644,9 @@ def _split_by_user(text: str) -> dict[str, str]:
     pattern = re.compile(
         r"(?:^|,\s*)"
         r"(?P<user>diego|roc[íi]o|roci|we|both)\s*"
-        r"(?:ate|had|having|eat|eaten|comió|tomó|:)\s*"
-        r"(?P<items>.+?)(?=,\s*(?:diego|roc[íi]o|roci|we|both)\s*(?:ate|had|having|eat|comió)|$)",
+        r"(?:(?:" + _MEAL_VERBS + r")\b|:)\s*"
+        r"(?P<items>.+?)"
+        r"(?=,\s*(?:diego|roc[íi]o|roci|we|both)\s*(?:" + _MEAL_VERBS + r")\b|$)",
         re.IGNORECASE,
     )
     result: dict[str, str] = {}
@@ -523,9 +673,13 @@ def _build_items_per_user(
         return {u: _extract_items(seg) for u, seg in per_user.items()}
 
     # No per-user split found — all items go to all participants
-    # Strip leading trigger words before extracting
+    #
+    # Strip leading trigger words before extracting. El `\b` del final no es decorativo: sin
+    # él "eat" recorta adentro de "eaten" y "we have eaten pasta" deja un alimento llamado
+    # "en pasta". La compuerta nunca lo mostró porque ahí la alternación **sí** va entre
+    # `\b`, así que el defecto vivía solo en los recortes.
     stripped = re.sub(
-        r"^.*?(?:ate|had|having|eat|eaten|comió|comimos|about to have|going to eat|just ate|just had)\s*",
+        r"^.*?(?:" + _MEAL_VERBS + r"|about to have|going to eat|just ate|just had)\b\s*",
         "",
         text,
         count=1,
@@ -548,10 +702,20 @@ def _build_items_per_user(
 # Preference intent parsing
 # ---------------------------------------------------------------------------
 
+#: Esta lista decide una sola cosa, y es importante: si la preferencia se guarda contra un
+#: **ejercicio** o contra un **alimento**. Los nombres castellanos van acá aunque
+#: `_EXERCISE_MAP` siga en inglés —eso necesita una columna de alias, ver
+#: `find_known_activities`— porque las dos cosas fallan distinto: un nombre que el catálogo
+#: no reconoce queda como texto libre y se ve en pantalla, mientras que "prefiero correr"
+#: guardado como preferencia *de comida* ensucia el filtro de alimentos con una palabra que
+#: no es comida, y nadie lo ve nunca.
 _PREF_EXERCISE_WORDS = {
     "gym", "biking", "bike", "cycling", "yoga", "running", "swimming", "swim",
     "pilates", "crossfit", "hiit", "zumba", "spinning", "hiking", "walking",
     "weightlifting", "weights", "boxing", "dancing", "rowing",
+    "correr", "caminar", "nadar", "natación", "natacion", "pesas", "bicicleta",
+    "gimnasio", "trotar", "andar", "remo", "boxeo", "baile", "bailar",
+    "entrenar", "ejercicio",
 }
 
 
@@ -591,10 +755,23 @@ def _parse_preference(text: str, speaking_user: str) -> PreferenceIntent | None:
         signal = "likes"
 
     # Extract the item name
-    # Try to strip negation + suggestion words to get the noun
+    # Try to strip negation + suggestion words to get the noun.
+    #
+    # Lo que queda acá es el **nombre del sujeto** de la preferencia, y con eso se busca el
+    # alimento o el ejercicio: si sobra una palabra de la frase, no se encuentra nada. La
+    # lista inglesa estaba completa y la castellana no existía más allá del `no`, así que
+    # "no me gusta el brócoli" salía con el sujeto `"gusta brócoli"` — una preferencia
+    # guardada contra un alimento que no existe, que es peor que no guardarla.
     cleaned = re.sub(
         r"\b(don'?t|do not|please|no|never|not|suggest|recommend|we|i|like|love|"
-        r"enjoy|prefer|avoid|dislike|hate|can'?t|cannot)\b",
+        r"enjoy|prefer|avoid|dislike|hate|can'?t|cannot|"
+        r"me|nos|gusta|gustan|gustó|encanta|encantan|odio|odiamos|detesto|detestamos|"
+        r"prefiero|preferimos|evitar|evitamos|sugieras|sugerir|sugieran|recomiendes|"
+        r"nunca|jamás|jamas|nada|puedo|podemos|imposible|soporto|soportamos|"
+        r"comer|comemos|tomar|tomamos|hacer|hacemos|encanta|encantan|"
+        # Los artículos de dos letras (`el`, `la`, `de`) ya los descarta el filtro de
+        # `len(w) > 2` de más abajo; los de tres no, y por eso están nombrados.
+        r"los|las|del|una)\b",
         " ",
         text,
         flags=re.IGNORECASE,
@@ -637,12 +814,18 @@ _BODY_FAT_RE = re.compile(
     r"\b(?P<val>\d+(?:[.,]\d+)?)\s*%\s*(?:body\s*fat|bf|grasa)\b",
     re.IGNORECASE,
 )
+#: Estos dos son el mismo descuido que la compuerta, un paso más adentro: la compuerta ya
+#: admitía `cintura` y `dormí|dormimos`, y acá la unidad y el sustantivo seguían siendo solo
+#: los ingleses. O sea que la frase entraba, se clasificaba como métrica corporal, y el
+#: número no se leía nunca: "dormí 7 horas" daba una medición vacía. `hs` entra porque es
+#: como se escribe acá, y `cintura de 80 cm` porque el "de" es obligatorio en castellano.
 _WAIST_RE = re.compile(
-    r"\bwaist\s*(?:is\s*)?(?P<val>\d+(?:[.,]\d+)?)\s*cm\b",
+    r"\b(?:waist|cintura)\s*(?:is\s*|de\s*)?(?P<val>\d+(?:[.,]\d+)?)\s*cm\b",
     re.IGNORECASE,
 )
 _SLEEP_RE = re.compile(
-    r"\b(?:slept|sleep|dormí|dormimos)\s*(?:for\s*)?(?P<val>\d+(?:[.,]\d+)?)\s*(?:hours?|hrs?|h\b)\b",
+    r"\b(?:slept|sleep|dormí|dormimos)\s*(?:for\s*)?(?P<val>\d+(?:[.,]\d+)?)\s*"
+    r"(?:hours?|hrs?|horas?|hs\b|h\b)\b",
     re.IGNORECASE,
 )
 
@@ -812,9 +995,9 @@ def parse(text: str, speaking_user: str = "diego") -> ParseResult:
 
     # ── Stock add ───────────────────────────────────────────────────────────
     if is_stock_add and not is_meal and not is_workout:
-        # Strip the trigger verb to get just the item list
+        # Strip the trigger verb to get just the item list — misma lista que la compuerta.
         stripped = re.sub(
-            r"^.*?(?:bought|purchased|got|added|picked up|compramos|I got|we got)\s*",
+            r"^.*?(?:" + _STOCK_ADD_VERBS + r")\b\s*",
             "",
             text,
             count=1,
@@ -834,7 +1017,7 @@ def parse(text: str, speaking_user: str = "diego") -> ParseResult:
     # ── Stock consume ────────────────────────────────────────────────────────
     if is_stock_consume:
         stripped = re.sub(
-            r"^.*?(?:used|consumed|finished|ran out of|used up|usamos|gastamos)\s*",
+            r"^.*?(?:" + _STOCK_CONSUME_VERBS + r")\b\s*",
             "",
             text,
             count=1,

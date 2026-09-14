@@ -2631,6 +2631,76 @@ pesa la mitad, o de por qué `"other"` no es una franja horaria, está fresca en
 que la introdujo y hay que ir juntándola a medida que cada fase cierra — el registro por
 sección de este mismo plan es la materia prima.
 
+**6.0 — Lo que hubo que arreglar antes de poder escribir la 6.2**
+
+Este punto no estaba en el plan. Apareció al juntar el material de *"Cómo hablarle"*, que
+pedía **ejemplos reales en castellano**: la forma de verificar un ejemplo no es leer el
+parser, es escribir la frase y ver qué sale. La primera que probé fue la que la propia app
+ofrece como sugerencia en el textarea de captura, traducida en la Fase 5 —
+`ej. cenamos fideos · corrí 30 min · compré 1 kg de avena` — y **dos de las tres volvían
+`mixed` con confianza 0.10**, que es el resultado de "no entendí nada".
+
+Vale la pena escribir cómo se veía, porque es el peor modo de falla que puede tener esta
+app: **no hay excepción, no hay log, no hay nada rojo.** Sin un verbo que la compuerta
+reconozca, la frase no llega a ningún parser, se guarda en `nlp_ingestion_events` con
+`status="pending_confirmation"` y **nada que confirmar**. Desde la pantalla se ve una
+captura que "no anduvo". La Fase 5 tradujo el catálogo — 528 entradas, 0 sin traducir — y
+al hacerlo la app pasó a ofrecer, en su propio idioma, ejemplos que su propio parser no
+leía. Traducir la interfaz y traducir la entrada son dos trabajos distintos, y solo uno
+estaba en el plan.
+
+- [x] **La compuerta y todos sus lectores, no solo la compuerta.** Widen los seis grupos de
+      disparadores (comida, despensa alta/baja, métrica corporal, preferencia positiva y
+      negativa) es lo primero que se ve y lo menos que alcanza: pasada la compuerta, la
+      frase cae en un parser cuyos regex seguían siendo ingleses, así que **entraba,
+      se clasificaba bien y el número no se leía nunca**. `dormí 7 horas` daba una medición
+      corporal vacía porque `_SLEEP_RE` conocía `hours` y no `horas`; `corrí 30 minutos`
+      daba `duration_minutes: None` porque `_DURATION_RE` conocía `mins?` y no `minutos?`.
+      Quedaron tocados, además de los disparadores: `_NUMBER_WORDS` (`medio`/`media`), el
+      grupo `qty` y las unidades de `_QTY_UNIT_ITEM`, `_UNIT_NORMALISE` (diez unidades en
+      castellano), el separador `y`, el conector `de`, `con` en el lookahead del nombre,
+      los determinantes que abren un ítem, `_MEAL_TYPE_MAP`, `_WE_PATTERNS`, `_WAIST_RE`,
+      la lista de limpieza de `_parse_preference` y `_PREF_EXERCISE_WORDS`.
+- [x] **Dos cosas que el castellano hace distinto y que no son "más palabras".** La
+      pluralidad viaja **en el verbo** y el pronombre no se escribe: nadie pone "nosotros
+      cenamos fideos". Sin `_WE_VERBS_ES`, *"cenamos fideos"* se atribuía a quien escribió,
+      o sea que **una cena compartida entraba como comida de uno** — justo el error que una
+      app de dos personas no puede cometer. Y el tipo de comida también viaja en el verbo:
+      nadie escribe "cené la cena", así que `desayuné`/`almorcé`/`cené`/`merendé` tienen
+      que *ser* el mapa de `meal_type`, no acompañarlo.
+- [x] **Tres listas de verbos que eran la misma lista escrita tres veces.** El mandato de no
+      duplicar acá no era estético: la compuerta, el corte de "quién comió qué" y el corte
+      del verbo que abre la frase tenían **tres** listas de verbos de comer que se
+      desincronizaban de a una, y el síntoma de la desincronización no es un error sino
+      **un alimento llamado "comí milanesa con puré"**. Ahora hay un `_MEAL_VERBS` con tres
+      lectores, un `_STOCK_ADD_VERBS` y un `_STOCK_CONSUME_VERBS` con dos cada uno, y
+      `_NUMBER_WORD_ALT` se arma **desde** `_NUMBER_WORDS` en vez de repetirla.
+- [x] **Un defecto que estaba en los dos idiomas y lo encontró un test, no una lectura.**
+      Los tres recortes eran `^.*?(?:verbos)\s*` **sin `\b` final**, mientras la compuerta
+      sí encierra la alternación entre `\b`. Por eso el defecto solo podía existir del lado
+      del recorte y era invisible desde la compuerta: `eat` recortaba adentro de `eaten`, y
+      *"we have eaten pasta"* — inglés, de la v1 — dejaba un alimento llamado **"en pasta"**.
+      Lo destapó el test de acoplamiento que recorre `_MEAL_VERBS` verbo por verbo, escrito
+      para que las listas no se separen otra vez; salió en la primera corrida.
+- [x] **Los primeros tests en castellano del repo.** No había **ninguna** aserción en
+      castellano en `tests/`, que es la razón estructural de que nada de esto se notara:
+      `tests/test_nlp.py` pasa de 16 a 51 casos, con tres clases nuevas. `TestCastellano`
+      fija el comportamiento frase por frase; `TestListasQueTienenQueCoincidir` **itera las
+      constantes** en vez de repetirlas, así que un verbo agregado a una lista y no a otra
+      falla sin que nadie escriba un test; y `TestElPlaceholderNoPromete` **lee el ejemplo
+      del catálogo** en vez de copiarlo, en los dos idiomas — cambiar el texto que la app
+      ofrece sin probar que se entiende vuelve a fallar.
+- [x] **Tres cosas que quedan sin soportar, y quedan escritas como decisión.** No son
+      olvidos y por eso cada una tiene su aserción: los nombres de ejercicio siguen siendo
+      ingleses porque hacerlos bilingües es una **columna de alias en `exercise_types`**, o
+      sea una migración, y este punto no abre una; `docena` no se normaliza porque no hay
+      unidad canónica a la que mandarla, así que pasa como parte del nombre; y `entrené 30'`
+      no se lee, porque el apóstrofo como minutos no está en `_DURATION_RE`. La guía 6.2 ya
+      contaba la primera de las tres — ahora el código la sostiene igual que el texto.
+
+Se comitea **aparte de los dos documentos**: es un cambio de comportamiento del parser, y
+mezclarlo con dos archivos de prosa deja un commit que no se puede revertir por partes.
+
 **6.1 — `docs/gaiapulse-v3.md`: qué hay, qué se hizo, qué queda de la v2**
 
 Para alguien que quiere entender el estado de la app, no usarla. Estructura pensada:
