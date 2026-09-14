@@ -148,7 +148,7 @@ tiempo.**
 | Ya estaba en la v2 | Lo que la v3 cambió | Sigue igual a propósito |
 |---|---|---|
 | Babel/gettext con catálogo `es_AR` | `health/detail.html` tenía **cero** llamadas a `_()`; los valores de enum se mostraban con `|title` sin traducir; había plurales hardcodeados (`participant(s)`). Hoy el catálogo tiene **528 entradas y ninguna sin traducir**, y un test lo mantiene así | Un solo idioma además del inglés de los `msgid`. El catálogo se mantiene **a mano**: `pybabel update` borra los comentarios de sección y no se corre |
-| El parser de reglas era **de entrada en inglés**, y nada lo decía: sin un verbo reconocido la frase no llega a ningún parser, se guarda con `status="pending_confirmation"` y nada que confirmar — sin excepción, sin log, sin nada rojo | Traducir la interfaz y traducir la **entrada** son dos trabajos, y hasta la Fase 6 solo estaba hecho el primero: la pantalla de captura ofrecía en castellano ejemplos que su propio parser devolvía como `mixed` al 0.10. v3 cerró los seis grupos de disparadores **y todos sus lectores** —la frase entraba, se clasificaba bien y el número no se leía nunca ("dormí 7 horas" daba una medición vacía)—, más las dos cosas que el castellano hace distinto: la pluralidad viaja en el verbo ("cenamos fideos" es de los dos) y el tipo de comida también ("nadie escribe 'cené la cena'") | Los **nombres de ejercicio** siguen siendo ingleses: es una columna de alias en `exercise_types`, o sea una migración. Y `docena` no se normaliza porque no hay unidad canónica a la que mandarla |
+| El parser de reglas era **de entrada en inglés**, y nada lo decía: sin un verbo reconocido la frase no llega a ningún parser, se guarda con `status="pending_confirmation"` y nada que confirmar — sin excepción, sin log, sin nada rojo | Traducir la interfaz y traducir la **entrada** son dos trabajos, y hasta la Fase 6 solo estaba hecho el primero: la pantalla de captura ofrecía en castellano ejemplos que su propio parser devolvía como `mixed` al 0.10. v3 cerró los seis grupos de disparadores **y todos sus lectores** —la frase entraba, se clasificaba bien y el número no se leía nunca ("dormí 7 horas" daba una medición vacía)—, más las dos cosas que el castellano hace distinto: la pluralidad viaja en el verbo ("cenamos fideos" es de los dos) y el tipo de comida también ("nadie escribe 'cené la cena'") | Los **nombres de ejercicio** siguen siendo ingleses: es una columna de alias en `exercise_types`, o sea una migración |
 | Heroicons, foco visible, nav accesible por teclado | Botones icon-only sin `aria-label`, inputs sin label, tabs sin `role="tab"`, y **ningún** fragmento HTMX con `aria-live`. v3 los cubrió, y con la regla que importa: el `role="status"` va en el **contenedor** de la página, porque una región `aria-live` tiene que existir en el DOM antes de que su contenido cambie | Auditar leyendo el elemento y no grepeando el atributo: `grep '<button' \| grep -v aria-label` reporta como defecto todo botón multilínea |
 
 ### 3.5 La red de tests
@@ -278,21 +278,6 @@ estaba escrita en ningún lado: *"ayer cenamos pizza"* guarda una cena de hoy, y
 de cargar nada con fecha pasada** —ni por frase ni por pantalla—. Queda afuera porque no es
 solo leer el campo: hay que decidir qué se hace con una fecha ambigua, y una captura que puede
 aterrizar en cualquier día necesita poder corregirse, que es justo lo que falta abajo.
-
-**No hay cómo editar ni borrar una comida, un entrenamiento o un pesaje.** La confirmación es
-la única oportunidad de que el dato quede bien: después no hay botón en ninguna de las tres
-pantallas. Los `DELETE` **existen en la API** (`app/api/meals.py`, `workouts.py`,
-`body_metrics.py`) y ninguna plantilla los alcanza, así que es una superficie web faltante y no
-un backend faltante — probablemente el hueco más chico de cerrar de esta lista. Las dos
-excepciones muestran que el patrón ya está resuelto: la despensa ajusta cantidades desde la
-grilla y un análisis de sangre se borra con confirmación. Lo que lo vuelve tolerable mientras
-no esté es que las señales pesan por repetición y decaen, así que un registro de más se diluye;
-lo que no se puede es corregirlo.
-
-**Umbral de "poco" en la despensa.** El modelo tiene `low_stock_threshold` y los generadores lo
-leen, pero **ninguna ruta lo escribe**: no hay pantalla ni endpoint que lo fije, así que en la
-práctica "bajo" significa cero. La alerta de stock bajo existe y funciona; lo que falta es poder
-adelantarla.
 
 **Anclar la fecha del panel de sangre a su etiqueta.** El parser toma la **primera**
 cadena con forma de fecha del documento, así que puede devolver una fecha de nacimiento o

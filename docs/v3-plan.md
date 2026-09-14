@@ -2858,22 +2858,23 @@ tampoco se implementa: el propio docstring de `app/recommendations/learning.py` 
 argumenta en contra (el rationale quedaría idéntico al sujeto que explica), así que este
 punto se cierra **documentando la decisión como definitiva**, no agregando código.
 
-**7.1 — Lo de menor riesgo, sin migración**
+**7.1 — Lo de menor riesgo, sin migración** — cerrada, cinco commits en `v3`:
 
-- [ ] Editar/borrar una comida, un entrenamiento o un pesaje desde la web, reusando los
-      `DELETE` que ya existen en `app/api/{meals,workouts,body_metrics}.py` y el mismo
-      patrón de confirmación que ya usa `app/web/health.py` para borrar un análisis de
-      sangre.
-- [ ] Umbral de stock bajo: una ruta que escriba `low_stock_threshold` desde la grilla de
-      `pantry/partials/stock_grid.html`, junto al control de ajuste que ya existe.
-- [ ] Cabeceras de seguridad que no dependen del build step: `X-Frame-Options`,
-      `X-Content-Type-Options`, `Referrer-Policy`, HSTS condicionado a HTTPS, y una CSP
-      tan ajustada como permite el CDN de Tailwind/HTMX/Alpine/Chart.js.
-- [ ] El leak de `logger.exception` en los 4 jobs de `app/jobs/`: un helper compartido que
-      no propague el `__str__` de un `IntegrityError`/`StatementError` (que puede incluir
-      parámetros de bind) al log.
-- [ ] Dos huecos chicos del parser: `docena` como cantidad (12 unidades) y el apóstrofo
-      como minutos (`entrené 30'`).
+- [x] Editar/borrar una comida, un entrenamiento o un pesaje desde la web, reusando los
+      servicios que ya respaldaban el `DELETE` de la API y el mismo patrón de confirmación
+      que ya usa `app/web/health.py` para borrar un análisis de sangre
+      (`e79d92c`).
+- [x] Umbral de stock bajo: `POST /pantry/{id}/threshold`, junto al control de ajuste que
+      ya existe en la grilla (`7a1e165`).
+- [x] Cabeceras de seguridad que no dependen del build step: `X-Frame-Options`,
+      `X-Content-Type-Options`, HSTS condicionado a HTTPS, y una CSP tan ajustada como
+      permite el CDN de Tailwind/HTMX/Alpine/Chart.js. `Referrer-Policy` queda donde ya
+      estaba, en `privacy_headers` (`7d4fa81`).
+- [x] El leak de `logger.exception` en los 4 sitios de `app/jobs/` que envuelven un INSERT
+      por persona/ítem: `log_job_error` no propaga el `__str__` de un
+      `IntegrityError`/`StatementError` al log (`47fdb88`).
+- [x] Dos huecos chicos del parser: `docena` como cantidad (×12) y el apóstrofo como
+      minutos (`entrené 30'`) (`7e4c919`).
 
 **7.2 — Validación de CSRF**
 
@@ -3053,13 +3054,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 |
-|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 |
+|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
