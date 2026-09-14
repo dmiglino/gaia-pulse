@@ -264,15 +264,6 @@ aserciones en castellano que ya están—, y por eso la 6.2 lo enseña en negati
 captura") en vez de que la Fase 6 lo abra. Lo que sí funciona son varios hechos del mismo tema:
 `pesé 81 kg y dormí 7 horas` es una sola medición con las dos cosas.
 
-**La hora que menciona la frase no se usa nunca.** Todo se sella con el momento de la
-confirmación. El parser *sí* extrae una referencia temporal de la frase y la guarda en el
-intent, pero **ningún servicio la lee**, y nada escribe el `timestamp` del registro: los tres
-servicios de captura caen siempre al `now`. La consecuencia para el usuario es doble y no
-estaba escrita en ningún lado: *"ayer cenamos pizza"* guarda una cena de hoy, y **no hay forma
-de cargar nada con fecha pasada** —ni por frase ni por pantalla—. Queda afuera porque no es
-solo leer el campo: hay que decidir qué se hace con una fecha ambigua, y una captura que puede
-aterrizar en cualquier día necesita poder corregirse, que es justo lo que falta abajo.
-
 **Anclar la fecha del panel de sangre a su etiqueta.** El parser toma la **primera**
 cadena con forma de fecha del documento, así que puede devolver una fecha de nacimiento o
 de impresión. Eso acota lo que la "frescura del panel" puede prometer: el generador confía

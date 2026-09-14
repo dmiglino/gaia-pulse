@@ -2889,12 +2889,15 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       ir antes que `security_headers`/`privacy_headers`, no después) y la excepción por
       path reemplazada por la de content-type. `tests/test_csrf.py` (7 tests) cubre ambos.
 
-**7.3 — La hora que menciona la frase**
+**7.3 — La hora que menciona la frase** — cerrada (`239ce10`):
 
-- [ ] Leer `time_reference` cuando la frase usa un relativo no ambiguo (hoy/ayer) para
-      sellar el registro en esa fecha en vez de siempre `now`, más un campo de corrección
-      de fecha/hora en la pantalla de confirmación — porque una captura que puede aterrizar
-      en cualquier día necesita poder corregirse.
+- [x] `_resolve_timestamp` lee `time_reference` cuando es un relativo no ambiguo
+      (hoy/ayer/yesterday) y sella el registro un día antes vía `app/core/clock.py`; cualquier
+      otra referencia ('esta noche'/'tonight') sigue en hoy, porque no hay margen para
+      adivinar. Más un campo de corrección de fecha en la pantalla de confirmación
+      (`override_date`, solo visible cuando algún intent de la captura usa timestamp), que
+      gana siempre sobre lo que dijo la frase. `tests/test_nlp_service.py::TestTimestampResolution`
+      y las nuevas aserciones de `tests/test_web_capture.py` cubren ambos caminos.
 
 **7.4 — Anclar la fecha del panel de sangre a su etiqueta**
 
@@ -3061,13 +3064,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 |
-|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 |
+|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
