@@ -14,10 +14,9 @@ Usage::
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
@@ -25,12 +24,14 @@ from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference, Suggestion
 from app.models.user import User
 from app.recommendations import filters, learning, scorer
+from app.recommendations.context import build_user_context
 from app.recommendations.generators import (
     activity_generator,
     blood_generator,
     meal_generator,
     pantry_generator,
 )
+from app.repositories.suggestion_repo import BehaviorSignalRepository, SuggestionRepository
 from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
@@ -81,16 +82,24 @@ class RecommendationEngine:
         signals = self._get_signals(db, user.id)
         recent_suggestions = self._get_recent_suggestions_for_user(db, user.id)
 
+        #: Una sola lectura de todo lo que la app sabe de esta persona, y de acá en
+        #: adelante los generadores razonan sobre eso en vez de abrir cada uno sus
+        #: propias consultas. No es solo cuántas consultas: eran respuestas que se
+        #: contradecían —"qué comió esta semana" tenía dos implementaciones distintas—
+        #: y nada las obligaba a coincidir.
+        context = build_user_context(db, user)
+
         # ── Gather candidates ──────────────────────────────────────────
         candidates: list[dict[str, Any]] = []
-        candidates += meal_generator.generate(db, user, preferences)
-        candidates += activity_generator.generate(db, user, preferences)
+        candidates += meal_generator.generate(db, user, preferences, context)
+        candidates += activity_generator.generate(user, preferences, context)
 
         # Blood-analysis-driven suggestions (if analysis data exists)
+        #: El `try` queda: ya no protege una lectura de base —el panel viene en el
+        #: contexto— pero sí el recorrido de `values_json`, que es un blob que escribió
+        #: un parser y del que ninguna capa garantiza la forma.
         try:
-            from app.services.blood_analysis_service import BloodAnalysisService
-            blood_values = BloodAnalysisService(db).get_latest_values(user.id)
-            candidates += blood_generator.generate(db, user, blood_values)
+            candidates += blood_generator.generate(user, context.blood_panel)
         except Exception:
             logger.exception("Blood generator failed for user_id=%d — skipping", user.id)
 
@@ -193,23 +202,24 @@ class RecommendationEngine:
     def _get_preferences(
         self, db: Session, user_id: int
     ) -> list[RecommendationPreference]:
-        return (
-            db.query(RecommendationPreference)
-            .filter(RecommendationPreference.user_id == user_id)
-            .all()
-        )
+        """Las preferencias explícitas de esta persona.
+
+        `SuggestionRepository.get_user_preferences` ya existía con esta misma consulta: el
+        motor tenía la copia. Queda el método acá —de una línea— porque `_household_members`
+        lo llama una vez por integrante y el nombre dice qué se está leyendo.
+        """
+        return SuggestionRepository(db).get_user_preferences(user_id)
 
     def _get_signals(self, db: Session, user_id: int) -> list[BehaviorSignal]:
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_RECENT_SIGNAL_DAYS)
-        return (
-            db.query(BehaviorSignal)
-            .filter(
-                BehaviorSignal.user_id == user_id,
-                BehaviorSignal.created_at >= cutoff,
-            )
-            .order_by(BehaviorSignal.created_at.desc())
-            .all()
-        )
+        """El historial de señales dentro del horizonte, de la más nueva a la más vieja.
+
+        `limit=None` a propósito: el default de 200 filas del repositorio es para el panel
+        paginado, y acá recortar por cantidad haría que el peso de una señal dependa de
+        cuántas otras se anotaron después — que es exactamente lo que el decaimiento por
+        fecha vino a reemplazar.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=_RECENT_SIGNAL_DAYS)
+        return BehaviorSignalRepository(db).get_user_signals(user_id, since=cutoff, limit=None)
 
     def _household_members(self, db: Session, household_id: int) -> list[filters.HouseholdMember]:
         """Las personas de la casa, cada una con sus preferencias y sus señales.
@@ -240,70 +250,25 @@ class RecommendationEngine:
     def _get_recent_suggestions_for_user(
         self, db: Session, user_id: int
     ) -> list[Suggestion]:
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=_RECENT_SUGGESTION_DAYS)
-        return (
-            db.query(Suggestion)
-            .filter(
-                Suggestion.scope_user_id == user_id,
-                Suggestion.created_at >= cutoff,
-            )
-            .order_by(Suggestion.created_at.desc())
-            .all()
-        )
+        cutoff = datetime.now(UTC) - timedelta(days=_RECENT_SUGGESTION_DAYS)
+        return SuggestionRepository(db).get_created_since(user_id, cutoff)
 
-    @staticmethod
-    def _still_suppressed() -> Any:
-        """La condición de "este sujeto no se vuelve a ofrecer todavía".
-
-        Dos casos, y el segundo es la 4.4.7: una sugerencia **pendiente** ocupa el lugar de
-        su sujeto —no tiene sentido ofrecer dos veces lo mismo sin haber recibido respuesta—,
-        y una respondida con "no ahora" lo ocupa hasta que se vence su `snoozed_until`.
-
-        Sin la segunda mitad, posponer *destrababa* el sujeto: la fila dejaba de estar
-        `pending`, así que la corrida siguiente del job —7:40 o 18:40 locales, ver
-        `scheduler._SCHEDULE`— volvía a escribir la misma tarjeta, con la única diferencia de
-        los −0.045 que le baja la señal de descarte. El botón "Ahora no" prometía silencio y
-        entregaba una repetición.
-        """
-        return or_(
-            Suggestion.status == "pending",
-            Suggestion.snoozed_until > datetime.now(tz=timezone.utc),
-        )
+    #: La cláusula `WHERE` de "este sujeto sigue suprimido" se fue a
+    #: `suggestion_repo._still_suppressed`, donde puede vivir al lado de las dos consultas
+    #: que la usan. Lo que queda acá es la traducción a claves de sujeto, que es del
+    #: vocabulario de `learning` y no de la base: el repositorio devuelve los pares crudos
+    #: porque no puede importar `learning` sin cerrar el círculo.
 
     def _suppressed_subjects_for_user(self, db: Session, user_id: int) -> set[tuple[str, str]]:
-        """Subjects this user should not be offered right now. Ver `_still_suppressed`."""
-        rows = (
-            db.query(Suggestion.subject_type, Suggestion.subject_name)
-            .filter(
-                Suggestion.scope_user_id == user_id,
-                self._still_suppressed(),
-                Suggestion.subject_type.isnot(None),
-                Suggestion.subject_name.isnot(None),
-            )
-            .all()
-        )
+        """Subjects this user should not be offered right now."""
+        rows = SuggestionRepository(db).get_suppressed_subjects_for_user(user_id)
         return {learning.subject_key(t, n) for t, n in rows}
 
     def _suppressed_subjects_for_household(
         self, db: Session, household_id: int
     ) -> set[tuple[str, str]]:
-        """Lo mismo para las sugerencias de scope household. Ver `_still_suppressed`.
-
-        Filtra por `scope_type` además de por household: las sugerencias personales de
-        Diego y Rocío también llevan `household_id`, y sin esa condición una tarjeta de
-        despensa aceptada por uno bloqueaba la del otro.
-        """
-        rows = (
-            db.query(Suggestion.subject_type, Suggestion.subject_name)
-            .filter(
-                Suggestion.household_id == household_id,
-                Suggestion.scope_type == "household",
-                self._still_suppressed(),
-                Suggestion.subject_type.isnot(None),
-                Suggestion.subject_name.isnot(None),
-            )
-            .all()
-        )
+        """Lo mismo para las sugerencias de scope household."""
+        rows = SuggestionRepository(db).get_suppressed_subjects_for_household(household_id)
         return {learning.subject_key(t, n) for t, n in rows}
 
     @staticmethod

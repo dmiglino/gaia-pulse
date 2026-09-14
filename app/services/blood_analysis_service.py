@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
-from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.integrations.blood_analysis_parser import analyze_file
 from app.models.blood_analysis import BloodAnalysis
+from app.repositories.blood_repo import BloodAnalysisRepository
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +15,7 @@ logger = logging.getLogger(__name__)
 class BloodAnalysisService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.repo = BloodAnalysisRepository(db)
 
     async def upload_and_analyze(
         self,
@@ -54,35 +54,25 @@ class BloodAnalysisService:
         return record
 
     def get_analyses_for_user(self, user_id: int) -> list[BloodAnalysis]:
-        return (
-            self.db.query(BloodAnalysis)
-            .filter(BloodAnalysis.user_id == user_id)
-            .order_by(BloodAnalysis.analysis_date.desc(), BloodAnalysis.created_at.desc())
-            .all()
-        )
+        return self.repo.get_for_user(user_id)
 
     def get_analysis(self, analysis_id: int, user_id: int) -> BloodAnalysis | None:
-        return (
-            self.db.query(BloodAnalysis)
-            .filter(BloodAnalysis.id == analysis_id, BloodAnalysis.user_id == user_id)
-            .first()
-        )
+        return self.repo.get_owned(analysis_id, user_id)
 
-    def get_latest_values(self, user_id: int) -> dict[str, Any]:
-        """Return the most recent biomarker values for a user (for recommendations)."""
-        latest = (
-            self.db.query(BloodAnalysis)
-            .filter(
-                BloodAnalysis.user_id == user_id,
-                BloodAnalysis.status == "analyzed",
-                BloodAnalysis.values_json.isnot(None),
-            )
-            .order_by(BloodAnalysis.analysis_date.desc(), BloodAnalysis.created_at.desc())
-            .first()
-        )
-        if latest and latest.values_json:
-            return latest.values_json
-        return {}
+    def get_latest_analysis(self, user_id: int) -> BloodAnalysis | None:
+        """El último panel legible, con su fecha.
+
+        Es la que usa `UserContext`: sin la fila no hay `analysis_date`, y sin la
+        fecha el motor no puede saber si está aconsejando sobre un panel de este año
+        o de 2021.
+        """
+        return self.repo.get_latest_analyzed(user_id)
+
+    #: Acá estaba `get_latest_values`, que devolvía `values_json` y tiraba la fila. Su
+    #: único llamador era el motor, y desde que el panel viaja por el contexto con su
+    #: fecha no le queda ninguno: dejarla "para quien solo quiera los valores" es dejar
+    #: disponible justo la versión que causó el problema —aconsejar sin saber de cuándo
+    #: es el análisis— para que el próximo la elija por ser la más corta.
 
     def delete_analysis(self, analysis_id: int, user_id: int) -> bool:
         record = self.get_analysis(analysis_id, user_id)

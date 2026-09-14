@@ -145,6 +145,7 @@ class TestSuggestionActionMap:
         # candidato, y que sus categorías no lo distingan de nada — son las mismas `meal`
         # y `activity` que emite el resto, no `habit`. Si cualquiera de las dos cosas
         # cambia, el consejo del panel vuelve a llevar botón y nada más lo nota.
+        from app.recommendations.context import BloodPanel
         from app.recommendations.generators.blood_generator import (
             _BIOMARKER_SUGGESTIONS,
             generate,
@@ -159,7 +160,12 @@ class TestSuggestionActionMap:
         assert "meal" in declared
 
         produced = generate(
-            db, diego, {"hemoglobin": {"status": "low", "value": 10, "unit": "g/dL"}}
+            diego,
+            BloodPanel(
+                values={"hemoglobin": {"status": "low", "value": 10, "unit": "g/dL"}},
+                analysis_date=None,
+                age_days=None,
+            ),
         )
         assert produced, "el generador dejó de emitir para un hemograma bajo"
         assert {c["source_type"] for c in produced} == {"blood_analysis"}

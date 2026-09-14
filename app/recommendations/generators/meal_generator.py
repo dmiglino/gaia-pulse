@@ -10,25 +10,20 @@ Generates meal suggestions for a user based on:
 from __future__ import annotations
 
 import logging
-from collections import Counter
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.core.clock import local_now
 from app.models.food import FoodItem
-from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
-from app.models.pantry import PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
+from app.recommendations.context import RECENT_FOOD_DAYS, UserContext
+from app.repositories.pantry_repo import PantryStockRepository
 
 logger = logging.getLogger(__name__)
 
-_RECENCY_DAYS = 7          # look-back window for repetition check
 _MAX_SUGGESTIONS = 8
-_LOW_STOCK_PCT = 0.25      # stock at or below 25% of threshold = low
 
 
 def _current_meal_type() -> str:
@@ -51,29 +46,12 @@ def _current_meal_type() -> str:
     return "dinner"
 
 
-def _get_recent_food_names(db: Session, user: User, days: int = _RECENCY_DAYS) -> Counter[str]:
-    """Return a Counter of food names consumed by the user in the last N days."""
-    cutoff = datetime.now(UTC) - timedelta(days=days)
-    rows = (
-        db.query(MealItemConsumed.normalized_free_text_name)
-        .join(MealParticipant, MealParticipant.id == MealItemConsumed.meal_participant_id)
-        .join(MealEvent, MealEvent.id == MealParticipant.meal_event_id)
-        .filter(
-            MealParticipant.user_id == user.id,
-            MealEvent.timestamp >= cutoff,
-        )
-        .all()
-    )
-    return Counter(r[0].lower() for r in rows)
-
-
-def _get_pantry_items(db: Session, household_id: int) -> list[PantryStock]:
-    return (
-        db.query(PantryStock)
-        .filter(PantryStock.household_id == household_id)
-        .filter(PantryStock.current_quantity > 0)
-        .all()
-    )
+#: Acá vivían `_get_recent_food_names` y `_get_pantry_items`, dos consultas escritas a
+#: mano contra los modelos. La primera es ahora `context.recent_food_counts` —la misma
+#: pregunta que `MealRepository.get_recent_foods_for_user` contestaba distinto, que es el
+#: motivo por el que el contexto existe—; la segunda,
+#: `PantryStockRepository.get_in_stock`, que además trae el alimento en la misma consulta
+#: en vez de una por ítem.
 
 
 def _get_disliked_names(user: User, preferences: list[RecommendationPreference]) -> set[str]:
@@ -97,6 +75,7 @@ def generate(
     db: Session,
     user: User,
     preferences: list[RecommendationPreference],
+    context: UserContext,
     meal_type: str | None = None,
     limit: int = _MAX_SUGGESTIONS,
 ) -> list[dict[str, Any]]:
@@ -104,13 +83,16 @@ def generate(
 
     Returns a list of suggestion dicts suitable for building Suggestion records.
     Each dict has: title, text, rationale, evidence_summary, confidence, source_type, category.
+
+    `db` sigue haciendo falta —la despensa es del hogar y por eso no está en el contexto,
+    que es personal— pero ya no se abren consultas acá: se piden por repositorio.
     """
     if meal_type is None:
         meal_type = _current_meal_type()
 
-    recent_foods = _get_recent_food_names(db, user)
+    recent_foods = context.recent_food_counts
     disliked = _get_disliked_names(user, preferences)
-    pantry = _get_pantry_items(db, user.household_id)
+    pantry = PantryStockRepository(db).get_in_stock(user.household_id)
 
     suggestions: list[dict[str, Any]] = []
 
@@ -180,7 +162,7 @@ def generate(
                     f"It's available in your pantry — a good option for {meal_type}."
                 ),
                 "rationale": "Dietary variety supports micronutrient balance.",
-                "evidence_summary": f"{pick} not consumed in past {_RECENCY_DAYS} days.",
+                "evidence_summary": f"{pick} not consumed in past {RECENT_FOOD_DAYS} days.",
                 "confidence": 0.7,
                 "source_type": "rule",
             }

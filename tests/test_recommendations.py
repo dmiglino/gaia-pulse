@@ -14,6 +14,7 @@ from app.models.pantry import PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
 from app.recommendations import learning, scorer
+from app.recommendations.context import BloodPanel, build_user_context
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
 from app.recommendations.scorer import score_candidates
 
@@ -753,7 +754,9 @@ class TestTimeOfDayLearning:
         )
         db.flush()
 
-        candidates = meal_generator.generate(db, diego, [], meal_type="breakfast")
+        candidates = meal_generator.generate(
+            db, diego, [], build_user_context(db, diego), meal_type="breakfast"
+        )
         assert candidates, "el generador no produjo candidatos con stock cargado"
         assert {learning.candidate_slot(c) for c in candidates} == {"breakfast"}
 
@@ -1428,7 +1431,7 @@ class TestEveryCandidateDeclaresItsSubject:
                 strength=0.9,
             )
         ]
-        candidates = meal_generator.generate(db, diego, preferences)
+        candidates = meal_generator.generate(db, diego, preferences, build_user_context(db, diego))
         # pantry-featured + variedad + preferencia + un "usá lo último"
         self._assert_subjects(candidates, 4)
 
@@ -1445,7 +1448,7 @@ class TestEveryCandidateDeclaresItsSubject:
             )
         ]
         # Sin entrenamientos: empujón de constancia + rotación + preferida + catálogo
-        candidates = activity_generator.generate(db, diego, preferences)
+        candidates = activity_generator.generate(diego, preferences, build_user_context(db, diego))
         self._assert_subjects(candidates, 4)
 
     def test_activity_generator_after_training_today(self, db: Session, diego: User) -> None:
@@ -1465,7 +1468,7 @@ class TestEveryCandidateDeclaresItsSubject:
         db.add(WorkoutParticipant(workout_session_id=session.id, user_id=diego.id))
         db.flush()
 
-        candidates = activity_generator.generate(db, diego, [])
+        candidates = activity_generator.generate(diego, [], build_user_context(db, diego))
         assert any(c["subject_name"] == "rest day" for c in candidates)
         self._assert_subjects(candidates, 2)
 
@@ -1479,7 +1482,12 @@ class TestEveryCandidateDeclaresItsSubject:
             # normal: no produce nada, y está para que eso siga siendo cierto
             "glucose": {"value": 90, "unit": "mg/dL", "status": "normal"},
         }
-        candidates = blood_generator.generate(db, diego, blood_values)
+        #: Un panel sin fecha: `age_days=None` es "no sé de cuándo es", que es el caso
+        #: real cuando el parser no encuentra la fecha. Que el generador siga produciendo
+        #: candidatos con eso es lo que hace que 4.5.6 —usar la antigüedad— sea un cambio
+        #: de conducta y no un arreglo de un `None` que rompía.
+        panel = BloodPanel(values=blood_values, analysis_date=None, age_days=None)
+        candidates = blood_generator.generate(diego, panel)
         self._assert_subjects(candidates, 5)
         assert all(c["subject_type"] == "biomarker" for c in candidates)
         assert "glucose" not in {c["subject_name"] for c in candidates}

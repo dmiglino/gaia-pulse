@@ -79,7 +79,15 @@ class MealRepository(BaseRepository[MealEvent]):
         return self.db.scalar(stmt)
 
     def get_recent_foods_for_user(self, user_id: int, limit: int = 30) -> list[str]:
-        """Return canonical food names recently consumed by this user."""
+        """Los últimos N nombres de alimento que anotó esta persona.
+
+        "Recientes" acá es **por cantidad de filas**, no por fecha: son las últimas 30
+        haya sido ayer o en marzo. Sirve para "¿qué come esta persona?" —el uso que le
+        da el panel de aprendizaje— y **no** para "¿qué comió esta semana?", que es la
+        pregunta que hace el motor y que responde `get_food_counts_since`. Las dos
+        existen porque son dos preguntas; usar esta para la otra es cómo el generador de
+        comidas y el repositorio terminaron dando respuestas distintas a lo mismo.
+        """
         stmt = (
             select(MealItemConsumed.normalized_free_text_name)
             .join(MealItemConsumed.meal_participant)
@@ -88,3 +96,61 @@ class MealRepository(BaseRepository[MealEvent]):
             .limit(limit)
         )
         return list(self.db.scalars(stmt).all())
+
+    def get_food_counts_since(self, user_id: int, since: datetime) -> dict[str, int]:
+        """Cuántas veces comió cada alimento desde `since`, normalizado a minúsculas.
+
+        La ventana es por `MealEvent.timestamp` —cuándo se comió— y no por el id del
+        ítem: el id ordena por cuándo se **cargó**, así que una cena de la semana pasada
+        anotada hoy es reciente para el id y vieja para la comida.
+
+        El `COUNT` va en la base. La versión que esto reemplaza traía todos los nombres
+        y los contaba con un `Counter` en Python, que es la misma respuesta trayendo una
+        fila por bocado en lugar de una por alimento.
+        """
+        stmt = (
+            select(
+                func.lower(MealItemConsumed.normalized_free_text_name),
+                func.count(MealItemConsumed.id),
+            )
+            .join(MealItemConsumed.meal_participant)
+            .join(MealParticipant.meal_event)
+            .where(
+                and_(
+                    MealParticipant.user_id == user_id,
+                    MealEvent.timestamp >= since,
+                )
+            )
+            .group_by(func.lower(MealItemConsumed.normalized_free_text_name))
+        )
+        return {name: int(count) for name, count in self.db.execute(stmt).all() if name}
+
+    def get_consumed_items_since(
+        self, user_id: int, since: datetime
+    ) -> list[tuple[datetime, MealItemConsumed]]:
+        """(instante de la comida, ítem) para esta persona desde `since`.
+
+        Devuelve el instante al lado del ítem porque `MealItemConsumed` no tiene fecha
+        propia —la fecha es de la comida— y quien quiera separar "hoy" de "las dos
+        semanas anteriores" necesita las dos cosas sin volver a la base por cada fila.
+
+        Trae el `FoodItem` con `joinedload` porque el uso es sumar macros y esos viven
+        en el catálogo: sin el `joinedload` es una consulta por ítem. Los ítems sin
+        `food_item_id` **vienen igual** (capturas de texto libre que nunca resolvieron
+        contra el catálogo): que no se puedan sumar es una decisión de quien suma, y
+        esconderlos acá haría que un total parcial se viera como un total.
+        """
+        stmt = (
+            select(MealEvent.timestamp, MealItemConsumed)
+            .join(MealItemConsumed.meal_participant)
+            .join(MealParticipant.meal_event)
+            .where(
+                and_(
+                    MealParticipant.user_id == user_id,
+                    MealEvent.timestamp >= since,
+                )
+            )
+            .options(joinedload(MealItemConsumed.food_item))
+            .order_by(MealEvent.timestamp.asc())
+        )
+        return [(ts, item) for ts, item in self.db.execute(stmt).unique().all()]

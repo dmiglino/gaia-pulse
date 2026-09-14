@@ -72,6 +72,28 @@ class BodyMetricRepository(BaseRepository[BodyMetricLog]):
         )
         return self.db.scalar(stmt)
 
+    def get_recent_metrics(self, user_id: int, days: int = 30) -> list[BodyMetricLog]:
+        """Todas las mediciones de la ventana, del más viejo al más nuevo, sin filtrar.
+
+        No es `get_weight_series` con otro nombre: esa filtra `weight_kg IS NOT NULL`
+        porque alimenta un gráfico de peso y un hueco en una serie es un agujero en la
+        línea. Acá el contexto necesita **las tres** columnas opcionales de la misma
+        fila —peso, grasa y sueño—, y filtrar por una tira las filas donde la persona
+        anotó otra: quien anota sueño sin pesarse desaparecería de la lectura de sueño.
+
+        Una lectura y no tres: el contexto se arma una vez por corrida y reparte.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=days)
+        stmt = (
+            select(BodyMetricLog)
+            .where(
+                BodyMetricLog.user_id == user_id,
+                BodyMetricLog.timestamp >= cutoff,
+            )
+            .order_by(BodyMetricLog.timestamp.asc())
+        )
+        return list(self.db.scalars(stmt).all())
+
     def get_weight_series(self, user_id: int, days: int = 30) -> list[BodyMetricLog]:
         #: Aware. `timestamp` es `timestamptz`, y un cutoff naive lo interpreta
         #: Postgres en la timezone de la *sesión*, no en UTC: la ventana de

@@ -20,7 +20,12 @@ class FoodItem(Base):
     base_unit: Mapped[str] = mapped_column(String(30), default="g", nullable=False)  # g/ml/unit/serving
     serving_size_g: Mapped[float | None] = mapped_column(nullable=True)
 
-    # Macronutrients per 100g (or per base_unit if non-weight)
+    # Macronutrientes **siempre por 100 g**, incluso cuando `base_unit` no es de peso.
+    # Decía "(or per base_unit if non-weight)" y el catálogo sembrado dice lo contrario:
+    # la banana tiene `base_unit="unit"` y 89 kcal, que es el valor por 100 g y no por
+    # banana (una banana son ~105). Quien sume macros tiene que llegar a gramos primero
+    # (`app/recommendations/context.py:_grams_of`), y como `serving_size_g` está NULL en
+    # toda la base, un ítem contado en unidades no se puede convertir.
     calories_per_100g: Mapped[float | None] = mapped_column(nullable=True)
     protein_g: Mapped[float | None] = mapped_column(nullable=True)
     carbs_g: Mapped[float | None] = mapped_column(nullable=True)

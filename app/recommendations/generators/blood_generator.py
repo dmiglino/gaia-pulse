@@ -8,9 +8,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from app.models.user import User
+from app.recommendations.context import BloodPanel
 
 logger = logging.getLogger(__name__)
 
@@ -252,26 +251,30 @@ _BIOMARKER_SUGGESTIONS: dict[str, dict[str, list[dict[str, Any]]]] = {
 
 
 def generate(
-    db: Session,
     user: User,
-    blood_values: dict[str, Any],
+    panel: BloodPanel | None,
 ) -> list[dict[str, Any]]:
     """Generate suggestions based on abnormal blood biomarker values.
 
     Args:
-        db: SQLAlchemy session (unused currently, reserved for future DB lookups).
         user: The target User.
-        blood_values: Latest biomarker values dict from BloodAnalysis.values_json.
+        panel: El último panel legible de esa persona, con su fecha, o `None` si no hay.
 
     Returns:
         List of candidate suggestion dicts with title, text, rationale, category, confidence.
+
+    Recibía `db` —declarado "unused currently, reserved for future DB lookups"— y un dict de
+    marcadores sin fecha, porque `get_latest_values` devolvía el blob y tiraba la fila. Ahora
+    recibe el panel entero: la antigüedad estaba en la base todo este tiempo y era lo único
+    que faltaba para no dar consejos sobre un análisis de hace tres años. Usarla es 4.5.6; que
+    llegue hasta acá es este punto.
     """
-    if not blood_values:
+    if panel is None or not panel.values:
         return []
 
     candidates: list[dict[str, Any]] = []
 
-    for biomarker_key, data in blood_values.items():
+    for biomarker_key, data in panel.values.items():
         status = data.get("status", "normal")
         if status not in ("low", "critical_low", "high", "critical_high"):
             continue

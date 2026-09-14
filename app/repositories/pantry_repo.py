@@ -53,6 +53,30 @@ class PantryStockRepository(BaseRepository[PantryStock]):
         )
         return self.db.scalar(stmt)
 
+    def get_in_stock(self, household_id: int) -> list[PantryStock]:
+        """Lo que la casa **tiene** ahora mismo: cantidad mayor que cero.
+
+        `get_household_stock` trae también las filas en cero —son las que la pantalla de
+        despensa necesita mostrar para poder reponerlas—, así que no sirve para "¿con qué se
+        puede cocinar hoy?". El generador de comidas tenía esta consulta escrita a mano.
+
+        Con `joinedload` del alimento porque el uso siempre le mira el nombre y la categoría:
+        sin eso es una consulta por ítem de la despensa.
+        """
+        stmt = (
+            select(PantryStock)
+            .join(PantryStock.food_item)
+            .where(
+                and_(
+                    PantryStock.household_id == household_id,
+                    PantryStock.current_quantity > 0,
+                )
+            )
+            .options(joinedload(PantryStock.food_item))
+            .order_by(FoodItem.canonical_name)
+        )
+        return list(self.db.scalars(stmt).unique().all())
+
     def get_low_stock(self, household_id: int) -> list[PantryStock]:
         """Return items at or below their low-stock threshold, or at zero."""
         stmt = (

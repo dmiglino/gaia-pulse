@@ -1809,16 +1809,24 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
    tarjetas no es "todo el generador de sangre", y decirlo bien es lo que evita arreglar el
    bypass en el lugar equivocado.
 
-- [ ] **4.5.1 — `UserContext`: un solo lector por corrida.** Nuevo
+- [x] **4.5.1 — `UserContext`: un solo lector por corrida.** Nuevo
       `app/recommendations/context.py` con una dataclass congelada y `build_user_context(db,
       user)`, armada **una vez** en `engine.generate_for_user` y pasada a los cuatro
       generadores, al scorer y a los filtros. Campos: tendencia de peso y grasa, sueño
       reciente, días desde el último entrenamiento, **días desde el último estímulo por grupo
       muscular**, RPE reciente, contador de alimentos recientes, macros de hoy contra la línea
-      de base de la persona, stock del hogar, catálogo de `ExerciseType` y panel de sangre con
-      su fecha y su antigüedad. **El contexto no decide nada**: es de solo lectura, no opina, y
-      cada generador sigue siendo el dueño de su regla — si el contexto empieza a decidir,
+      de base de la persona, catálogo de `ExerciseType` y panel de sangre con su fecha y su
+      antigüedad. **El contexto no decide nada**: es de solo lectura, no opina, y cada
+      generador sigue siendo el dueño de su regla — si el contexto empieza a decidir,
       volvimos a tener la lógica en dos lados.
+      El **stock del hogar queda afuera**, y eso cambió respecto de cómo estaba escrito acá:
+      `UserContext` es estrictamente personal —cada campo sale de una consulta filtrada por
+      `user_id`, que es la regla 4 de `AGENTS.md`— y la despensa no es de nadie en particular.
+      Meterla en un contexto por persona sería la lectura mezclada que la regla prohíbe, así
+      que quien la necesite la pide a `PantryStockRepository`, que ya filtra por hogar.
+      El scorer y los filtros **no** reciben el contexto en este punto: lo reciben en 4.5.4 y
+      4.5.5, que son los que lo leen. Un parámetro que nadie lee es peor que no tenerlo — se
+      ve implementado y no está probado por nada.
       Todo se lee **por repositorio**, y eso es la mitad del trabajo: hacen falta un lector de
       último estímulo por grupo muscular, un contador de alimentos recientes con `since` (hoy
       `MealRepository.get_recent_foods_for_user` trae las últimas 30 filas sin filtro de fecha
@@ -1831,9 +1839,37 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       meal 2) y las 3 de `blood_analysis_service.py:58,66,74` bajan a repositorios, y los
       números *medidos* de `AGENTS.md` se actualizan en el mismo commit — un número en un doc
       es una copia de una regla, y desactualizado miente con aire de precisión.
+- [x] **Lo medido al cerrarlo, que no es lo que este punto predecía.** Las consultas inline
+      bajaron: `engine` 5 → 0, `meal_generator` 2 → 0, `activity_generator` 2 → 0 y
+      `blood_analysis_service` 3 → 0, así que `app/services/` quedó **limpio** y en
+      `app/recommendations/` sobreviven 5, todas en `pantry_generator.py` — las de la 4.5.7.
+      Pero el otro número de `AGENTS.md` fue para el otro lado: los módulos de
+      `app/recommendations/` que importan `app.models` pasaron de 8 de 10 a **9 de 11**, porque
+      `context.py` es un módulo nuevo que los importa para anotar sus campos. No es una
+      violación —la regla dice explícitamente que ese import es esperado— y por eso el número
+      medido va con el matiz al lado en vez de solo.
+- [x] **Un agujero que apareció escribiendo el test de `get_latest_analyzed`, y era real.**
+      Filtrar `values_json IS NOT NULL` no alcanza: `analyze_file` devuelve su `values` con
+      `default_factory=dict`, así que un archivo que el parser recorrió sin encontrar
+      marcadores se guarda como `analyzed` con `values_json = {}` — y `{}` pasa el `IS NOT
+      NULL`. O sea que una subida ilegible de hoy tapaba el panel bueno del mes pasado, que es
+      exactamente lo que ese método existe para evitar. El "no vacío" se evalúa en Python
+      —ordenando en la base— porque "este JSON tiene claves" no se escribe igual en SQLite y en
+      Postgres, y la regla 5 de `AGENTS.md` pide que las dos se comporten igual.
+- [x] 24 tests nuevos en `tests/test_user_context.py`: cada consulta nueva por separado (el
+      instante por grupo muscular con `"Chest"`/`" chest "` colapsando a una clave, el RPE
+      `NULL` que no cuenta como cero, la ventana de comidas por `MealEvent.timestamp` y no por
+      id de ítem —con la comida vieja insertada **última** para que su id sea el más alto—, la
+      fila de sueño sin peso que sobrevive, el panel vacío que no tapa al bueno, el panel del
+      otro integrante indistinguible de uno que no existe, las tres supresiones de sujeto, el
+      stock en cero que no es stock) y el armado entero (cuenta vacía → ausencias y no ceros,
+      cobertura de macros con un ítem en "unidades" que no se puede convertir, catálogo de
+      ejercicios vacío). El que más importa es el del borde de día: una comida de las 22:00
+      locales le sumaba los macros al día UTC siguiente, y el test lo fija derivando el instante
+      del offset configurado en vez de asumir que la app corre en Buenos Aires.
 - [ ] **4.5.2 — Catálogo de ejercicios real y ventanas de recuperación que sean ventanas.**
-      Fuera `_DEFAULT_ACTIVITIES` (las 8 hardcodeadas), dentro `ExerciseType` (21 filas que
-      `seed.py:160-191` siembra y que `docker-compose.yml:44` corre al arrancar). Y
+      Fuera `_DEFAULT_ACTIVITIES` (las 8 hardcodeadas), dentro `ExerciseType` (20 filas que
+      `seed.py:160-180` siembra y que `docker-compose.yml:44` corre al arrancar). Y
       `_MUSCLE_RECOVERY` deja de ser una lista de claves: hoy `rested_muscles = set(claves) −
       recientes` con un `_OVERTRAINING_DAYS = 2` plano para todos y `sorted(...)[0]`, que es
       por qué el músculo sugerido es **casi siempre "back"**. Pasa a comparar *días desde el

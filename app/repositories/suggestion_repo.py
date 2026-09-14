@@ -34,6 +34,27 @@ def _visible_to(user_id: int, household_id: int) -> ColumnElement[bool]:
     )
 
 
+def _still_suppressed() -> ColumnElement[bool]:
+    """La condición de "este sujeto no se vuelve a ofrecer todavía".
+
+    Dos casos, y el segundo es la 4.4.7: una sugerencia **pendiente** ocupa el lugar de su
+    sujeto —no tiene sentido ofrecer dos veces lo mismo sin haber recibido respuesta—, y una
+    respondida con "no ahora" lo ocupa hasta que se vence su `snoozed_until`.
+
+    Sin la segunda mitad, posponer *destrababa* el sujeto: la fila dejaba de estar `pending`,
+    así que la corrida siguiente del job —7:40 o 18:40 locales, ver `scheduler._SCHEDULE`—
+    volvía a escribir la misma tarjeta, con la única diferencia de los −0.045 que le baja la
+    señal de descarte. El botón "Ahora no" prometía silencio y entregaba una repetición.
+
+    Vivía en `engine._still_suppressed`, que era el motor escribiendo una cláusula `WHERE`
+    contra un modelo: la regla 2 de `AGENTS.md` pide que eso viva acá.
+    """
+    return or_(
+        Suggestion.status == "pending",
+        Suggestion.snoozed_until > datetime.now(UTC),
+    )
+
+
 class SuggestionRepository(BaseRepository[Suggestion]):
     def __init__(self, db: Session) -> None:
         super().__init__(Suggestion, db)
@@ -129,10 +150,63 @@ class SuggestionRepository(BaseRepository[Suggestion]):
         return list(self.db.scalars(stmt).all())
 
     #: Acá había un `get_recent_suggestions` sin ningún llamador, con la misma fuga que
-    #: `get_pending_for_user`: el motor tiene su propia copia de esa pregunta en
+    #: `get_pending_for_user`: el motor tenía su propia copia de esa pregunta en
     #: `engine._get_recent_suggestions_for_user`. Dos implementaciones de la misma
     #: consulta, una sin usar, es exactamente cómo se filtró la primera vez, así que se
-    #: borró en lugar de arreglarse por duplicado.
+    #: borró en lugar de arreglarse por duplicado. La que quedó es `get_created_since`,
+    #: acá abajo: la del motor, con el filtro correcto y un solo dueño.
+
+    def get_created_since(self, user_id: int, since: datetime) -> list[Suggestion]:
+        """Las sugerencias **personales** de esta persona creadas desde `since`.
+
+        Es lo que el scorer usa para la penalización de diversidad: qué se le ofreció hace
+        poco, para no ofrecer lo mismo arriba de nuevo.
+
+        `scope_user_id` y no `_visible_to`: una tarjeta del hogar no se le ofreció a nadie en
+        particular, y contarla como oferta reciente de las dos personas haría que la compra
+        que aceptó uno le baje el score al otro.
+        """
+        stmt = (
+            select(Suggestion)
+            .where(
+                Suggestion.scope_user_id == user_id,
+                Suggestion.created_at >= since,
+            )
+            .order_by(Suggestion.created_at.desc())
+        )
+        return list(self.db.scalars(stmt).all())
+
+    def get_suppressed_subjects_for_user(self, user_id: int) -> list[tuple[str, str]]:
+        """Los pares (tipo, nombre) de sujeto que esta persona no puede recibir ahora.
+
+        Devuelve los pares crudos y no las claves normalizadas de `learning.subject_key`
+        porque el vocabulario del aprendizaje vive en `app/recommendations/` y este módulo no
+        lo puede importar sin cerrar el círculo — el mismo motivo que documenta
+        `get_stale_pending`. Normalizar es de quien llama; filtrar, de acá.
+        """
+        stmt = select(Suggestion.subject_type, Suggestion.subject_name).where(
+            Suggestion.scope_user_id == user_id,
+            _still_suppressed(),
+            Suggestion.subject_type.isnot(None),
+            Suggestion.subject_name.isnot(None),
+        )
+        return [(t, n) for t, n in self.db.execute(stmt).all()]
+
+    def get_suppressed_subjects_for_household(self, household_id: int) -> list[tuple[str, str]]:
+        """Lo mismo para las sugerencias de scope household.
+
+        Filtra por `scope_type` además de por hogar: las sugerencias personales de Diego y
+        Rocío también llevan `household_id`, y sin esa condición una tarjeta de despensa
+        aceptada por uno bloqueaba la del otro.
+        """
+        stmt = select(Suggestion.subject_type, Suggestion.subject_name).where(
+            Suggestion.household_id == household_id,
+            Suggestion.scope_type == "household",
+            _still_suppressed(),
+            Suggestion.subject_type.isnot(None),
+            Suggestion.subject_name.isnot(None),
+        )
+        return [(t, n) for t, n in self.db.execute(stmt).all()]
 
     def get_user_preferences(self, user_id: int) -> list[RecommendationPreference]:
         stmt = select(RecommendationPreference).where(RecommendationPreference.user_id == user_id)

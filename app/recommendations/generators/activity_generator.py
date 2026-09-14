@@ -10,15 +10,11 @@ Generates activity suggestions for a user based on:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy.orm import Session
-
-from app.core.clock import as_utc
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
-from app.models.workout import WorkoutExercise, WorkoutParticipant, WorkoutSession
+from app.recommendations.context import UserContext
 
 logger = logging.getLogger(__name__)
 
@@ -51,36 +47,20 @@ _DEFAULT_ACTIVITIES: list[dict[str, Any]] = [
 ]
 
 
-def _days_since_last_workout(db: Session, user: User) -> int | None:
-    """Return days since last workout or None if no history."""
-    last = (
-        db.query(WorkoutSession.timestamp_start)
-        .join(WorkoutParticipant, WorkoutParticipant.workout_session_id == WorkoutSession.id)
-        .filter(WorkoutParticipant.user_id == user.id)
-        .order_by(WorkoutSession.timestamp_start.desc())
-        .first()
-    )
-    if last is None:
-        return None
-    delta = datetime.now(tz=timezone.utc) - as_utc(last[0])
-    return delta.days
+def _recently_trained_muscles(context: UserContext, days: int = _OVERTRAINING_DAYS) -> set[str]:
+    """Los grupos musculares estimulados dentro de los últimos *days* días.
 
+    Acá había una consulta —y `_days_since_last_workout` era otra— que preguntaba lo mismo
+    que el contexto ya trae. El corte es `< days` y no `<= days` porque eso es lo que hacía
+    el `WHERE timestamp >= ahora − days` que reemplaza: los días se truncan, así que un
+    estímulo de hace 2.5 días daba `days_since == 2` y quedaba **fuera** de una ventana de 2.
 
-def _recently_trained_muscles(db: Session, user: User, days: int = _OVERTRAINING_DAYS) -> set[str]:
-    """Return muscle groups trained in the last N days."""
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-    rows = (
-        db.query(WorkoutExercise.muscle_group)
-        .join(WorkoutParticipant, WorkoutParticipant.id == WorkoutExercise.workout_participant_id)
-        .join(WorkoutSession, WorkoutSession.id == WorkoutParticipant.workout_session_id)
-        .filter(
-            WorkoutParticipant.user_id == user.id,
-            WorkoutSession.timestamp_start >= cutoff,
-            WorkoutExercise.muscle_group.isnot(None),
-        )
-        .all()
-    )
-    return {r[0].lower() for r in rows if r[0]}
+    Sigue siendo un conjunto de nombres, y no la ventana de recuperación por grupo que pide
+    la 4.5.2: ese cambio es de conducta y va en su punto, no de contrabando acá.
+    """
+    return {
+        group for group, since in context.days_since_muscle_group.items() if since < days
+    }
 
 
 def _get_impossible_activities(
@@ -115,19 +95,22 @@ def _get_preferred_activities(
 
 
 def generate(
-    db: Session,
     user: User,
     preferences: list[RecommendationPreference],
+    context: UserContext,
     limit: int = _MAX_SUGGESTIONS,
 ) -> list[dict[str, Any]]:
     """Generate activity suggestions for *user*.
 
     Returns a list of suggestion dicts.
+
+    Sin `db`: todo lo que este generador leía de la base lo trae el contexto, así que pedir
+    una sesión sería pedir permiso para volver a consultar por su cuenta.
     """
     suggestions: list[dict[str, Any]] = []
 
-    days_since = _days_since_last_workout(db, user)
-    recent_muscles = _recently_trained_muscles(db, user)
+    days_since = context.days_since_last_workout
+    recent_muscles = _recently_trained_muscles(context)
     impossible = _get_impossible_activities(user, preferences)
     disliked = _get_disliked_activities(user, preferences)
     preferred = _get_preferred_activities(user, preferences)
