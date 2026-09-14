@@ -332,55 +332,55 @@ Se redirigen a las rutas **web** que ya existen y ya devuelven parciales HTML, e
 las rutas `/api/v1` que devuelven JSON — así se respeta la regla de enrutamiento dual sin
 tocar el backend donde no hace falta.
 
-- [ ] `home.html:226` → `POST /suggestions/{id}/feedback` con `hx-vals` `{"status": "dismissed"}`,
+- [x] `home.html:226` → `POST /suggestions/{id}/feedback` con `hx-vals` `{"status": "dismissed"}`,
       target la tarjeta, swap por `suggestions/partials/dismissed.html`.
-- [ ] `suggestions/index.html:12` → el "Refresh" pasa a `hx-post` contra una ruta web nueva
+- [x] `suggestions/index.html:12` → el "Refresh" pasa a `hx-post` contra una ruta web nueva
       que regenera y devuelve la lista, en vez de un `<form>` que navega a JSON.
-- [ ] `pantry/partials/stock_grid.html:52` → nueva ruta web `POST /pantry/{stock_id}/adjust`
+- [x] `pantry/partials/stock_grid.html:52` → nueva ruta web `POST /pantry/{stock_id}/adjust`
       que devuelve la tarjeta del ítem como fragmento.
-- [ ] `base.html:172,180,271` → nueva ruta web `GET /notifications/badge` que devuelve el
+- [x] `base.html:172,180,271` → nueva ruta web `GET /notifications/badge` que devuelve el
       badge como fragmento HTML (no JSON).
 
 **1.2 — Dead code del layout**
 
-- [ ] `base.html:65`: quitar `x-data="appStore()"` (usar `x-data` vacío + `$store.app` donde
+- [x] `base.html:65`: quitar `x-data="appStore()"` (usar `x-data` vacío + `$store.app` donde
       haga falta). Elimina el error de Alpine en cada carga.
-- [ ] `base.html:214`: reemplazar `get_flashed_messages()` por un mecanismo propio — los
+- [x] `base.html:214`: reemplazar `get_flashed_messages()` por un mecanismo propio — los
       mensajes viajan en el contexto de plantilla, inyectados desde
       `get_template_context()` (`app/web/helpers.py:50-57`), que es el único punto de
       inyección global que existe.
-- [ ] `app/static/css/app.css`: regla `[x-cloak]{display:none!important}` y clase
+- [x] `app/static/css/app.css`: regla `[x-cloak]{display:none!important}` y clase
       `.scrollbar-hide`.
 
 **1.3 — Onboarding (la feature huérfana)**
 
-- [ ] Nuevo `app/templates/onboarding/index.html`: wizard de 4 pasos con navegación Alpine y
+- [x] Nuevo `app/templates/onboarding/index.html`: wizard de 4 pasos con navegación Alpine y
       **un solo submit** contra `POST /onboarding/complete`, respetando los nombres de campo
       y rangos de la tabla de la sección B.
-- [ ] Registrar el router en `app/web/router.py` (`prefix="/onboarding"`).
-- [ ] Gate: redirigir a `/onboarding/` cuando `onboarding_completed` es falso.
-- [ ] **Sin migración** — la columna ya está en `0002`.
+- [x] Registrar el router en `app/web/router.py` (`prefix="/onboarding"`).
+- [x] Gate: redirigir a `/onboarding/` cuando `onboarding_completed` es falso.
+- [x] **Sin migración** — la columna ya está en `0002`.
 
 **1.4 — Prefill e includes**
 
-- [ ] `capture/index.html:167-170`: asignar `prefillMap[prefill]` de verdad. Desbloquea las
+- [x] `capture/index.html:167-170`: asignar `prefillMap[prefill]` de verdad. Desbloquea las
       6 quick actions del Home.
-- [ ] `history/index.html:45`: pasar la variable correcta al include de `workout_card.html`.
+- [x] `history/index.html:45`: pasar la variable correcta al include de `workout_card.html`.
 
 **1.5 — Login**
 
-- [ ] `login.html:11-18`: unificar la config de Tailwind (queda resuelto de raíz en la Fase 2
+- [x] `login.html:11-18`: unificar la config de Tailwind (queda resuelto de raíz en la Fase 2
       con el shell compartido; acá basta con que la paleta `brand` esté presente).
-- [ ] `app/web/auth.py`: pasar `email_value` al re-render tras login fallido.
-- [ ] Quitar las promesas muertas: `href="#"` de "Forgot password?" y el checkbox `remember`
+- [x] `app/web/auth.py`: pasar `email_value` al re-render tras login fallido.
+- [x] Quitar las promesas muertas: `href="#"` de "Forgot password?" y el checkbox `remember`
       que el backend ignora.
 
 **1.6 — Tres bugs de inteligencia que son bugs, no diseño**
 
-- [ ] `meal_generator.py:35`: la ventana de comida se calcula en hora local, no UTC.
-- [ ] `notification_repo.py:78-82`: arreglar el `or_` que hace que la notificación de un
+- [x] `meal_generator.py:35`: la ventana de comida se calcula en hora local, no UTC.
+- [x] `notification_repo.py:78-82`: arreglar el `or_` que hace que la notificación de un
       miembro suprima la del otro.
-- [ ] `openai_adapter.py:195-199`: el desajuste `name` / `food_name` que rompe la Capa 2 del
+- [x] `openai_adapter.py:195-199`: el desajuste `name` / `food_name` que rompe la Capa 2 del
       NLP para comidas.
 
 **Archivos:** `app/templates/{base,home}.html`, `capture/index.html`, `history/index.html`,
@@ -388,6 +388,25 @@ tocar el backend donde no hace falta.
 `app/static/{css/app.css,js/app.js}`, `app/web/{router,auth,notifications,pantry,suggestions}.py`,
 `app/repositories/notification_repo.py`, `app/recommendations/generators/meal_generator.py`,
 `app/nlp/providers/openai_adapter.py`, nuevo `app/templates/onboarding/index.html`.
+
+**Cierre de la Fase 1** — los 19 ítems verificados uno por uno contra el código (la
+verificación se hizo al cerrar la 5.3, porque estas casillas habían quedado sin marcar y
+este plan es la materia prima de la Fase 6: un renglón sin tildar iba a salir impreso como
+trabajo pendiente). Cuatro cosas aterrizaron en un lugar distinto del que este plan
+predijo, y quien busque el código por las referencias de arriba no lo va a encontrar:
+
+- **El badge** no vive en `base.html` sino en `app/templates/notifications/partials/badge.html`,
+  que se pide a sí mismo con `hx-get="/notifications/badge?badge_id=…"`. La Fase 2 partió
+  `base.html` en el shell más los parciales de navegación, así que las tres líneas que este
+  plan nombraba dejaron de existir.
+- **El ajuste de stock** está en `pantry/partials/stock_card.html` (más
+  `stock_card_swap.html`, que es la respuesta: la tarjeta nueva **y** el resumen de arriba
+  por out-of-band). La grilla se disolvió en tarjetas durante el barrido de la Fase 3.
+- **El login** no unificó su `tailwind.config`: la borró. Extiende `layouts/shell.html`
+  como cualquier otra página, que es la solución de raíz que la 1.5 daba por adelantada.
+- **El desajuste `name`/`food_name`** se arregló en el modelo y en el parser
+  (`app/nlp/intents.py`, `app/nlp/rules.py`); no hay `app/nlp/providers/` — el adaptador
+  vive en `app/nlp/adapters/openai_adapter.py`.
 
 ---
 
@@ -491,30 +510,30 @@ que lo afirma — y la config ahora vive donde las páginas standalone también 
 
 ### Fase 3 — Barrido visual + rediseño de IA
 
-- [ ] Las 29 plantillas pasan a macros y tokens (patrón repetido; las que no se rediseñan
+- [x] Las 29 plantillas pasan a macros y tokens (patrón repetido; las que no se rediseñan
       conservan su layout). El barrido va por área, un commit por área:
   - [x] `dashboard`
   - [x] `home`
   - [x] `meals` (index + detalle + tarjeta + parcial de lista)
-  - [ ] `workouts`, `pantry`, `health` + `body_metrics`, `history`, `notifications`,
+  - [x] `workouts`, `pantry`, `health` + `body_metrics`, `history`, `notifications`,
         `suggestions`, `onboarding`, `profile`
 - [x] **Home** — rediseño de arquitectura de información: de "lista de tarjetas" a una
       jerarquía con un **estado de hoy** arriba, la acción primaria dominante, y las
       sugerencias accionables en un toque.
-- [ ] **Los enums de la base se muestran desde un solo lugar**, `components/domain.html`
+- [x] **Los enums de la base se muestran desde un solo lugar**, `components/domain.html`
       (`dm`, tercer global de Jinja junto a `ui` e `ic`). `{{ _(x|title) }}` le pide al
       catálogo un msgid que `pybabel extract` no puede encontrar, así que los valores
       salían siempre en inglés, y cada pantalla repetía su propio mapa de tonos. Hecho para
       `meal_type` y `context`; faltan `workout_type`, `movement_type`, `intent_type`,
       `status` y `category`.
-- [ ] **Cada filtro de pantalla es un `<form method="get">` real**, no un espejo del estado
+- [x] **Cada filtro de pantalla es un `<form method="get">` real**, no un espejo del estado
       en Alpine: funciona sin JS, HTMX intercambia solo la lista, `hx-push-url` mantiene la
       URL compartible y el chip activo se pinta con `peer-checked` desde el valor de la
       query. Los parámetros vacíos que manda un formulario (`?user_id=`) se parsean con
       `query_int`/`query_date` de `app/web/helpers.py`, porque con `int | None` FastAPI
       responde 422 a su propia URL. Hecho en `meals`; falta en `workouts` (que además tiene
       el filtro de fecha sin label) y en `pantry`.
-- [ ] **Capture** — el flujo core:
+- [x] **Capture** — el flujo core:
   - entrada más prominente,
   - chips de ejemplo con lenguaje natural real (hoy son plantillas con `[placeholders]`),
   - **preview de confirmación rediseñado**: atribución correcta (avatar + nombre por
@@ -522,13 +541,33 @@ que lo afirma — y la config ahora vive donde las páginas standalone también 
     eliminación del estado `editing` muerto, y la rama `{% else %}` que hoy vuelca
     `{{ intent | tojson }}` crudo al usuario reemplazada por un fallback legible.
   - Edición inline completa **fuera de v3** (requiere cambiar el contrato del backend).
-- [ ] **Dashboard** — Chart.js con los tokens y colores que funcionen en ambos temas, y
+- [x] **Dashboard** — Chart.js con los tokens y colores que funcionen en ambos temas, y
       **arreglar el defecto 14**: los cuatro `new Chart(...)` corren inline en tiempo de
       parseo contra un Chart.js `defer`, así que hoy tiran `Chart is not defined` y no se
       dibuja ninguno. Van dentro de un `DOMContentLoaded` (o de un `<script defer>`), que
       es además el orden que necesitan para leer los tokens vía `GP.tokenColor`.
-- [ ] `components/empty_state.html` en los ~9 lugares que lo necesitan, no en 3.
-- [ ] `errors/404.html` y `errors/500.html` pasan a ser páginas reales de la app.
+- [x] `components/empty_state.html` en los ~9 lugares que lo necesitan, no en 3.
+- [x] `errors/404.html` y `errors/500.html` pasan a ser páginas reales de la app.
+
+**Cierre de la Fase 3** — verificada igual que la 1, y también al cerrar la 5.3. Tres
+renglones quedaron tildados con un texto que ya no describe lo que se hizo, y conviene
+leerlos con esta corrección al lado:
+
+- **El barrido está completo**: las únicas dos plantillas de `app/templates/` que no
+  nombran ningún macro son `pantry/partials/stock_card_swap.html` —que es solo el sobre de
+  dos `include` para el intercambio out-of-band— y `notifications/partials/badge.html`, que
+  es un `<span>` con un número. Las dos están bien así.
+- **Los enums**: la lista de "faltan `workout_type`, `movement_type`, `intent_type`,
+  `status` y `category`" está saldada y de largo. `components/domain.html` tiene **38
+  macros**, y `status` y `category` resultaron ser varias cosas distintas cada una:
+  `analysis_status` y `marker_status` para lo primero; `food_category`,
+  `notification_category` y `suggestion_category` para lo segundo. Un solo mapa para los
+  cinco habría sido el mismo error que un `msgid` global — dos significados compartiendo
+  una etiqueta.
+- **`components/empty_state.html` ya no existe**: es `ui.empty_state`, y lo usan **13**
+  plantillas. El archivo suelto se recibía pasándole variables por `{% set %}`, que es
+  justamente lo que la Fase 2 vino a sacar; convertirlo en macro fue lo que permitió que
+  llegara a los 13 lugares en vez de a los 3.
 
 ---
 
