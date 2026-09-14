@@ -2660,7 +2660,8 @@ estaba en el plan.
       grupo `qty` y las unidades de `_QTY_UNIT_ITEM`, `_UNIT_NORMALISE` (diez unidades en
       castellano), el separador `y`, el conector `de`, `con` en el lookahead del nombre,
       los determinantes que abren un ítem, `_MEAL_TYPE_MAP`, `_WE_PATTERNS`, `_WAIST_RE`,
-      la lista de limpieza de `_parse_preference` y `_PREF_EXERCISE_WORDS`.
+      la lista de limpieza de `_parse_preference` y el vocabulario de actividades
+      (`_ACTIVITY_NAMES`, que la segunda pasada movió arriba de los disparadores).
 - [x] **Dos cosas que el castellano hace distinto y que no son "más palabras".** La
       pluralidad viaja **en el verbo** y el pronombre no se escribe: nadie pone "nosotros
       cenamos fideos". Sin `_WE_VERBS_ES`, *"cenamos fideos"* se atribuía a quien escribió,
@@ -2690,6 +2691,23 @@ estaba en el plan.
       falla sin que nadie escriba un test; y `TestElPlaceholderNoPromete` **lee el ejemplo
       del catálogo** en vez de copiarlo, en los dos idiomas — cambiar el texto que la app
       ofrece sin probar que se entiende vuelve a fallar.
+- [x] **Una segunda pasada, y salió del mismo método: probar las frases de la guía.** Verificar
+      los ejemplos de *"Cómo hablarle"* uno por uno destapó cuatro huecos más, tres de ellos
+      del mismo modo de falla invisible. **`hice yoga 40 minutos` volvía `mixed` al 0.10**
+      porque la compuerta de entrenamiento enumeraba las actividades a mano y solo en inglés
+      (`did yoga|did pilates|did hiit`): la actividad número cuatro no entraba en ningún
+      idioma. Ahora el vocabulario de actividades es **uno** —`_ACTIVITY_NAMES`— con dos
+      lectores, la compuerta y el tipado de la preferencia, y pide el verbo a propósito
+      (`hice`/`hicimos`/`fui a`/`fuimos a`/`did`/`went to`) para que *"prefiero correr"* siga
+      siendo una preferencia y no dispare además un entrenamiento vacío. **`entrené pesas una
+      hora` guardaba el entrenamiento sin duración** porque el regex pedía `\d+`; ahora lee la
+      cantidad escrita con letras con la misma tabla que los alimentos. **`se acabó la leche`
+      volvía `mixed`**: así se avisa en castellano que algo se terminó, sin sujeto, y faltaban
+      todas las formas impersonales. Y el cuarto era peor por visible: **`no queda café` salía
+      como *"no te gusta 'queda café'"*** — una preferencia contra un alimento que no existe —
+      porque `no` es la partícula de negación de todo. La negación quedó partida en dos:
+      **lo explícito** (`odio`, `no me gusta`) vale solo, y **lo suelto** pierde contra un
+      verbo de consumo, que es lo que hace que un dato de la despensa no se lea como un gusto.
 - [x] **Tres cosas que quedan sin soportar, y quedan escritas como decisión.** No son
       olvidos y por eso cada una tiene su aserción: los nombres de ejercicio siguen siendo
       ingleses porque hacerlos bilingües es una **columna de alias en `exercise_types`**, o
@@ -2697,6 +2715,13 @@ estaba en el plan.
       unidad canónica a la que mandarla, así que pasa como parte del nombre; y `entrené 30'`
       no se lee, porque el apóstrofo como minutos no está en `_DURATION_RE`. La guía 6.2 ya
       contaba la primera de las tres — ahora el código la sostiene igual que el texto.
+- [x] **Y una cuarta que se decide dejar como está, porque tocarla rompe más de lo que
+      arregla.** `con` corta el nombre del alimento, así que *"cenamos milanesas con
+      ensalada"* guarda **solo** la milanesa. Partir en `con` haría de *"café con leche"* y
+      *"arroz con pollo"* dos ítems cada uno, que es peor y además silencioso. No es un
+      empate técnico: es un intercambio, y se resuelve **enseñándolo** en la 6.2 —
+      *"enumerá con **y**"* — en vez de cambiando el parser. Misma familia: `corrí 5 km`
+      registra el entrenamiento sin duración, porque la distancia no es una columna.
 
 Se comitea **aparte de los dos documentos**: es un cambio de comportamiento del parser, y
 mezclarlo con dos archivos de prosa deja un commit que no se puede revertir por partes.

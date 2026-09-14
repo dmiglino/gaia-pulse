@@ -450,8 +450,12 @@ _EXERCISE_RE = re.compile(
 #: así que `horas`/`minutos` caen del lado correcto sin tocar esa función. Sin ellas
 #: "corrí 30 **minutos**" entraba como entrenamiento sin duración, mientras que
 #: "corrí 30 **min**" —lo que ofrece el placeholder— sí se leía: la mitad de un ejemplo.
+#: La duración acepta la cantidad escrita con letras por la **misma** razón que la acepta el
+#: grupo `qty` de los alimentos, y con la misma tabla: "entrené pesas una hora" es la forma
+#: normal de decirlo y con solo `\d+` daba `duration_minutes: None` — un entrenamiento
+#: guardado sin duración, que es el dato que el motor usa para todo lo demás.
 _DURATION_RE = re.compile(
-    r"\b(?P<val>\d+(?:\.\d+)?)\s*"
+    r"\b(?P<val>\d+(?:\.\d+)?|" + _NUMBER_WORD_ALT + r")\s*"
     r"(?P<unit>horas?|hours?|hrs?|hs\b|h\b|minutos?|minutes?|mins?|m\b)\b",
     re.IGNORECASE,
 )
@@ -478,7 +482,11 @@ def _extract_duration_minutes(text: str) -> int | None:
     m = _DURATION_RE.search(text)
     if not m:
         return None
-    val = float(m.group("val"))
+    # Va por `_parse_qty` y no por `float()` porque el grupo `val` ahora también acepta la
+    # cantidad escrita con letras; `float("una")` sería un ValueError sin atrapar.
+    val = _parse_qty(m.group("val"))
+    if val is None:
+        return None
     unit = m.group("unit").lower()
     if unit.startswith("h"):
         return int(val * 60)
@@ -584,11 +592,40 @@ _MEAL_TRIGGERS = re.compile(
     re.IGNORECASE,
 )
 
+#: Vocabulario de actividades, una sola vez, con **dos** lectores que fallan distinto.
+#:
+#: `_classify_item_type` lo usa para decidir si una preferencia se guarda contra un
+#: **ejercicio** o contra un **alimento**: "prefiero correr" guardado como preferencia *de
+#: comida* ensucia el filtro de alimentos con una palabra que no es comida, y nadie lo ve
+#: nunca. `_DID_ACTIVITY` lo usa para que la compuerta de entrenamiento reconozca
+#: "hice yoga" y "fuimos a spinning". Los nombres castellanos van acá aunque `_EXERCISE_MAP`
+#: siga en inglés —eso necesita una columna de alias, ver `find_known_activities`—: un
+#: nombre que el catálogo no reconoce queda como texto libre y **se ve** en pantalla, que es
+#: el modo de falla barato de los dos.
+_ACTIVITY_NAMES = {
+    "gym", "biking", "bike", "cycling", "yoga", "running", "swimming", "swim",
+    "pilates", "crossfit", "hiit", "zumba", "spinning", "hiking", "walking",
+    "weightlifting", "weights", "boxing", "dancing", "rowing",
+    "correr", "caminar", "nadar", "natación", "natacion", "pesas", "bicicleta",
+    "gimnasio", "trotar", "andar", "remo", "boxeo", "baile", "bailar",
+    "entrenar", "ejercicio",
+}
+
+_ACTIVITY_ALT = "|".join(re.escape(w) for w in sorted(_ACTIVITY_NAMES, key=len, reverse=True))
+
+#: "hice yoga", "fuimos a spinning", "did pilates". Antes esto estaba **enumerado a mano** y
+#: solo en inglés (`did yoga|did pilates|did hiit`), o sea que la actividad número cuatro no
+#: entraba en ningún idioma y en castellano no entraba ninguna: "hice yoga 40 minutos"
+#: volvía `mixed` al 0.10. Pide el verbo a propósito y no acepta la actividad sola, porque
+#: "prefiero correr" es una preferencia y no un entrenamiento — sin el verbo, esa frase
+#: dispararía las dos cosas y la segunda saldría vacía.
+_DID_ACTIVITY = r"(?:hice|hicimos|fui a|fuimos a|did|went to)\s+(?:" + _ACTIVITY_ALT + r")"
+
 _WORKOUT_TRIGGERS = re.compile(
     r"\b(went to the gym|trained|training|workout|worked out|exercised|rode|"
-    r"went for a (run|bike|swim|walk|ride)|gym|biked|ran|swam|walked|did yoga|"
-    r"did pilates|did hiit|went hiking|gimnasio|entrené|entrenamos|corrí|corrimos|"
-    r"caminé|caminamos|nadé|nadamos|pesas|hice ejercicio|hicimos ejercicio)\b",
+    r"went for a (run|bike|swim|walk|ride)|gym|biked|ran|swam|walked|"
+    r"went hiking|gimnasio|entrené|entrenamos|corrí|corrimos|"
+    r"caminé|caminamos|nadé|nadamos|pesas|" + _DID_ACTIVITY + r")\b",
     re.IGNORECASE,
 )
 
@@ -609,19 +646,41 @@ _STOCK_ADD_VERBS = (
     "|compramos|compré|compraron|conseguimos|conseguí"
 )
 
+#: Las formas **impersonales** del castellano ("se acabó la leche", "no queda café") van acá
+#: aunque no tengan sujeto: son la manera normal de avisar que algo se terminó, y sin ellas
+#: "se acabó la leche" volvía `mixed` al 0.10. Las largas antes que las cortas, como siempre:
+#: "no hay más" antes que "no hay", o el recorte deja el "más" adentro del nombre.
 _STOCK_CONSUME_VERBS = (
     "ran out of|ran out|used up|we used|I used|used|consumed|finished"
     "|usamos|usé|gastamos|gasté|terminamos|terminé|acabamos|acabé"
+    "|se acabaron|se acabó|se acabo|se terminaron|se terminó|se termino"
+    "|no hay más|no hay mas|no quedan|no queda"
 )
 
 _STOCK_ADD_TRIGGERS = re.compile(r"\b(" + _STOCK_ADD_VERBS + r")\b", re.IGNORECASE)
 
 _STOCK_CONSUME_TRIGGERS = re.compile(r"\b(" + _STOCK_CONSUME_VERBS + r")\b", re.IGNORECASE)
 
-_PREFERENCE_NEG_TRIGGERS = re.compile(
-    r"\b(don'?t|do not|no|never|can'?t|cannot|hate|dislike|avoid|not suggest|"
+#: La negación va partida en dos, y la razón es del idioma: en castellano `no` es la
+#: partícula de **todo**, así que un `\bno\b` suelto convierte cualquier frase negativa en un
+#: gusto. "No queda café" es un dato de la despensa y salía como *"no te gusta 'queda
+#: café'"* — una preferencia guardada contra un alimento que no existe. Lo explícito
+#: ("odio", "no me gusta") vale solo; lo suelto vale **salvo** que la frase ya tenga un verbo
+#: de consumo, en cuyo caso el dato de despensa manda. Ver `_parse_preference`.
+_PREFERENCE_NEG_EXPLICIT = re.compile(
+    r"\b(hate|dislike|avoid|not suggest|"
     r"no me gusta|no nos gusta|no me gustan|no nos gustan|imposible|no podemos|"
     r"odio|odiamos|detesto|detestamos|no soporto|no soportamos|evitamos)\b",
+    re.IGNORECASE,
+)
+
+_PREFERENCE_NEG_BARE = re.compile(
+    r"\b(don'?t|do not|no|never|can'?t|cannot)\b",
+    re.IGNORECASE,
+)
+
+_PREFERENCE_NEG_TRIGGERS = re.compile(
+    _PREFERENCE_NEG_EXPLICIT.pattern + r"|" + _PREFERENCE_NEG_BARE.pattern,
     re.IGNORECASE,
 )
 
@@ -702,25 +761,8 @@ def _build_items_per_user(
 # Preference intent parsing
 # ---------------------------------------------------------------------------
 
-#: Esta lista decide una sola cosa, y es importante: si la preferencia se guarda contra un
-#: **ejercicio** o contra un **alimento**. Los nombres castellanos van acá aunque
-#: `_EXERCISE_MAP` siga en inglés —eso necesita una columna de alias, ver
-#: `find_known_activities`— porque las dos cosas fallan distinto: un nombre que el catálogo
-#: no reconoce queda como texto libre y se ve en pantalla, mientras que "prefiero correr"
-#: guardado como preferencia *de comida* ensucia el filtro de alimentos con una palabra que
-#: no es comida, y nadie lo ve nunca.
-_PREF_EXERCISE_WORDS = {
-    "gym", "biking", "bike", "cycling", "yoga", "running", "swimming", "swim",
-    "pilates", "crossfit", "hiit", "zumba", "spinning", "hiking", "walking",
-    "weightlifting", "weights", "boxing", "dancing", "rowing",
-    "correr", "caminar", "nadar", "natación", "natacion", "pesas", "bicicleta",
-    "gimnasio", "trotar", "andar", "remo", "boxeo", "baile", "bailar",
-    "entrenar", "ejercicio",
-}
-
-
 def _classify_item_type(item_name: str) -> str:
-    if item_name.lower() in _PREF_EXERCISE_WORDS:
+    if item_name.lower() in _ACTIVITY_NAMES:
         return "exercise"
     exercises = _extract_exercises(item_name)
     if exercises:
@@ -733,7 +775,11 @@ def _parse_preference(text: str, speaking_user: str) -> PreferenceIntent | None:
     participants = _resolve_participants(text, speaking_user)
     user_key = participants[0] if len(participants) == 1 else "both"
 
-    is_neg = bool(_PREFERENCE_NEG_TRIGGERS.search(text))
+    # Una negación suelta no alcanza si la frase ya dice que algo se terminó: "no queda café"
+    # es la despensa hablando, no un gusto. Ver `_PREFERENCE_NEG_BARE`.
+    is_neg = bool(_PREFERENCE_NEG_EXPLICIT.search(text)) or (
+        bool(_PREFERENCE_NEG_BARE.search(text)) and not _STOCK_CONSUME_TRIGGERS.search(text)
+    )
     is_pos = bool(_PREFERENCE_POS_TRIGGERS.search(text))
 
     if not is_neg and not is_pos:

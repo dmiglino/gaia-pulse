@@ -355,6 +355,68 @@ class TestCastellano:
         assert pref is not None
         assert pref.item_type == "exercise"
 
+    def test_a_preference_about_an_activity_is_not_also_a_workout(
+        self, parser: _ParserProxy
+    ) -> None:
+        # La compuerta de entrenamiento pide el verbo ("hice yoga") y no acepta la actividad
+        # sola, justamente para esto: "prefiero correr" es lo que alguien quiere hacer, no lo
+        # que hizo, y un entrenamiento fantasma al lado de la preferencia se guardaría igual.
+        result = parser.parse("prefiero correr", speaking_user="diego")
+        assert [i.intent_type for i in result.intents] == ["update_preference"]
+
+    @pytest.mark.parametrize(
+        ("phrase", "duration"),
+        [
+            ("hice yoga 40 minutos", 40),
+            ("hicimos pilates media hora", 30),
+            ("fuimos a spinning", None),
+            ("entrené pesas una hora", 60),
+            ("hice ejercicio 20 minutos", 20),
+        ],
+    )
+    def test_doing_an_activity_is_a_workout(
+        self, parser: _ParserProxy, phrase: str, duration: int | None
+    ) -> None:
+        # Antes de la 6.0 la compuerta enumeraba las actividades a mano y solo en inglés
+        # (`did yoga|did pilates|did hiit`), así que "hice yoga 40 minutos" volvía `mixed` al
+        # 0.10: un entrenamiento que la app no registró y sobre el que no avisó nada.
+        result = parser.parse(phrase, speaking_user="diego")
+        workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
+        assert workout is not None, f"{phrase!r} no se leyó como entrenamiento"
+        assert workout.duration_minutes == duration
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "se acabó la leche",
+            "se acabaron los huevos",
+            "no queda café",
+            "no hay más arroz",
+            "se terminó el aceite",
+        ],
+    )
+    def test_the_impersonal_way_of_saying_it_ran_out(
+        self, parser: _ParserProxy, phrase: str
+    ) -> None:
+        # Así se avisa en castellano que algo se terminó: sin sujeto. Sin estas formas la
+        # frase volvía `mixed` al 0.10 y el aviso de "poco stock" nunca se enteraba.
+        result = parser.parse(phrase, speaking_user="diego")
+        consume = next((i for i in result.intents if i.intent_type == "consume_stock"), None)
+        assert consume is not None, f"{phrase!r} no se leyó como consumo"
+        assert len(consume.items) == 1, f"{phrase!r} → {consume.items}"
+
+    def test_a_pantry_fact_is_not_a_taste(self, parser: _ParserProxy) -> None:
+        # `no` es la partícula de negación de **todo** en castellano, así que un `\bno\b`
+        # suelto convertía "no queda café" en *"no te gusta 'queda café'"*: una preferencia
+        # guardada contra un alimento que no existe. Lo explícito ("odio", "no me gusta")
+        # sigue valiendo solo; lo suelto pierde contra un verbo de consumo.
+        result = parser.parse("no queda café", speaking_user="diego")
+        assert [i.intent_type for i in result.intents] == ["consume_stock"]
+
+        # Y al revés: que la frase hable de comida no la convierte en un dato de despensa.
+        result = parser.parse("no me gusta el café", speaking_user="diego")
+        assert [i.intent_type for i in result.intents] == ["update_preference"]
+
 
 class TestListasQueTienenQueCoincidir:
     """Los huecos de este parser no aparecen como excepciones: aparecen como un dato feo.
@@ -427,6 +489,19 @@ class TestListasQueTienenQueCoincidir:
         }
         for written, expected in nlp_rules._UNIT_NORMALISE.items():
             assert expected in canonical, f"{written!r} normaliza a {expected!r}: no es canónica"
+
+    def test_every_activity_name_opens_a_workout_and_types_a_preference(self) -> None:
+        # `_ACTIVITY_NAMES` tiene dos lectores que fallan distinto, y por eso se recorren los
+        # dos acá: la compuerta de entrenamiento ("hice yoga") y el tipado de la preferencia
+        # ("prefiero correr" es ejercicio, no comida). Una actividad agregada al set entra en
+        # los dos gestos o en ninguno; antes la compuerta las enumeraba a mano y quedaban tres.
+        for name in nlp_rules._ACTIVITY_NAMES:
+            assert nlp_rules._WORKOUT_TRIGGERS.search(
+                f"hice {name} 20 minutos"
+            ), f"{name!r} no abre un entrenamiento"
+            assert (
+                nlp_rules._classify_item_type(name) == "exercise"
+            ), f"{name!r} se tipa como comida"
 
 
 class TestElPlaceholderNoPromete:
