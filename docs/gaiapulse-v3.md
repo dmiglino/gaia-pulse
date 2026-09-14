@@ -257,12 +257,6 @@ base**: el catálogo también está en inglés y no tiene columna de alias. Lo q
 columna, o sea una migración: es un problema de datos, no de código, y por eso no entró en
 un punto que no abre migraciones.
 
-**Dos formas de escribir que el parser no lee**, anotadas acá porque están fijadas con una
-aserción cada una y conviene que se lean como decisión y no como olvido: `docena` pasa como
-parte del nombre del alimento porque no hay unidad canónica a la que mandarla (el esquema
-no tiene "docena"), y el apóstrofo como minutos —*"entrené 30'"*— no está en el regex de
-duración.
-
 **Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
 escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
 —vuelve `mixed` al 0.10— aunque cada mitad por separado funcione perfecto. No es una compuerta

@@ -242,17 +242,17 @@ class TestCastellano:
             ("compré 500 gramos de yerba", 500.0, "g"),
             ("compré 2 litros de leche", 2.0, "l"),
             ("compramos 3 unidades de pan", 3.0, "unit"),
-            ("compré una docena de huevos", None, None),
+            ("compré una docena de huevos", 12.0, "unit"),
+            ("compré 2 docenas de huevos", 24.0, "unit"),
         ],
     )
     def test_spanish_units_normalise(
         self, parser: _ParserProxy, phrase: str, qty: float | None, unit: str | None
     ) -> None:
         # "kilos" y "kg" tienen que llegar a la despensa como la misma unidad, o el mismo
-        # alimento queda partido en dos filas que no se suman. `docena` no está en la lista
-        # a propósito: no hay unidad canónica para mapearla, así que se deja pasar como
-        # nombre en vez de inventar una — y este caso lo fija para que sea una decisión
-        # visible y no un olvido.
+        # alimento queda partido en dos filas que no se suman. `docena` normaliza a la
+        # unidad genérica `unit`, pero además multiplica: "una docena" son 12 unidades y "dos
+        # docenas" son 24, no 1 ni 2 — la unidad no alcanza sin la cantidad.
         result = parser.parse(phrase, speaking_user="diego")
         stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
         assert stock is not None
@@ -294,15 +294,25 @@ class TestCastellano:
     # ── Entrenamiento ───────────────────────────────────────────────────────
     @pytest.mark.parametrize("phrase", ["corrí 30 minutos", "corrí 30 min", "entrené 30'"])
     def test_workout_duration_in_spanish(self, parser: _ParserProxy, phrase: str) -> None:
+        # El apóstrofo es una tercera forma de escribir minutos, tan válida como "min": las
+        # tres frases tienen que llegar a la misma duración.
         result = parser.parse(phrase, speaking_user="diego")
         workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
         assert workout is not None
-        if phrase.endswith("'"):
-            # No se lee: la duración con apóstrofo no está soportada, y queda fijado acá para
-            # que se vea que es un hueco conocido y no una regresión.
-            assert workout.duration_minutes is None
-        else:
-            assert workout.duration_minutes == 30
+        assert workout.duration_minutes == 30
+
+    def test_workout_duration_apostrophe_ignores_unrelated_apostrophes(
+        self, parser: _ParserProxy
+    ) -> None:
+        # Una cita entre comillas simples no tiene un número pegado al apóstrofo de
+        # apertura ("dijo 'buenísimo'"), así que no puede confundirse con la marca de
+        # minutos: la duración real sigue leyéndose de "40 minutos".
+        result = parser.parse(
+            "entrenamos 40 minutos y ella dijo 'buenísimo'", speaking_user="diego"
+        )
+        workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
+        assert workout is not None
+        assert workout.duration_minutes == 40
 
     def test_spanish_workout_has_no_named_exercise(self, parser: _ParserProxy) -> None:
         # Consecuencia aceptada y documentada: `_EXERCISE_MAP` está en inglés y ampliarlo

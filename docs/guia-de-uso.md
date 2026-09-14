@@ -149,9 +149,10 @@ la distancia: `corrí 5 km` **sí** guarda el entrenamiento, pero sin duración,
 kilómetros no son un dato que la app tenga dónde poner. `corrí 30 minutos` vale más que
 `corrí 5 km`.
 
-Podés escribir la duración con números o con letras: `40 minutos`, `una hora`, `media hora`.
-Dos formas que **no** lee: el apóstrofo (`entrené 30'`) y las duraciones compuestas
-(`hora y media` le queda en una hora). Para una hora y media, escribí `90 minutos`.
+Podés escribir la duración con números o con letras: `40 minutos`, `una hora`, `media hora`,
+o con el apóstrofo como minutos: `entrené 30'`. Una forma que **no** lee: las duraciones
+compuestas (`hora y media` le queda en una hora). Para una hora y media, escribí
+`90 minutos`.
 
 **Los nombres de actividad tienen dos niveles**, y conviene saber por qué:
 
@@ -185,9 +186,8 @@ los datos que más cambia lo que te sugiere y el más fácil de olvidar.
 | `no queda café` | el café llegó a cero |
 
 Las tres formas de avisar que algo se terminó funcionan igual: `se acabó`, `se terminó`,
-`no queda`, `no hay más`, `usamos`, `gastamos`. Lo único que no normaliza es `docena`: si
-escribís `compré una docena de huevos` te guarda un ítem llamado "docena de huevo", que no es
-lo mismo que 12 huevos. Escribí `compré 12 huevos`.
+`no queda`, `no hay más`, `usamos`, `gastamos`. `docena` también se entiende: `compré una
+docena de huevos` guarda 12 huevos, y `compré 2 docenas de huevos` guarda 24.
 
 ### Preferencias
 

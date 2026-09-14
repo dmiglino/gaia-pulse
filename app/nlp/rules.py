@@ -162,6 +162,7 @@ _QTY_UNIT_ITEM = re.compile(
         |cucharaditas?|cucharadas?|tablespoons?|tbsp|teaspoons?|tsp
         |tazas?|cups?
         |unidades|unidad|units?|pieces?|pcs?
+        |docenas?
         |rebanadas?|slices?
         |porciones|porci[oó]n|servings?|portions?
     )?
@@ -197,6 +198,8 @@ _UNIT_NORMALISE: dict[str, str] = {
     "tazas": "cup",
     "unidad": "unit",
     "unidades": "unit",
+    "docena": "unit",
+    "docenas": "unit",
     "rebanada": "slice",
     "rebanadas": "slice",
     "porción": "serving",
@@ -240,6 +243,14 @@ def _normalise_unit(raw: str | None) -> str | None:
     if not raw:
         return None
     return _UNIT_NORMALISE.get(raw.lower(), raw.lower())
+
+
+#: `docena`/`docenas` no es una unidad más: es una cantidad de la unidad genérica
+#: `unit`, así que además de normalizarse (arriba) tiene que multiplicar el número que la
+#: precede — "una docena" es 1 * 12, "dos docenas" es 2 * 12. Sin esto "una docena de huevos"
+#: normalizaría a `unit` pero guardaría `quantity=1`, media docena de la cantidad real.
+_DOZEN_UNITS = {"docena", "docenas"}
+_DOZEN_MULTIPLIER = 12
 
 
 def _parse_qty(raw: str | None) -> float | None:
@@ -286,7 +297,10 @@ def _extract_items(text: str) -> list[FoodItemRef]:
         m = _QTY_UNIT_ITEM.match(seg)
         if m:
             qty = _parse_qty(m.group("qty"))
-            unit = _normalise_unit(m.group("unit"))
+            raw_unit = m.group("unit")
+            unit = _normalise_unit(raw_unit)
+            if raw_unit and raw_unit.lower() in _DOZEN_UNITS:
+                qty = (qty if qty is not None else 1) * _DOZEN_MULTIPLIER
             raw_name = m.group("name").strip() if m.group("name") else seg
             # Attempt basic depluralization: only strip trailing 's' if word ends in 's' but not 'ss'
             if raw_name.endswith("s") and not raw_name.endswith("ss") and len(raw_name) > 3:
@@ -454,9 +468,18 @@ _EXERCISE_RE = re.compile(
 #: grupo `qty` de los alimentos, y con la misma tabla: "entrené pesas una hora" es la forma
 #: normal de decirlo y con solo `\d+` daba `duration_minutes: None` — un entrenamiento
 #: guardado sin duración, que es el dato que el motor usa para todo lo demás.
+#:
+#: El apóstrofo (`30'`) es una tercera forma de escribir minutos y va en su **propia**
+#: alternativa (`apos`), no dentro de `unit`: un apóstrofo no es un carácter de palabra, así
+#: que el `\b` final que cierra `horas?|...|m\b` nunca lo alcanzaría — entre `'` y el espacio
+#: o el final de la frase no hay transición palabra/no-palabra. En su lugar la alternativa
+#: usa `(?!\w)`, y el número tiene que estar pegado o separado solo por espacios: exige un
+#: `\d` o una palabra de cantidad inmediatamente antes, así que un apóstrofo que abre una cita
+#: ("dijo 'no'") no matchea nunca — no hay número del que colgarse.
 _DURATION_RE = re.compile(
     r"\b(?P<val>\d+(?:\.\d+)?|" + _NUMBER_WORD_ALT + r")\s*"
-    r"(?P<unit>horas?|hours?|hrs?|hs\b|h\b|minutos?|minutes?|mins?|m\b)\b",
+    r"(?:(?P<unit>horas?|hours?|hrs?|hs\b|h\b|minutos?|minutes?|mins?|m\b)\b"
+    r"|(?P<apos>')(?!\w))",
     re.IGNORECASE,
 )
 
@@ -487,6 +510,8 @@ def _extract_duration_minutes(text: str) -> int | None:
     val = _parse_qty(m.group("val"))
     if val is None:
         return None
+    if m.group("apos"):
+        return int(val)
     unit = m.group("unit").lower()
     if unit.startswith("h"):
         return int(val * 60)
