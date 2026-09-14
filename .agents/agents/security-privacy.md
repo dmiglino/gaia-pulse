@@ -34,6 +34,17 @@ the concrete path, not just the category it belongs to.
   pantry purchases attribute to the acting user on purpose, and that
   tradeoff is written next to the call. A household-scoped write that
   silently teaches both members' models is the finding to look for.
+- A household-scoped **read** that combines both members' personal data is
+  the mirror image of that write, and 4.4.9 introduced the first one. Ask two
+  things: were each member's rows fetched separately (`filters.HouseholdMember`,
+  one read per `user_id`), and is the combination in the right direction?
+  Declared blocks union — one person's restriction protects the house; learned
+  rejections intersect — one person's tap must not edit the other's list. A
+  single merged query over `household_id` is a finding even when nothing leaks,
+  because it makes the intersection unrecoverable. And the union direction
+  leaks by inference: a shopping list that silently loses peanut tells the
+  other member something they were never shown, which is a tradeoff to state
+  next to the code rather than a bug to fix.
 - Personal health data (body metrics, blood analysis, sleep) minimization,
   logging redaction, and retention — this data must never appear in logs.
 - Secrets: `OPENAI_API_KEY`, `STT_API_KEY`, `APP_SECRET_KEY`,

@@ -51,6 +51,11 @@ correct got there in the first place.
 - Check that a new control promises only what its action can deliver: if the
   label says "Forget" and no route deletes anything, the button lies. Read
   the label, then find who executes it.
+- A new query is a claim that no repository already answers it. Grep
+  `app/repositories/` for the same table before accepting one: an inline copy
+  that drops a `WHERE` clause the repository method carries (`is_active`, a
+  `user_id`) is the expensive duplication in its worst form — the two versions
+  disagree, and nothing fails.
 - A number on screen is a claim about which rows it counted. Check **every**
   writer of that column, not just the one that motivated the change: a
   "1 thing you told us" that also counts taps is a falsehood with an air of

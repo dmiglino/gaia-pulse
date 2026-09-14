@@ -26,7 +26,11 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   candidate generation (`generators/`) → hard-constraint filtering
   (`filters.py`) → behavior-signal scoring (`scorer.py`, clamped to
   `[0.0, 1.0]`) → ranking/persistence. Do not fold filtering into scoring or
-  vice versa.
+  vice versa. Stage 2 has **two** entry points — `apply_hard_constraints`
+  (one person) and `apply_household_constraints` (scope household). They
+  share the comparison (`_drop_blocked`) and differ only in how the blocked
+  sets are built; a third copy of that comparison is how a block starts
+  counting on one screen and not the other.
 - `app/recommendations/learning.py` is not a fifth stage: it is the shared
   vocabulary of what the app learns —what a subject is (`subject_type` +
   `subject_name`), which `signal_type`s count, temporal decay, confidence by
@@ -45,14 +49,26 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   dead second implementation and is gone — don't reintroduce it.)
 - When extending intent types or generators, add deterministic
   fixtures/unit tests (`tests/test_nlp.py`, `tests/test_recommendations.py`,
-  `tests/test_learning_signals.py`) that don't require a live OpenAI call.
+  `tests/test_learning_signals.py`, `tests/test_household_learning.py`) that
+  don't require a live OpenAI call. The last one guards the union/intersection
+  asymmetry: leave it out of the command and the two rules can be merged into
+  one with the suite still green.
 
 ## Do not
 
 Do not treat LLM output as ground truth, add a second LLM provider without a
 clear need, bypass the 0.7 confidence gate, hardcode a new participant name
 into the resolver without flagging the two-user tradeoff documented in
-`README.md`, or give a per-user preference signal household-level scope.
+`README.md`, or fold two people's learned signals into one household set.
+
+The asymmetry in `filters.apply_household_constraints` is the rule, not an
+inconsistency to tidy up: a **declared** block (`_BLOCKING_SIGNALS` on a
+`RecommendationPreference`, `disliked_foods_json`, `dietary_restrictions_json`)
+is unioned across members on purpose, because a restriction does not admit an
+average; a **learned** rejection is intersected, and unioning it would let one
+person's tap delete the other's food. Anything that reads the members as one
+merged set forecloses the intersection, because it cannot be recovered
+afterwards.
 
 ## Report
 

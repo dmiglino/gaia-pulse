@@ -28,7 +28,10 @@ description: Use when adding an NLP intent, adjusting the confidence threshold/O
    `scorer.py` read — and it is written through `learning.record_signal()`,
    never through `BehaviorSignalRepository` from a service.
 6. Add a deterministic fixture in `tests/test_nlp.py`,
-   `tests/test_recommendations.py` or `tests/test_learning_signals.py` that
-   doesn't call a live provider.
+   `tests/test_recommendations.py`, `tests/test_learning_signals.py` or
+   `tests/test_household_learning.py` that doesn't call a live provider.
 7. Run `.venv/bin/python -m pytest tests/test_nlp.py
-   tests/test_recommendations.py tests/test_learning_signals.py`.
+   tests/test_recommendations.py tests/test_learning_signals.py
+   tests/test_household_learning.py`. The last file is what keeps the
+   household filter's union/intersection asymmetry from being "simplified"
+   into one rule with the suite still green.
