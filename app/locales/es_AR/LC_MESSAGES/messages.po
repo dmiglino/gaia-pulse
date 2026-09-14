@@ -631,6 +631,12 @@ msgstr "Borrar este análisis"
 msgid "This also deletes its markers and the text read from the file."
 msgstr "Esto también borra sus marcadores y el texto leído del archivo."
 
+msgid "Wrong date? Correct it here."
+msgstr "¿La fecha está mal? Corregila acá."
+
+msgid "Save"
+msgstr "Guardar"
+
 msgid "Keep it"
 msgstr "Dejarlo"
 

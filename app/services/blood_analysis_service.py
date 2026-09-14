@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -73,6 +74,20 @@ class BloodAnalysisService:
     #: fecha no le queda ninguno: dejarla "para quien solo quiera los valores" es dejar
     #: disponible justo la versión que causó el problema —aconsejar sin saber de cuándo
     #: es el análisis— para que el próximo la elija por ser la más corta.
+
+    def update_analysis_date(self, analysis_id: int, user_id: int, new_date: date | None) -> bool:
+        """Corregir la fecha de un panel ya cargado.
+
+        El parser ancla la fecha a una etiqueta (`_extract_date`), pero un informe con
+        una etiqueta que no reconoce, o sin ninguna, la deja en `None` — y hasta ahora
+        la única forma de arreglar eso era borrar el panel y volver a subirlo.
+        """
+        record = self.get_analysis(analysis_id, user_id)
+        if record is None:
+            return False
+        record.analysis_date = new_date
+        self.db.flush()
+        return True
 
     def delete_analysis(self, analysis_id: int, user_id: int) -> bool:
         record = self.get_analysis(analysis_id, user_id)

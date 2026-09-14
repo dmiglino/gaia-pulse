@@ -444,6 +444,41 @@ def test_health_responses_are_not_cached_by_the_browser(
     assert resp.headers["referrer-policy"] == "same-origin"
 
 
+def test_health_update_date_corrects_a_mislabeled_panel(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """Único arreglo posible cuando el parser ancló mal la fecha (o no encontró
+    ninguna etiqueta): corregirla a mano sin tener que volver a subir el archivo."""
+    analysis = BloodAnalysis(user_id=diego.id, analysis_date=None, status="analyzed")
+    db.add(analysis)
+    db.flush()
+
+    r = authenticated_client.post(
+        f"/health/{analysis.id}/date", data={"analysis_date": "2026-03-14"}, follow_redirects=False
+    )
+    assert r.status_code == 302, r.text
+    assert r.headers["location"] == f"/health/{analysis.id}"
+
+    db.refresh(analysis)
+    assert analysis.analysis_date == date(2026, 3, 14)
+
+
+def test_health_update_date_cannot_reach_another_users_panel(
+    authenticated_client: TestClient, db: Session, rocio: User
+) -> None:
+    analysis = BloodAnalysis(user_id=rocio.id, analysis_date=date(2020, 1, 1), status="analyzed")
+    db.add(analysis)
+    db.flush()
+
+    r = authenticated_client.post(
+        f"/health/{analysis.id}/date", data={"analysis_date": "2026-03-14"}, follow_redirects=False
+    )
+    assert r.status_code == 302, r.text
+
+    db.refresh(analysis)
+    assert analysis.analysis_date == date(2020, 1, 1)
+
+
 def test_history_body_metrics_tab_ignores_a_foreign_user_id(
     authenticated_client: TestClient, seeded: dict[str, int], db: Session
 ) -> None:

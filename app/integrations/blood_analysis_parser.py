@@ -243,21 +243,51 @@ def _parse_with_regex(text: str) -> dict[str, Any]:
     return values
 
 
+#: En orden de prioridad: la fecha de **extracción** es cuándo se sacó la sangre, que
+#: es lo único que le importa a "qué tan fresco es este panel" (`panel_age_days` en
+#: `app/web/health.py`). La de informe/reporte es una aproximación razonable cuando el
+#: documento no nombra la extracción —el laboratorio no tarda semanas en informar—,
+#: nunca la primera opción.
+_DATE_LABEL_PATTERNS = (
+    r"fecha\s+de\s+(?:extracci[oó]n|toma|obtenci[oó]n|recolecci[oó]n|recepci[oó]n)",
+    r"(?:collection|specimen|draw)\s+date",
+    r"date\s+collected",
+    r"fecha\s+(?:de\s+)?informe",
+    r"report(?:ed)?\s+date",
+)
+_DATE_VALUE_PATTERN = r"(\d{2}[/\-]\d{2}[/\-]\d{4}|\d{4}[/\-]\d{2}[/\-]\d{2})"
+#: Cuánto texto mirar después de la etiqueta antes de rendirse — alcanza para
+#: "Fecha de extracción: ....... 14/03/2026" con separadores o espacios de más.
+_DATE_LABEL_WINDOW = 40
+
+
+def _parse_date_token(raw: str) -> date | None:
+    parts = re.split(r"[/\-]", raw)
+    try:
+        if len(parts[0]) == 4:
+            return date(int(parts[0]), int(parts[1]), int(parts[2]))
+        return date(int(parts[2]), int(parts[1]), int(parts[0]))
+    except ValueError:
+        return None
+
+
 def _extract_date(text: str) -> date | None:
-    patterns = [
-        r"(\d{2})[/\-](\d{2})[/\-](\d{4})",  # DD/MM/YYYY or DD-MM-YYYY
-        r"(\d{4})[/\-](\d{2})[/\-](\d{2})",  # YYYY-MM-DD
-    ]
-    for pattern in patterns:
-        m = re.search(pattern, text)
-        if m:
-            groups = m.groups()
-            try:
-                if len(groups[0]) == 4:
-                    return date(int(groups[0]), int(groups[1]), int(groups[2]))
-                return date(int(groups[2]), int(groups[1]), int(groups[0]))
-            except ValueError:
-                continue
+    """La fecha de extracción, anclada a su etiqueta — no la primera fecha del documento.
+
+    Un informe de laboratorio trae varias fechas (nacimiento del paciente, impresión del
+    PDF, extracción), y tomar la primera que aparece puede devolver cualquiera de las
+    otras dos. Sin una etiqueta reconocible al lado, no hay fecha en vez de adivinar una.
+    """
+    for label in _DATE_LABEL_PATTERNS:
+        m = re.search(label, text, re.IGNORECASE)
+        if not m:
+            continue
+        window = text[m.end() : m.end() + _DATE_LABEL_WINDOW]
+        date_m = re.search(_DATE_VALUE_PATTERN, window)
+        if date_m:
+            parsed = _parse_date_token(date_m.group(1))
+            if parsed:
+                return parsed
     return None
 
 

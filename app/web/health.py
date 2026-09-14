@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, File, Request, Response, UploadFile
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.clock import local_now
 from app.core.dependencies import DB, CurrentUser
 from app.services.blood_analysis_service import BloodAnalysisService
-from app.web.helpers import get_template_context, templates
+from app.web.helpers import get_template_context, query_date, templates
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -184,6 +185,20 @@ def health_detail(
     ctx["normal_markers"] = normal
     ctx["unevaluated_markers"] = unevaluated
     return templates.TemplateResponse("health/detail.html", ctx)
+
+
+@router.post("/{analysis_id}/date")
+def health_update_date(
+    analysis_id: int,
+    request: Request,
+    current_user: CurrentUser,
+    db: DB,
+    analysis_date: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    svc = BloodAnalysisService(db)
+    svc.update_analysis_date(analysis_id, current_user.id, query_date(analysis_date))
+    db.commit()
+    return RedirectResponse(url=f"/health/{analysis_id}", status_code=302)
 
 
 @router.post("/{analysis_id}/delete")

@@ -32,6 +32,29 @@
     {%- endif %}
   </div>
 
+  {#- El parser ancla la fecha a una etiqueta del documento (`_extract_date`); un
+      informe con una etiqueta que no reconoce la deja sin fecha, y hasta ahora la
+      única forma de arreglarla era borrar el panel y volver a subirlo. -#}
+  <div x-data="{ editing: false }" class="mb-5 -mt-2">
+    <div x-show="!editing">
+      {{ ui.btn(_('Wrong date? Correct it here.'), tone='secondary', size='sm', type='button',
+                icon='calendar', attrs='@click="editing = true"') }}
+    </div>
+    <form x-show="editing" x-cloak method="post" action="/health/{{ analysis.id }}/date"
+          class="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+      <div>
+        <label for="analysis-date" class="block text-xs text-ink-subtle mb-1">
+          {{ _('Wrong date? Correct it here.') }}
+        </label>
+        <input type="date" id="analysis-date" name="analysis_date"
+               value="{{ analysis.analysis_date.isoformat() if analysis.analysis_date else '' }}"
+               class="{{ ui.INPUT_CLASS }}" />
+      </div>
+      {{ ui.btn(_('Save'), tone='secondary', size='sm', icon='check', type='submit') }}
+    </form>
+  </div>
+
   {#- El encuadre no diagnóstico va arriba de todo lo que se lee como consejo, y
       no al pie: es lo primero que hay que saber antes de interpretar un marcador
       fuera de rango. -#}
