@@ -57,6 +57,25 @@
     {% endcall %}
 
     {% call ui.card() %}
+      {{ ui.section_title(_('Nutrition Goal'), icon='meal', tone='food') }}
+      {{ ui.notice(_('These are targets you set for yourself, not a clinical prescription. Talk to a professional before using them to guide a medical condition.'), tone='info') }}
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+        {{ ui.field(_('Protein'), 'goal_protein_g', type='number', unit=_('g'),
+                    value=current_user.goal_protein_g, placeholder='120',
+                    hint=_('Leave empty to compare against your own average instead.'),
+                    attrs='step="1" min="10" max="400" inputmode="decimal"') }}
+        {{ ui.field(_('Fiber'), 'goal_fiber_g', type='number', unit=_('g'),
+                    value=current_user.goal_fiber_g, placeholder='30',
+                    hint=_('Leave empty to compare against your own average instead.'),
+                    attrs='step="1" min="5" max="100" inputmode="decimal"') }}
+        {{ ui.field(_('Calories'), 'goal_calories_kcal', type='number', unit=_('kcal'),
+                    value=current_user.goal_calories_kcal, placeholder='2000',
+                    hint=_('Calories are only ever compared against a declared goal, never against your own average.'),
+                    attrs='step="1" min="800" max="6000" inputmode="numeric"') }}
+      </div>
+    {% endcall %}
+
+    {% call ui.card() %}
       {{ ui.section_title(_('Food Preferences'), icon='meal', tone='food') }}
       {{ ui.field(_('Dietary restrictions'), 'dietary_restrictions',
                   value=(current_user.dietary_restrictions_json or []) | join(', '),

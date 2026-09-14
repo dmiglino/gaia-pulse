@@ -45,6 +45,13 @@ class User(Base):
     )  # sedentary/light/moderate/active/very_active
     goals_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
 
+    # Objetivo nutricional declarado (fase 7.6). No es prescripción clínica — ver el
+    # disclaimer en `profile/index.html` — y ninguno es obligatorio: sin ellos, la
+    # tarjeta de macros sigue comparando contra el propio promedio.
+    goal_protein_g: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    goal_fiber_g: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
+    goal_calories_kcal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Food preferences
     dietary_preferences_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     dietary_restrictions_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)

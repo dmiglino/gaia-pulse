@@ -20,6 +20,9 @@ class UserBase(BaseModel):
     birth_date: date | None = None
     sex: str | None = None
     avatar_color: str = "#6366f1"
+    goal_protein_g: float | None = None
+    goal_fiber_g: float | None = None
+    goal_calories_kcal: int | None = None
 
 
 class UserCreate(UserBase):
@@ -38,6 +41,9 @@ class UserUpdate(BaseModel):
     baseline_activity_level: str | None = None
     birth_date: date | None = None
     sex: str | None = None
+    goal_protein_g: float | None = None
+    goal_fiber_g: float | None = None
+    goal_calories_kcal: int | None = None
     goals_json: list[str] | None = None
     dietary_preferences_json: list[str] | None = None
     dietary_restrictions_json: list[str] | None = None

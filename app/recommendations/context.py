@@ -200,10 +200,10 @@ class UserContext:
     recent_food_counts: Mapping[str, int] = field(default_factory=dict)
     macros_today: MacroTotals = field(default_factory=MacroTotals)
     #: El promedio **por día registrado** de la ventana, sin contar hoy, y contando de
-    #: cada día solo lo anotado **antes de esta hora**. La base es contra la propia
-    #: persona porque la app no tiene objetivo de macros: `goals_json` y
-    #: `target_weight_kg` existen y no los lee nadie, así que "te faltan 40 g de
-    #: proteína" no se puede afirmar y "hoy vas más liviano que tu promedio" sí.
+    #: cada día solo lo anotado **antes de esta hora**. Es la base contra la que se compara
+    #: cuando la persona no declaró un objetivo (fase 7.6) — y para calorías, que nunca lo
+    #: usa como base (`_MACRO_BASELINE_ELIGIBLE` en `meal_generator`), es directamente
+    #: informativo.
     #:
     #: El corte por hora es lo que hace que la comparación sea una comparación.
     #: `macros_today` es el día **a medio andar** —a las 18:40, que es cuando corre el job
@@ -212,6 +212,14 @@ class UserContext:
     #: fuerte. Con el corte los dos números son "hasta acá", que es la única forma de que
     #: la diferencia hable de lo que se comió y no de la hora que es.
     macros_baseline: MacroTotals = field(default_factory=MacroTotals)
+    #: Objetivo nutricional declarado por la persona en `/profile/` (fase 7.6), o `None`
+    #: cuando no declaró uno. Cuando existe, `meal_generator` compara contra esto en vez de
+    #: contra `macros_baseline` — es la única fuente que habilita una tarjeta de calorías,
+    #: porque comparar calorías contra el propio promedio no afirma nada (comer como siempre
+    #: no es ni bueno ni malo sin un objetivo declarado).
+    goal_protein_g: float | None = None
+    goal_fiber_g: float | None = None
+    goal_calories_kcal: int | None = None
 
     #: El catálogo de ejercicios. Puede venir **vacío** (los tests no lo siembran), y
     #: quien lo use tiene que funcionar con cero filas en vez de reponer una lista fija.
@@ -289,6 +297,11 @@ def build_user_context(db: Session, user: User) -> UserContext:
         recent_food_counts=meal_repo.get_food_counts_since(user.id, food_since),
         macros_today=macros_today,
         macros_baseline=macros_baseline,
+        goal_protein_g=float(user.goal_protein_g) if user.goal_protein_g is not None else None,
+        goal_fiber_g=float(user.goal_fiber_g) if user.goal_fiber_g is not None else None,
+        goal_calories_kcal=(
+            int(user.goal_calories_kcal) if user.goal_calories_kcal is not None else None
+        ),
         exercise_catalog=tuple(ExerciseTypeRepository(db).list_all()),
         blood_panel=_blood_panel(db, user.id, today),
     )

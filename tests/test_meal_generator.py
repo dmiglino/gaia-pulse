@@ -164,6 +164,29 @@ class TestTheTrackedMacrosExist:
         tracked = {field_name for field_name, _ in meal_generator._MACRO_TRACKED}
         assert set(meal_generator._MACRO_CARRIER_PER_100G) == tracked
 
+    def test_every_tracked_field_declares_a_goal_attribute_and_a_unit(self) -> None:
+        """La 7.6 agregó dos mapas más por macro: sin uno de los dos, `getattr` explota
+        recién en producción, la primera vez que ese macro entra al loop."""
+        tracked = {field_name for field_name, _ in meal_generator._MACRO_TRACKED}
+        assert set(meal_generator._MACRO_GOAL_ATTR) == tracked
+        assert set(meal_generator._MACRO_UNIT) == tracked
+        assert set(meal_generator._MACRO_FOOD_FIELD) == tracked
+
+    def test_every_goal_attribute_exists_on_user_context(self) -> None:
+        context = _context()
+        for attr in meal_generator._MACRO_GOAL_ATTR.values():
+            assert hasattr(context, attr)
+
+    def test_calories_cannot_fall_back_to_the_baseline(self) -> None:
+        """La única fuente de calorías es un objetivo declarado: nunca el propio promedio.
+
+        Compararla contra uno mismo no afirma nada — comer como siempre no es ni bueno ni
+        malo sin una meta declarada — y por eso queda afuera de `_MACRO_BASELINE_ELIGIBLE`.
+        """
+        assert "calories" not in meal_generator._MACRO_BASELINE_ELIGIBLE
+        assert "protein_g" in meal_generator._MACRO_BASELINE_ELIGIBLE
+        assert "fiber_g" in meal_generator._MACRO_BASELINE_ELIGIBLE
+
 
 class TestABaseThatIsNotABase:
     """Sin días suficientes no hay promedio, y sin promedio no hay comparación."""
@@ -320,6 +343,97 @@ class TestOnlyShortfallsAndOnlyDownwards:
         )
 
         assert _macro_card(_generate(db, diego, context)) is None
+
+
+class TestADeclaredGoalOutranksTheBaseline:
+    """La 7.6: cuando la persona declaró un objetivo en `/profile/`, se compara contra eso
+    y no contra el propio promedio — y es la única forma en que calorías puede hablar.
+    """
+
+    def test_a_goal_talks_even_without_baseline_days(
+        self,
+        db: Session,
+        diego: User,
+        household: Household,
+        filler: FoodItem,
+        lentils: FoodItem,
+    ) -> None:
+        """Sin objetivo, un solo día registrado es una anécdota (`TestABaseThatIsNotABase`).
+        Con objetivo, no hace falta ningún día de base: el objetivo ya es la meta."""
+        _stock(db, household, lentils, 500)
+        context = _context(
+            macros_today=_totals(days=1, protein_g=20.0),
+            macros_baseline=_totals(days=1, protein_g=60.0),
+            goal_protein_g=120.0,
+        )
+
+        card = _macro_card(_generate(db, diego, context))
+
+        assert card is not None
+        assert card["subject_name"] == "lentils"
+        assert "your goal is 120 g" in card["text"]
+        assert "20 g" in card["text"]
+
+    def test_calories_only_fire_with_a_declared_goal(
+        self,
+        db: Session,
+        diego: User,
+        household: Household,
+        filler: FoodItem,
+        lentils: FoodItem,
+    ) -> None:
+        """El mismo día liviano de `test_calories_are_not_a_tracked_macro`, pero ahora con
+        un objetivo declarado: acá sí tiene con qué medirse."""
+        _stock(db, household, lentils, 500)
+        context = _context(
+            macros_today=_totals(days=1, calories=400.0),
+            macros_baseline=_totals(days=4, items=24, calories=2000.0),
+            goal_calories_kcal=2000,
+        )
+
+        card = _macro_card(_generate(db, diego, context))
+
+        assert card is not None
+        assert "calories" in card["title"]
+        assert "your goal is 2000 kcal" in card["text"]
+
+    def test_a_goal_already_met_says_nothing(
+        self,
+        db: Session,
+        diego: User,
+        household: Household,
+        filler: FoodItem,
+        lentils: FoodItem,
+    ) -> None:
+        _stock(db, household, lentils, 500)
+        context = _context(
+            macros_today=_totals(days=1, protein_g=110.0),
+            macros_baseline=_totals(days=1, protein_g=60.0),
+            goal_protein_g=120.0,
+        )
+
+        assert _macro_card(_generate(db, diego, context)) is None
+
+    def test_the_goal_wins_over_the_baseline_even_when_both_exist(
+        self,
+        db: Session,
+        diego: User,
+        household: Household,
+        filler: FoodItem,
+        lentils: FoodItem,
+    ) -> None:
+        """55 g cumple la base de 60 g pero no el objetivo de 120 g: el objetivo manda."""
+        _stock(db, household, lentils, 500)
+        context = _context(
+            macros_today=_totals(days=1, protein_g=55.0),
+            macros_baseline=_totals(days=4, items=24, protein_g=60.0),
+            goal_protein_g=120.0,
+        )
+
+        card = _macro_card(_generate(db, diego, context))
+
+        assert card is not None
+        assert "your goal is 120 g" in card["text"]
 
 
 class TestSomethingHasToBeAbleToCarryIt:

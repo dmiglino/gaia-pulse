@@ -27,23 +27,59 @@ logger = logging.getLogger(__name__)
 
 _MAX_SUGGESTIONS = 8
 
-#: Los dos macros que esta app se permite nombrar, **en el orden en que desempatan** cuando
-#: los dos están cortos. El orden está declarado y no derivado de nada, por la misma razón
-#: que `activity_generator._ROTATION_PRIORITY`: un orden que sale del orden de un `dict` se
-#: cambia sin querer al agregar una línea.
+#: Los tres macros que esta app se permite nombrar, **en el orden en que desempatan**
+#: cuando más de uno está corto. El orden está declarado y no derivado de nada, por la
+#: misma razón que `activity_generator._ROTATION_PRIORITY`: un orden que sale del orden de
+#: un `dict` se cambia sin querer al agregar una línea.
 #:
-#: Por qué solo dos, y por qué solo hacia abajo: la app **no tiene objetivo de macros**
-#: (`goals_json` y `target_weight_kg` no se leen en ningún lado), así que lo único
-#: afirmable es la comparación de la persona contra sí misma. Y una comparación contra uno
-#: mismo solo da un consejo accionable en un sentido: "hoy vas más liviano de proteína que
-#: tu promedio, y tenés lentejas" propone algo; "hoy vas más pesado de grasa que tu
-#: promedio" no propone nada —no hay nada que agregar, solo algo que dejar de comer—, y eso
-#: es consejo dietario sin objetivo, que es exactamente lo que no se puede sostener. Es la
-#: misma escala de un solo lado que `activity_generator._HIGH_EFFORT_RPE`.
+#: Hasta la 7.6 la app no tenía objetivo de macros (`goals_json` y `target_weight_kg` no se
+#: leían para esto), así que lo único afirmable era la comparación de la persona contra sí
+#: misma, y solo hacia abajo: "hoy vas más liviano de proteína que tu promedio, y tenés
+#: lentejas" propone algo; "hoy vas más pesado de grasa que tu promedio" no propone
+#: nada —no hay nada que agregar, solo algo que dejar de comer—, y eso es consejo dietario
+#: sin objetivo. Es la misma escala de un solo lado que
+#: `activity_generator._HIGH_EFFORT_RPE`.
 #:
-#: Proteína primero porque es la que una comida mueve más, y porque la fibra suele venir con
-#: las verduras que ya arrastra cualquier tarjeta de despensa.
-_MACRO_TRACKED: tuple[tuple[str, str], ...] = (("protein_g", "protein"), ("fiber_g", "fiber"))
+#: La 7.6 agrega `User.goal_protein_g`/`goal_fiber_g`/`goal_calories_kcal` (migración
+#: `0005`), y con un objetivo declarado la comparación deja de ser contra uno mismo — ver
+#: `_MACRO_GOAL_ATTR` y `_macro_gap_card`. Pero **calorías sigue sin base propia**
+#: (`_MACRO_BASELINE_ELIGIBLE` no la incluye): sin objetivo declarado, "hoy comiste menos
+#: calorías que tu promedio" tiene el mismo problema de siempre — no hay nada que agregar
+#: sin saber si el promedio mismo alcanza —, así que calorías solo se afirma cuando la
+#: persona puso un número.
+#:
+#: Proteína primero porque es la que una comida mueve más, fibra segunda porque suele venir
+#: con las verduras que ya arrastra cualquier tarjeta de despensa, y calorías última porque
+#: es la más nueva y la que menos gente declara.
+_MACRO_TRACKED: tuple[tuple[str, str], ...] = (
+    ("protein_g", "protein"),
+    ("fiber_g", "fiber"),
+    ("calories", "calories"),
+)
+
+#: Qué macros pueden compararse contra el propio promedio cuando no hay objetivo
+#: declarado. Calorías queda afuera a propósito — ver el comentario de `_MACRO_TRACKED`.
+_MACRO_BASELINE_ELIGIBLE: frozenset[str] = frozenset({"protein_g", "fiber_g"})
+
+#: El atributo de `UserContext` que trae el objetivo declarado de cada macro. Están ahí y
+#: no en `MacroTotals` porque un objetivo no es algo que se mida, es algo que se declaró
+#: una vez en `/profile/` — `MacroTotals` es siempre el resultado de sumar filas.
+_MACRO_GOAL_ATTR: dict[str, str] = {
+    "protein_g": "goal_protein_g",
+    "fiber_g": "goal_fiber_g",
+    "calories": "goal_calories_kcal",
+}
+
+#: El nombre del macro en `MacroTotals` no siempre es el nombre en `FoodItem`: proteína y
+#: fibra se llaman igual de los dos lados por casualidad, pero el total del día es
+#: `calories` y el aporte de un alimento es `calories_per_100g`. Sin este mapa,
+#: `_macro_carrier` necesitaría un `if` propio para calorías en vez de leer con el mismo
+#: `getattr` que usa para los otros dos.
+_MACRO_FOOD_FIELD: dict[str, str] = {
+    "protein_g": "protein_g",
+    "fiber_g": "fiber_g",
+    "calories": "calories_per_100g",
+}
 
 #: Cuántos días registrados tiene que tener la base para que sea una base. Con uno solo, "tu
 #: promedio" es "el único día que anotaste", y ese día puede haber sido un asado.
@@ -63,10 +99,20 @@ _MACRO_MIN_COVERAGE = 0.6
 _MACRO_SHORTFALL_RATIO = 0.7
 
 #: Cuánto tiene que tener un alimento por 100 g para que se lo pueda nombrar como fuente de
-#: ese macro. Los dos números son el piso de "esto de verdad lo aporta": el catálogo tiene
+#: ese macro. Los tres números son el piso de "esto de verdad lo aporta": el catálogo tiene
 #: 30 alimentos y sin piso el mejor candidato para "proteína" podía ser una manzana por ser
-#: el único en la despensa.
-_MACRO_CARRIER_PER_100G: dict[str, float] = {"protein_g": 10.0, "fiber_g": 3.0}
+#: el único en la despensa. Los 200 kcal/100 g de calorías son el mismo criterio que usa la
+#: nutrición para "denso en energía" — abajo de eso, sugerirlo como fuente de calorías sería
+#: nombrar cualquier alimento de la despensa.
+_MACRO_CARRIER_PER_100G: dict[str, float] = {
+    "protein_g": 10.0,
+    "fiber_g": 3.0,
+    "calories": 200.0,
+}
+
+#: La unidad en la que se dice cada macro. Separado del nombre del campo porque `calories`
+#: no tiene el `_g` que delataría la unidad de los otros dos.
+_MACRO_UNIT: dict[str, str] = {"protein_g": "g", "fiber_g": "g", "calories": "kcal"}
 
 #: La escalera de confianza de las cinco secciones, junta y en orden. Estaban sueltas dentro
 #: de cada `dict` y el comentario de `_MACRO_CONFIDENCE` repetía dos de memoria ("0.85 la
@@ -382,34 +428,42 @@ def _macro_gap_card(
 
     Es el primer lector de `context.macros_today` / `macros_baseline`: la 4.5.1 armó los
     totales con su cobertura y nadie los leía. Lo que hace es una sola afirmación, y la
-    afirmación es una comparación de la persona contra sí misma a la misma hora del día.
+    afirmación es una comparación — contra el objetivo que la persona declaró en
+    `/profile/` cuando existe (7.6), y contra sí misma a la misma hora del día cuando no.
 
     Cuatro cosas tienen que ser verdad para que diga algo, y cada una tapa una forma de
     mentir con un número:
 
-    - **La base tiene que ser una base** (`_MACRO_MIN_BASELINE_DAYS` días registrados). Un
-      solo día anotado no es un promedio.
-    - **Las dos puntas tienen que estar medidas** (`_MACRO_MIN_COVERAGE`), o la tarjeta habla
-      de lo que se pudo convertir a gramos y no de lo que se comió.
+    - **Tiene que haber algo contra qué comparar**: un objetivo declarado
+      (`_MACRO_GOAL_ATTR`) o, si no hay, una base que sea base
+      (`_MACRO_MIN_BASELINE_DAYS` días registrados, y solo para los macros de
+      `_MACRO_BASELINE_ELIGIBLE`). Un solo día anotado no es un promedio, y sin objetivo
+      ni promedio no hay con qué medir.
+    - **Lo de hoy tiene que estar medido** (`_MACRO_MIN_COVERAGE`), o la tarjeta habla de
+      lo que se pudo convertir a gramos y no de lo que se comió. La base, además, cuando
+      es la base la que se usa.
     - **La diferencia tiene que ser una diferencia** (`_MACRO_SHORTFALL_RATIO`).
     - **Algo en la despensa tiene que poder llenarlo.** Si no hay con qué, no hay tarjeta:
       un empujón que no se puede accionar es exactamente lo que esta app viene a dejar de
       ser. Y por eso también solo se avisa hacia abajo — ver `_MACRO_TRACKED`.
 
-    El texto dice **los dos números** en vez de afirmar un déficit. "Te faltan 40 g" necesita
-    un objetivo y la app no tiene ninguno; "hoy sumaste 22 y a esta hora venís en 58" es lo
-    que efectivamente se midió, y deja que la persona decida si le importa.
+    El texto dice **los dos números** en vez de afirmar un déficit en abstracto: contra el
+    objetivo cuando hay uno declarado ("tu objetivo es 120 g, hoy sumaste 58"), o contra el
+    propio promedio cuando no ("hoy sumaste 22 y a esta hora venís en 58"). Deja que la
+    persona decida si le importa.
 
-    Un solo candidato por corrida aunque los dos macros estén cortos: son la misma comida.
+    Un solo candidato por corrida aunque más de un macro esté corto: son la misma comida.
     Dos tarjetas serían dos pedidos por la misma cena, y el desempate está declarado.
     """
     today = context.macros_today
     baseline = context.macros_baseline
 
-    if baseline.days_counted < _MACRO_MIN_BASELINE_DAYS:
+    if today.coverage < _MACRO_MIN_COVERAGE:
         return None
-    if today.coverage < _MACRO_MIN_COVERAGE or baseline.coverage < _MACRO_MIN_COVERAGE:
-        return None
+    baseline_ready = (
+        baseline.days_counted >= _MACRO_MIN_BASELINE_DAYS
+        and baseline.coverage >= _MACRO_MIN_COVERAGE
+    )
 
     #: Los sujetos que ya se llevaron las secciones anteriores. Dos tarjetas con un mismo
     #: sujeto no son dos sugerencias: el de-dup final es **por título**, así que las dos
@@ -417,9 +471,18 @@ def _macro_gap_card(
     used = {str(card["subject_name"]).strip().lower() for card in taken}
 
     for field_name, label in _MACRO_TRACKED:
-        base = float(getattr(baseline, field_name))
+        goal = getattr(context, _MACRO_GOAL_ATTR[field_name])
+        if goal is not None:
+            target = float(goal)
+            from_goal = True
+        elif field_name in _MACRO_BASELINE_ELIGIBLE and baseline_ready:
+            target = float(getattr(baseline, field_name))
+            from_goal = False
+        else:
+            continue
+
         so_far = float(getattr(today, field_name))
-        if base <= 0.0 or so_far >= base * _MACRO_SHORTFALL_RATIO:
+        if target <= 0.0 or so_far >= target * _MACRO_SHORTFALL_RATIO:
             continue
         carrier = _macro_carrier(pantry, field_name, disliked, used)
         if carrier is None:
@@ -429,6 +492,19 @@ def _macro_gap_card(
                 context.user_id,
             )
             continue
+
+        unit = _MACRO_UNIT[field_name]
+        if from_goal:
+            target_phrase = f"your goal is {target:.0f} {unit}"
+            comparison = "goal"
+            evidence_target = f"Goal: {target:.1f} {unit} per day."
+        else:
+            target_phrase = f"you usually have {target:.0f} {unit}"
+            comparison = "own average at this hour"
+            evidence_target = (
+                f"Average to this hour: {target:.1f} {unit} over "
+                f"{baseline.days_counted} recorded days."
+            )
         return {
             "category": "meal",
             "subject_type": "food",
@@ -439,23 +515,20 @@ def _macro_gap_card(
             "meal_type": meal_type,
             "title": f"Add {carrier.canonical_name} for {label}",
             "text": (
-                f"So far today you logged {so_far:.0f} g of {label}; by this hour you "
-                f"usually have {base:.0f} g. You have {carrier.canonical_name} in the "
-                f"pantry, which is a good source."
+                f"So far today you logged {so_far:.0f} {unit} of {label}; {target_phrase}. "
+                f"You have {carrier.canonical_name} in the pantry, which is a good source."
             ),
             #: La 4.5.3 ya la dejó computada, pero decía "this person" —tercera persona en una
             #: frase que la persona lee— y repetía lo que el texto ya afirma. Lo que agrega
-            #: ahora es la **selección**: cuál de los dos macros ganó el desempate declarado y
-            #: por qué este alimento y no otro de la despensa.
+            #: ahora es la **selección**: cuál macro ganó el desempate declarado y por qué
+            #: este alimento y no otro de la despensa.
             "rationale": (
-                f"{label.title()} is the first tracked macro running below your own average "
-                f"at this hour, and {carrier.canonical_name} is a source of it you already "
-                "have."
+                f"{label.title()} is the first tracked macro running below your {comparison}, "
+                f"and {carrier.canonical_name} is a source of it you already have."
             ),
             "evidence_summary": (
-                f"{label.title()} today: {so_far:.1f} g over {today.items_counted} of "
-                f"{today.items_total} logged items. Average to this hour: {base:.1f} g "
-                f"over {baseline.days_counted} recorded days."
+                f"{label.title()} today: {so_far:.1f} {unit} over {today.items_counted} of "
+                f"{today.items_total} logged items. {evidence_target}"
             ),
             "confidence": _MACRO_CONFIDENCE,
             "source_type": "rule",
@@ -485,7 +558,7 @@ def _macro_carrier(
         name = food.canonical_name.strip().lower()
         if name in disliked or name in used:
             continue
-        value = float(getattr(food, field_name) or 0.0)
+        value = float(getattr(food, _MACRO_FOOD_FIELD[field_name]) or 0.0)
         if value >= floor:
             carriers.append((food, value))
     if not carriers:

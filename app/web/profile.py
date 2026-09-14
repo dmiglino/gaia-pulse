@@ -110,6 +110,9 @@ def profile_update(
     height_cm: Annotated[str, Form(max_length=10)] = "",
     target_weight_kg: Annotated[str, Form(max_length=10)] = "",
     baseline_activity_level: Annotated[str, Form(max_length=20)] = "moderate",
+    goal_protein_g: Annotated[str, Form(max_length=10)] = "",
+    goal_fiber_g: Annotated[str, Form(max_length=10)] = "",
+    goal_calories_kcal: Annotated[str, Form(max_length=10)] = "",
     dietary_restrictions: Annotated[str, Form(max_length=2000)] = "",
     impossible_activities: Annotated[str, Form(max_length=2000)] = "",
 ) -> RedirectResponse:
@@ -142,6 +145,46 @@ def profile_update(
         current_user.baseline_activity_level = baseline_activity_level
     else:
         errors.append(_("Invalid activity level: %(level)s.", level=baseline_activity_level))
+
+    # A diferencia de `height_cm`/`target_weight_kg`, vaciar la casilla sí borra el
+    # valor: la tarjeta de macros decide "hay objetivo" u "hoy contra el propio
+    # promedio" según si esto es `None`, así que sin un `else` que limpie, declarar
+    # un objetivo sería una decisión que la interfaz nunca deja deshacer.
+    if goal_protein_g:
+        try:
+            val = float(goal_protein_g)
+            if 10.0 <= val <= 400.0:
+                current_user.goal_protein_g = val
+            else:
+                errors.append(_("Protein goal must be between 10 and 400 g."))
+        except ValueError:
+            errors.append(_("Protein goal must be a number."))
+    else:
+        current_user.goal_protein_g = None
+
+    if goal_fiber_g:
+        try:
+            val = float(goal_fiber_g)
+            if 5.0 <= val <= 100.0:
+                current_user.goal_fiber_g = val
+            else:
+                errors.append(_("Fiber goal must be between 5 and 100 g."))
+        except ValueError:
+            errors.append(_("Fiber goal must be a number."))
+    else:
+        current_user.goal_fiber_g = None
+
+    if goal_calories_kcal:
+        try:
+            val_int = int(goal_calories_kcal)
+            if 800 <= val_int <= 6000:
+                current_user.goal_calories_kcal = val_int
+            else:
+                errors.append(_("Calorie goal must be between 800 and 6000 kcal."))
+        except ValueError:
+            errors.append(_("Calorie goal must be a number."))
+    else:
+        current_user.goal_calories_kcal = None
 
     # Sin condición, a propósito: con `if dietary_restrictions:` vaciar la casilla no
     # borraba nada, así que una restricción alimentaria — el filtro que decide qué

@@ -55,6 +55,74 @@ def test_an_out_of_range_height_says_so_and_saves_nothing(
     assert diego.height_cm is None
 
 
+def test_an_out_of_range_protein_goal_says_so_and_saves_nothing(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    db.commit()
+
+    resp = authenticated_client.post(
+        "/profile/update",
+        data={
+            "name": "Diego",
+            "baseline_activity_level": "moderate",
+            "goal_protein_g": "9999",
+            "dietary_restrictions": "",
+            "impossible_activities": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302, resp.text[:500]
+
+    landing = authenticated_client.get(resp.headers["location"], follow_redirects=False)
+    assert landing.status_code == 200
+    assert _("Protein goal must be between 10 and 400 g.") in landing.text
+    assert _("Nothing was saved.") in landing.text
+
+    db.refresh(diego)
+    assert diego.goal_protein_g is None
+
+
+def test_declaring_and_then_clearing_a_nutrition_goal(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """A diferencia de la altura o el peso objetivo, vaciar la casilla sí borra el valor:
+    la tarjeta de macros decide contra qué comparar según si esto es `None`."""
+    resp = authenticated_client.post(
+        "/profile/update",
+        data={
+            "name": "Diego",
+            "baseline_activity_level": "moderate",
+            "goal_protein_g": "120",
+            "goal_fiber_g": "30",
+            "goal_calories_kcal": "2200",
+            "dietary_restrictions": "",
+            "impossible_activities": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302, resp.text[:500]
+    db.refresh(diego)
+    assert float(diego.goal_protein_g) == 120.0
+    assert float(diego.goal_fiber_g) == 30.0
+    assert diego.goal_calories_kcal == 2200
+
+    resp = authenticated_client.post(
+        "/profile/update",
+        data={
+            "name": "Diego",
+            "baseline_activity_level": "moderate",
+            "dietary_restrictions": "",
+            "impossible_activities": "",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302, resp.text[:500]
+    db.refresh(diego)
+    assert diego.goal_protein_g is None
+    assert diego.goal_fiber_g is None
+    assert diego.goal_calories_kcal is None
+
+
 def test_emptying_the_dietary_restrictions_box_actually_clears_them(
     authenticated_client: TestClient, db: Session, diego: User
 ) -> None:

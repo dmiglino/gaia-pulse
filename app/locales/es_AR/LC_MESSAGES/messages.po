@@ -470,6 +470,45 @@ msgstr "Guardar Perfil"
 msgid "Household"
 msgstr "Hogar"
 
+msgid "Nutrition Goal"
+msgstr "Objetivo Nutricional"
+
+msgid "These are targets you set for yourself, not a clinical prescription. Talk to a professional before using them to guide a medical condition."
+msgstr "Estos son objetivos que te fijás vos, no una prescripción clínica. Consultá a un profesional antes de usarlos para manejar una condición médica."
+
+msgid "Fiber"
+msgstr "Fibra"
+
+msgid "Calories"
+msgstr "Calorías"
+
+msgid "g"
+msgstr "g"
+
+msgid "Leave empty to compare against your own average instead."
+msgstr "Dejalo vacío para comparar contra tu propio promedio."
+
+msgid "Calories are only ever compared against a declared goal, never against your own average."
+msgstr "Las calorías solo se comparan contra un objetivo declarado, nunca contra tu propio promedio."
+
+msgid "Protein goal must be between 10 and 400 g."
+msgstr "El objetivo de proteína debe estar entre 10 y 400 g."
+
+msgid "Protein goal must be a number."
+msgstr "El objetivo de proteína debe ser un número."
+
+msgid "Fiber goal must be between 5 and 100 g."
+msgstr "El objetivo de fibra debe estar entre 5 y 100 g."
+
+msgid "Fiber goal must be a number."
+msgstr "El objetivo de fibra debe ser un número."
+
+msgid "Calorie goal must be between 800 and 6000 kcal."
+msgstr "El objetivo de calorías debe estar entre 800 y 6000 kcal."
+
+msgid "Calorie goal must be a number."
+msgstr "El objetivo de calorías debe ser un número."
+
 # ─── Salud — strings adicionales ────────────────────────────────────────────
 
 msgid "Upload failed."
