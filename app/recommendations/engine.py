@@ -151,7 +151,15 @@ class RecommendationEngine:
         """
         candidates = pantry_generator.generate(db, household.id, limit=limit * 2)
 
-        # For household suggestions we skip user-specific filtering
+        #: Una sugerencia de la casa no es una sugerencia sin dueño: la comen las dos
+        #: personas. Acá se filtra contra las dos, con las dos reglas asimétricas que
+        #: documenta `filters.apply_household_constraints` —los bloqueos se unen, los "no"
+        #: aprendidos se intersectan—. Antes de la 4.4.9 esta línea era un comentario que
+        #: decía que el filtrado por persona se saltea.
+        candidates = filters.apply_household_constraints(
+            candidates, self._household_members(db, household.id)
+        )
+
         suppressed = self._suppressed_subjects_for_household(db, household.id)
         created: list[Suggestion] = []
         for item in self._without_duplicate_subjects(candidates, suppressed, limit):
@@ -201,6 +209,29 @@ class RecommendationEngine:
             .order_by(BehaviorSignal.created_at.desc())
             .all()
         )
+
+    def _household_members(self, db: Session, household_id: int) -> list[filters.HouseholdMember]:
+        """Las personas de la casa, cada una con sus preferencias y sus señales.
+
+        Tres consultas por persona en lugar de una por casa, y a propósito: las dos
+        lecturas personales reusan los mismos helpers que `generate_for_user`, que filtran
+        por `user_id`. Es la regla 4 de `AGENTS.md` —cada consulta de datos personales
+        filtra por la persona, aunque quien pregunte viva en la misma casa— y además es lo
+        que hace posible la intersección: un `WHERE household_id = ?` traería las señales
+        de los dos revueltas, y de ahí no se puede volver.
+
+        Ordenadas por `id` para que la corrida sea reproducible: los conjuntos que se
+        unen e intersectan no dependen del orden, pero los logs sí.
+        """
+        users = db.query(User).filter(User.household_id == household_id).order_by(User.id).all()
+        return [
+            filters.HouseholdMember(
+                user=user,
+                preferences=self._get_preferences(db, user.id),
+                signals=self._get_signals(db, user.id),
+            )
+            for user in users
+        ]
 
     def _get_recent_suggestions_for_user(
         self, db: Session, user_id: int

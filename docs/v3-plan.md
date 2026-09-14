@@ -1583,14 +1583,64 @@ ejercicios esperan la 4.5)
 - [ ] `Suggestion.evidence_summary` ya existe en el modelo y hoy nadie lo escribe: es el lugar
       natural para guardar la explicación computada que 4.5 produce.
 
-**4.4.9 — El aprendizaje es por persona, siempre**
+**4.4.9 — El aprendizaje es por persona, siempre** ✅ hecho
 
-- [ ] Toda señal se filtra por `user_id`, nunca se agrupa a nivel household — es
-      no-negociable de `AGENTS.md` y además es el punto: Diego y Rocío no tienen los mismos
-      gustos.
-- [ ] Para los candidatos de scope household (pantry y compras), se **intersecan** los
-      negativos aprendidos de los dos miembros en vez de promediarlos: un rechazo fuerte de
-      uno no puede quedar tapado por el gusto del otro.
+- [x] **El punto de partida era peor que "se promedia": no se filtraba nada.**
+      `generate_for_household` tenía un comentario que decía *"for household suggestions we
+      skip user-specific filtering"* y era literal — cero filtros, ni los duros ni los
+      aprendidos. Como `pantry_generator` propone alimentos concretos
+      (`subject_type="food"`), la lista de compras podía traer justo lo que una de las dos
+      personas no puede comer. La 4.5 le pone llamadores a esa función; convenía que cuando
+      se prenda ya no lo haga.
+- [x] Nuevo `filters.HouseholdMember` (dataclass congelada: `user` + sus `preferences` + sus
+      `signals`) y `filters.apply_household_constraints`. Los datos entran **ya separados por
+      persona**, no como un conjunto "de la casa": una intersección solo se puede calcular
+      sobre conjuntos que nunca se mezclaron, así que juntarlos primero y desarmarlos después
+      no era una opción.
+- [x] **Las dos reglas van al revés a propósito, y esa asimetría es todo el punto.** Los
+      **bloqueos declarados se unen**: alcanza que una persona tenga el maní bloqueado para
+      que la casa no compre maní —una restricción declarada no pide evidencia ni admite
+      promedio, y el costo de equivocarse no es simétrico: de un lado una compra de más, del
+      otro una comida que alguien no puede comer—. Los **"no" aprendidos se intersectan**: un
+      rechazo de conducta de una sola persona no es un "no" de la casa, porque unirlos dejaría
+      que un rechazo de Rocío borre de la lista el alimento que Diego come todos los días.
+      Solo se saca un sujeto si **todas** lo rechazaron; hasta entonces sigue compitiendo, más
+      abajo si corresponde —eso es trabajo del score, no de este filtro—.
+- [x] `_household_members` en el engine reusa `_get_preferences` y `_get_signals`, que filtran
+      por `user_id`: tres consultas por persona en lugar de una por casa, a propósito. Es la
+      regla 4 de `AGENTS.md` —cada consulta de datos personales filtra por la persona, aunque
+      quien pregunte viva en la misma casa— y además es lo que hace posible la intersección: un
+      `WHERE household_id = ?` traería las señales de los dos revueltas.
+- [x] **La falla segura elegida a mano:** `set.intersection()` sobre cero conjuntos es un
+      `TypeError`, y con un solo miembro la intersección es su propio conjunto. Sin miembros el
+      filtro devuelve los candidatos tal cual y loguea un warning —no hay nadie de quien
+      proteger a nadie—; la alternativa silenciosa habría sido borrar la lista entera y dejar a
+      una casa sin sugerencias en vez de con sugerencias sin filtrar.
+- [x] **Un costo conocido, escrito como decisión y no como accidente.** La tarjeta de "se
+      acabaron estas cosas" nombra hasta cinco alimentos en su texto y el matcher de bloqueos
+      duros mira `title + text` —así funciona `apply_hard_constraints` desde antes, en el camino
+      personal también—, así que si uno de los cinco está bloqueado se cae la tarjeta entera.
+      Se acepta en esa dirección: la alternativa es dejar pasar una tarjeta que nombra lo que
+      alguien no puede comer, y el aviso por ítem de la 4.3 no depende de esta tarjeta. Hay un
+      test que lo fija con ese razonamiento adentro.
+- [x] **Duplicación sacada de paso, dentro de lo que el cambio ya tocaba.** El descarte en sí
+      salió a `filters._drop_blocked`, que ahora usan los dos caminos —el personal y el de la
+      casa—: la única diferencia entre ellos es de dónde salen los conjuntos bloqueados, no cómo
+      se comparan, y dos copias de esa comparación es cómo un bloqueo empieza a valer en una
+      pantalla y no en la otra. Y las señales que bloquean estaban escritas **dos veces**
+      (`("dislikes", "impossible", "avoid")` para comida y las mismas tres en otro orden para
+      actividad): ahora son un `frozenset` único, `_BLOCKING_SIGNALS`. Esa es la forma de
+      duplicación que más cara sale —dos listas que tienen que coincidir y que nada obliga a
+      coincidir—.
+- [x] 13 tests nuevos en `tests/test_household_learning.py`, escritos para que **unificar las
+      dos reglas rompa la mitad del archivo**: que el bloqueo de uno alcance (y que dé igual de
+      quién sea), que el rechazo de uno no borre la comida del otro, que el rechazo de las dos
+      sí, que dos "no" de sujetos distintos no se sumen a uno, que diez rechazos de una persona
+      sigan siendo una persona, la falla segura sin miembros, el candidato sin sujeto, que
+      `_household_members` traiga a cada uno solo lo suyo, y **tres end-to-end** por
+      `generate_for_household` —incluido el control de que el mismo stock sí llega a la lista
+      cuando nadie lo bloquea, sin el cual "no salió nada" podría ser que el generador no
+      produjo nada—.
 
 **4.5 — Razonar con los datos que ya están, y explicar de verdad**
 
@@ -1845,7 +1895,10 @@ docker compose up          # http://localhost:8000
   visual que el resto.
 - **F4**: con `ENABLE_BACKGROUND_JOBS=true`, verificar que un ítem que sigue bajo **no**
   vuelve a notificar, que cada notificación lleva a su pantalla, y que el "¿Por qué esta
-  sugerencia?" cita datos reales del usuario y no una frase genérica.
+  sugerencia?" cita datos reales del usuario y no una frase genérica. El filtro por persona
+  de la 4.4.9 **no se puede recorrer a mano todavía**: `generate_for_household` sigue sin
+  llamadores hasta la 4.5, así que por ahora lo cubren sus tres tests end-to-end y el
+  recorrido de la lista de compras se agrega cuando esa función se prenda.
 - **F5**: pantallas en `es_AR` sin cadenas en inglés; navegación por teclado y lector de
   pantalla en los botones icon-only.
 
@@ -1864,13 +1917,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 |
-|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 |
+|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **544 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
@@ -1888,6 +1941,13 @@ sobre el árbol con la 4.4.7 aplicada.
 > largo de línea en `web/suggestions.py`, que era código propio: la deuda ajena se
 > reporta, la propia se arregla. Los dos archivos nuevos y los seis tocados pasan
 > `black --check` limpios, que es por qué la columna baja de 50 a 48.
+>
+> La 4.4.9 baja de 260 a **257** por la misma regla aplicada al revés: sumó **una**
+> `UP017` en `tests/test_household_learning.py` —la forma que usan sus líneas vecinas y
+> los tres `timezone.utc` que `engine.py` ya tenía— y **bajó cuatro** en `filters.py`, que
+> es el archivo que el punto reescribe: dos `SIM102` de `if` anidados, un `SIM110` de loop
+> que devolvía booleanos y un `E501`. Ese archivo queda limpio de `ruff` **y** de `black`,
+> y por eso la columna de `black` baja de 48 a 47.
 
 > `alembic check` **no corre localmente**: no hay PostgreSQL en la máquina
 > (`connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection

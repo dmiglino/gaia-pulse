@@ -13,13 +13,45 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
+from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
 from app.recommendations import learning
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class HouseholdMember:
+    """Una persona de la casa con lo suyo, y solo lo suyo.
+
+    Existe para que las sugerencias de scope household se puedan filtrar sin perder de
+    vista de quién es cada dato. Las tres piezas se leen por `user_id` —regla 4 de
+    `AGENTS.md`— y viajan juntas justamente para que no se puedan mezclar: un conjunto
+    único de señales "de la casa" no se podría desarmar después, y todo el punto de la
+    4.4.9 es que las dos mitades se traten distinto.
+    """
+
+    user: User
+    preferences: list[RecommendationPreference] = field(default_factory=list)
+    signals: list[BehaviorSignal] = field(default_factory=list)
+
+
+#: Las señales de preferencia que **bloquean**, una sola vez. Estaban escritas dos veces
+#: —`("dislikes", "impossible", "avoid")` para comida y las mismas tres en otro orden para
+#: actividad—, que es la forma de duplicación que más cara sale: dos listas que tienen que
+#: coincidir y que nada obliga a coincidir, así que agregar una señal a una y no a la otra
+#: no rompe ningún test, solo deja de bloquear del lado que se olvidó.
+#: `possible_sometimes` y `preferred` quedan afuera a propósito: no son un "no".
+_BLOCKING_SIGNALS = frozenset({"dislikes", "impossible", "avoid"})
+
+#: Los `item_type` que cuentan como comida. `exercise` es el único del lado de actividad,
+#: así que ahí no hace falta un conjunto.
+_FOOD_PREFERENCE_TYPES = frozenset({"food", "ingredient", "recipe", "cuisine"})
 
 
 def _normalise(text: str) -> str:
@@ -30,10 +62,7 @@ def _normalise(text: str) -> str:
 def _any_token_matches(candidate_text: str, blocked_terms: set[str]) -> bool:
     """Return True if any blocked term appears as a substring in the candidate text."""
     norm = _normalise(candidate_text)
-    for term in blocked_terms:
-        if term and term in norm:
-            return True
-    return False
+    return any(term and term in norm for term in blocked_terms)
 
 
 def _build_blocked_set(
@@ -56,10 +85,9 @@ def _build_blocked_set(
                 blocked.add(_normalise(item))
 
         for pref in preferences:
-            if pref.item_type in ("food", "ingredient", "recipe", "cuisine") and pref.preference_signal in (
-                "dislikes",
-                "impossible",
-                "avoid",
+            if (
+                pref.item_type in _FOOD_PREFERENCE_TYPES
+                and pref.preference_signal in _BLOCKING_SIGNALS
             ):
                 blocked.add(_normalise(pref.item_name))
 
@@ -72,11 +100,7 @@ def _build_blocked_set(
                 blocked.add(_normalise(item))
 
         for pref in preferences:
-            if pref.item_type == "exercise" and pref.preference_signal in (
-                "impossible",
-                "dislikes",
-                "avoid",
-            ):
+            if pref.item_type == "exercise" and pref.preference_signal in _BLOCKING_SIGNALS:
                 blocked.add(_normalise(pref.item_name))
 
     return blocked
@@ -163,9 +187,25 @@ def apply_hard_constraints(
     Returns:
         Filtered list with constraint-violating candidates removed.
     """
-    blocked_food = _build_blocked_set(user, preferences, "food")
-    blocked_activity = _build_blocked_set(user, preferences, "activity")
+    return _drop_blocked(
+        candidates,
+        _build_blocked_set(user, preferences, "food"),
+        _build_blocked_set(user, preferences, "activity"),
+    )
 
+
+def _drop_blocked(
+    candidates: list[dict[str, Any]],
+    blocked_food: set[str],
+    blocked_activity: set[str],
+) -> list[dict[str, Any]]:
+    """El descarte en sí, separado de cómo se armaron los conjuntos.
+
+    Lo usan los dos caminos —el personal y el de la casa— y por eso está acá: la única
+    diferencia entre ellos es de dónde salen `blocked_food` y `blocked_activity`, no cómo
+    se comparan. Dos copias de esta comparación es cómo un bloqueo empieza a valer en una
+    pantalla y no en la otra.
+    """
     if not blocked_food and not blocked_activity:
         return candidates  # fast path
 
@@ -174,21 +214,17 @@ def apply_hard_constraints(
 
     for candidate in candidates:
         cat = _infer_category(candidate)
-        full_text = _normalise(
-            candidate.get("title", "") + " " + candidate.get("text", "")
-        )
+        full_text = _normalise(candidate.get("title", "") + " " + candidate.get("text", ""))
 
-        if cat == "food" and blocked_food:
-            if _any_token_matches(full_text, blocked_food):
-                logger.debug("Filtered out food suggestion: %r", candidate.get("title"))
-                removed += 1
-                continue
+        if cat == "food" and _any_token_matches(full_text, blocked_food):
+            logger.debug("Filtered out food suggestion: %r", candidate.get("title"))
+            removed += 1
+            continue
 
-        if cat == "activity" and blocked_activity:
-            if _any_token_matches(full_text, blocked_activity):
-                logger.debug("Filtered out activity suggestion: %r", candidate.get("title"))
-                removed += 1
-                continue
+        if cat == "activity" and _any_token_matches(full_text, blocked_activity):
+            logger.debug("Filtered out activity suggestion: %r", candidate.get("title"))
+            removed += 1
+            continue
 
         kept.append(candidate)
 
@@ -196,3 +232,83 @@ def apply_hard_constraints(
         logger.info("Hard constraint filter removed %d candidate(s).", removed)
 
     return kept
+
+
+def apply_household_constraints(
+    candidates: list[dict[str, Any]],
+    members: Sequence[HouseholdMember],
+) -> list[dict[str, Any]]:
+    """Filtrar candidatos de la casa contra sus dos personas — cada regla a su manera.
+
+    Hasta acá `generate_for_household` no filtraba **nada**: el comentario decía "for
+    household suggestions we skip user-specific filtering" y era literal. Como el generador
+    de despensa propone alimentos concretos (`subject_type="food"`), eso significaba que la
+    lista de compras podía traer justo lo que una de las dos personas no puede comer. Con
+    la 4.5 esa función pasa a tener llamadores; conviene que cuando se prenda ya no lo haga.
+
+    Las dos reglas van al revés a propósito, y esa asimetría es todo el punto:
+
+    - **Los bloqueos duros se unen.** Si a Diego el maní le hace mal, la casa no compra
+      maní: alcanza que **una** persona lo tenga bloqueado. Una restricción declarada no
+      pide evidencia ni admite promedio, y el costo de equivocarse no es simétrico —una
+      compra de más contra una comida que alguien no puede comer—.
+    - **Los "no" aprendidos se intersectan.** Un rechazo de conducta de una sola persona no
+      es un "no" de la casa: en una casa de dos, unirlos dejaría que un rechazo de Rocío
+      borre de la lista de compras el alimento que Diego come todos los días. Solo se saca
+      un sujeto si **todas** las personas lo rechazaron, y hasta entonces sigue compitiendo
+      —más abajo si corresponde, que es trabajo del score y no de este filtro—.
+
+    Y ninguna de las dos mira una tabla "de la casa": los datos entran ya separados por
+    persona en `HouseholdMember`, porque una intersección solo se puede calcular sobre
+    conjuntos que nunca se mezclaron.
+
+    Args:
+        candidates: Candidatos crudos del generador de despensa.
+        members: Las personas de la casa, cada una con sus preferencias y señales.
+
+    Returns:
+        Los candidatos que ninguna persona bloquea y que no rechazaron todas.
+    """
+    if not members:
+        #: Una casa sin miembros no debería existir, y si existiera la intersección de cero
+        #: conjuntos sería "todo rechazado": el filtro borraría la lista entera. Devolver
+        #: los candidatos tal cual es la falla segura —no hay nadie de quien proteger a
+        #: nadie— y el warning es para que no pase inadvertido.
+        logger.warning("Household constraint filter got no members — nothing to check against.")
+        return candidates
+
+    blocked_food: set[str] = set()
+    blocked_activity: set[str] = set()
+    for member in members:
+        blocked_food |= _build_blocked_set(member.user, member.preferences, "food")
+        blocked_activity |= _build_blocked_set(member.user, member.preferences, "activity")
+
+    kept = _drop_blocked(candidates, blocked_food, blocked_activity)
+
+    rejected_by_all = set.intersection(
+        *(learning.rejected_subjects(member.signals) for member in members)
+    )
+    if not rejected_by_all:
+        return kept
+
+    survivors: list[dict[str, Any]] = []
+    removed = 0
+    for candidate in kept:
+        subject = learning.candidate_subject(candidate)
+        if subject is not None and subject in rejected_by_all:
+            logger.debug(
+                "Household filter dropped %r: subject %s rejected by every member.",
+                candidate.get("title"),
+                subject,
+            )
+            removed += 1
+            continue
+        survivors.append(candidate)
+
+    if removed:
+        logger.info(
+            "Household constraint filter removed %d candidate(s) rejected by all %d member(s).",
+            removed,
+            len(members),
+        )
+    return survivors
