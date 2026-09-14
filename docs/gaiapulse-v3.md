@@ -201,12 +201,6 @@ podían arreglar con el botón que tenían al lado.
 Un documento que solo cuenta lo que se hizo es propaganda. Lo valioso para quien llega
 después es el mapa de lo que falta, con nombre y razón.
 
-**Validación de CSRF.** `csrf_token` se genera y se renderiza en los formularios, y
-**ninguna ruta POST lo valida jamás**. Es un hueco real de seguridad, no una omisión
-cosmética, y está afuera porque arreglarlo bien exige una revisión de seguridad propia:
-meterlo de contrabando dentro de un rediseño visual es exactamente cómo se cuela un
-arreglo a medias que después nadie audita.
-
 **Cabeceras de seguridad.** La app no manda ninguna: no hay CSP, ni `X-Frame-Options`, ni
 `Referrer-Policy`, ni HSTS. Y una CSP útil es imposible mientras Tailwind inyecte
 `<style>` en runtime desde el CDN — haría falta `style-src 'unsafe-inline'` para siempre,

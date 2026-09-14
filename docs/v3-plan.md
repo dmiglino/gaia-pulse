@@ -2876,11 +2876,18 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
 - [x] Dos huecos chicos del parser: `docena` como cantidad (×12) y el apóstrofo como
       minutos (`entrené 30'`) (`7e4c919`).
 
-**7.2 — Validación de CSRF**
+**7.2 — Validación de CSRF** — cerrada (`c83122d`):
 
-- [ ] El token ya se genera y se renderiza (`app/web/helpers.py`); falta que alguna ruta
-      POST lo valide. Revisión `security-privacy` propia, como pide `AGENTS.md` para todo
-      lo que toca sesión.
+- [x] Cookie de doble envío en `app/core/csrf.py`: emite `csrf_token`, y rechaza con 403
+      cualquier POST/PUT/PATCH/DELETE de tipo form o multipart cuyo campo no coincida
+      (`secrets.compare_digest`). La excepción es por content-type — JSON siempre exento,
+      form/multipart siempre revisado — y no por path, porque `/api/v1/nlp/transcribe`
+      manda `UploadFile` (multipart) y una excepción `/api/` lo habría dejado sin proteger.
+      Revisión `security-privacy` propia: APPROVE WITH FOLLOW-UP, dos hallazgos Medium
+      corregidos — el orden de registro del middleware (Starlette envuelve en orden de
+      registro y el último queda más externo, así que el corte corto con 403 necesitaba
+      ir antes que `security_headers`/`privacy_headers`, no después) y la excepción por
+      path reemplazada por la de content-type. `tests/test_csrf.py` (7 tests) cubre ambos.
 
 **7.3 — La hora que menciona la frase**
 
@@ -3054,13 +3061,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 |
-|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 |
+|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
@@ -3134,19 +3141,8 @@ Explícito, para que no se cuele por la ventana:
   promesas muertas de la UI en vez de implementarlas a medias.
 - **Normalizar los marcadores de sangre en filas**: hoy viven en un blob JSON, lo que impide
   tendencia por SQL. Es un refactor de datos que merece su propio cambio.
-- **Validación de CSRF.** `csrf_token` se genera y se renderiza en los formularios pero
-  **ninguna ruta POST lo valida jamás** (`app/web/helpers.py:43`). Es un hueco real de
-  seguridad que por `AGENTS.md` exige una revisión de `security-privacy` propia; queda
-  señalado en vez de arreglado de contrabando dentro de un rediseño visual.
-- **Cabeceras de seguridad.** La app **no manda ninguna**: no hay
-  `Content-Security-Policy`, ni `X-Frame-Options`, ni `Referrer-Policy`, ni HSTS. Y una CSP
-  útil no es posible mientras el CDN de Tailwind inyecte `<style>` en runtime: haría falta
-  `style-src 'unsafe-inline'` para siempre, que es justamente lo que una CSP viene a
-  cerrar. O sea que esto está atado al build step de Tailwind, que también está fuera de
-  alcance. La consecuencia práctica queda anotada donde importa: **cualquier dato de
-  request o de DB interpolado en un atributo `style` o en el parámetro `attrs` de un macro
-  no tiene red de contención**, y por eso `components/ui.html` lleva escrita la regla de
-  no interpolar nunca ahí, y `avatar_color` se valida en la escritura.
+- **Validación de CSRF** y **cabeceras de seguridad**: cerradas en la Fase 7 (7.1 y 7.2,
+  ver más arriba), no quedaron fuera de alcance.
 - **Objetivos nutricionales declarados** (macros o calorías objetivo por persona). Sí es una
   buena feature, y de las mejores que quedan: es el dato que le falta a la parte más nueva del
   motor. La 4.5.3 tuvo que comparar a cada persona **consigo misma a la misma hora** —su propio
