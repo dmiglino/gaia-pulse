@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.clock import local_day_bounds, local_today
 from app.models.body_metric import BodyMetricLog
 from app.models.food import FoodItem
 from app.models.household import Household
@@ -33,8 +34,13 @@ def _add_workout(
     days_ago: int = 0,
     duration: int = 45,
     muscle_group: str | None = None,
+    ts: datetime | None = None,
 ) -> WorkoutSession:
-    ts = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    # `ts` explícito para los tests que necesitan caer en un día local concreto y no
+    # a "hace N días": los cortes del dashboard son días locales, así que restar días
+    # de `now()` deja la sesión del lado que le toque según la hora en que se corra.
+    if ts is None:
+        ts = datetime.now(timezone.utc) - timedelta(days=days_ago)
     session = WorkoutSession(
         household_id=household.id,
         timestamp_start=ts,
@@ -137,7 +143,15 @@ class TestWorkoutFrequency:
     def test_workout_counted_in_correct_week(
         self, db: Session, diego: User, household: Household
     ) -> None:
-        _add_workout(db, household, diego, days_ago=1)
+        """Una sesión de esta semana local tiene que caer en la última barra.
+
+        Antes la sesión se plantaba con `days_ago=1`, que los lunes cae en la semana
+        anterior: el test fallaba un día de cada siete. Se ancla al primer instante de
+        la semana local en curso, que además es el borde donde un off-by-one se vería.
+        """
+        today = local_today()
+        week_start = today - timedelta(days=today.weekday())
+        _add_workout(db, household, diego, ts=local_day_bounds(week_start)[0])
         svc = DashboardService(db)
         data = svc._workout_frequency_data(diego.id, household.id)
         # Current week (last element) should have at least 1 workout
