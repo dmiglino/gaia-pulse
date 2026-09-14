@@ -1,14 +1,20 @@
-"""El generador de comidas: la tarjeta del hueco de macros (4.5.3).
+"""El generador de comidas: qué se permite afirmar cada tarjeta (4.5.3 y 4.5.8).
 
 Vive en su propio módulo por la misma razón que `test_activity_generator.py`: lo que se mide
 acá es una **conducta** —cuándo la app se permite comparar el día de hoy contra el promedio de
 la persona, y cuándo se calla— y no un contador de candidatos. `test_recommendations.py` sigue
 midiendo que cada generador declare sujetos válidos.
 
-El hilo de todos estos tests es el mismo: la app **no tiene objetivo de macros**, así que la
-única afirmación sostenible es "hoy vas más liviano que tu propio promedio a esta hora", y esa
-frase tiene cuatro formas de ser mentira —una base que no es base, una captura que no se pudo
-medir, una diferencia que es ruido, y un consejo que no se puede accionar—. Cada clase tapa una.
+El hilo de la mayoría de estos tests es el mismo: la app **no tiene objetivo de macros**, así
+que la única afirmación sostenible es "hoy vas más liviano que tu propio promedio a esta hora",
+y esa frase tiene cuatro formas de ser mentira —una base que no es base, una captura que no se
+pudo medir, una diferencia que es ruido, y un consejo que no se puede accionar—. Cada clase
+tapa una.
+
+Las dos últimas clases son de la 4.5.8 y miran la tarjeta de despensa, que es la primera
+sección y la que hasta entonces se descontaba la confianza sola por frecuencia reciente: el
+mismo eje de saciedad del scorer escrito dos veces, y con una cuenta que ni siquiera era la
+del alimento que la tarjeta nombra.
 """
 
 from __future__ import annotations
@@ -117,7 +123,24 @@ def _generate(db: Session, user: User, context: UserContext) -> list[dict[str, A
 
 
 def _macro_cards(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """La tarjeta de macros se identifica por su confianza, que es la única de su sección.
+
+    Que siga siendo única lo sostiene `TestTheConfidenceLadder`: con la fórmula que la 4.5.8
+    sacó, una despensa con cinco ítems muy repetidos bajaba a 0.6 y esta función devolvía la
+    tarjeta equivocada.
+    """
     return [c for c in candidates if c["confidence"] == meal_generator._MACRO_CONFIDENCE]
+
+
+def _pantry_card(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """La tarjeta de la sección 1, por su título completo: la 4 también es `"stock"`, y la 3
+    también termina en "today"."""
+    cards = [
+        c
+        for c in candidates
+        if str(c["title"]).startswith("Use your ") and str(c["title"]).endswith(" today")
+    ]
+    return cards[0] if cards else None
 
 
 def _macro_card(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -489,3 +512,93 @@ class TestItSaysWhatItMeasured:
         assert card is not None
         assert "4 recorded days" in card["evidence_summary"]
         assert "6 of 6 logged items" in card["evidence_summary"]
+
+
+class TestTheConfidenceLadder:
+    """Las cuatro confianzas declaradas: distintas entre sí, y en el orden que dice el módulo.
+
+    Distintas no es un gusto: media suite —y el propio `_macro_cards` de acá— identifica una
+    tarjeta por su confianza, así que dos secciones con el mismo número hacen que los tests
+    midan otra tarjeta y sigan pasando.
+    """
+
+    def test_every_section_has_a_number_of_its_own(self) -> None:
+        ladder = (
+            meal_generator._PANTRY_CONFIDENCE,
+            meal_generator._LOW_STOCK_CONFIDENCE,
+            meal_generator._VARIETY_CONFIDENCE,
+            meal_generator._MACRO_CONFIDENCE,
+        )
+        assert len(set(ladder)) == len(ladder)
+
+    def test_the_order_follows_how_direct_the_claim_is(self) -> None:
+        """Una cantidad medida por encima de un umbral puesto a mano, una ausencia por encima
+        de una comparación entre dos muestras chicas."""
+        assert (
+            meal_generator._PANTRY_CONFIDENCE
+            > meal_generator._LOW_STOCK_CONFIDENCE
+            > meal_generator._VARIETY_CONFIDENCE
+            > meal_generator._MACRO_CONFIDENCE
+        )
+
+
+class TestThePantryCardCountsWhatItNames:
+    """La sección 1 y el eje de saciedad: un solo descuento, y una cuenta que es del sujeto.
+
+    Las dos mitades de la 4.5.8. `confidence = max(0.5, 0.85 - 0.05 * freq_penalty)` era el
+    eje de saciedad del scorer escrito de nuevo —peor: un escalón plano de siete días que no
+    decaía— y `freq_penalty` era la **suma sobre los cinco destacados**, así que la frase
+    "y esto aparece N veces" afirmaba sobre el alimento del título un total de otras cuatro
+    cosas.
+    """
+
+    def test_the_rationale_counts_only_the_food_in_the_title(
+        self, db: Session, diego: User, household: Household, lentils: FoodItem, chicken: FoodItem
+    ) -> None:
+        """Las lentejas encabezan por cantidad y nunca se comieron; el pollo, nueve veces.
+
+        Con la suma, la tarjeta de las lentejas decía "aparece 9 veces en tus últimos 7 días".
+        """
+        _stock(db, household, lentils, 40)
+        _stock(db, household, chicken, 900)
+        context = _context(recent_food_counts={"chicken": 9})
+
+        card = _pantry_card(_generate(db, diego, context))
+
+        assert card is not None
+        assert card["subject_name"] == "lentils"
+        assert "does not appear" in card["rationale"]
+        assert "9" not in card["rationale"]
+        assert "Recent occurrences of lentils: 0" in card["evidence_summary"]
+
+    def test_it_still_says_the_count_when_the_food_is_the_one_repeated(
+        self, db: Session, diego: User, household: Household, lentils: FoodItem
+    ) -> None:
+        """Sacar el descuento no es dejar de informar: la cuenta sigue en las dos frases."""
+        _stock(db, household, lentils, 40)
+        context = _context(recent_food_counts={"lentils": 9})
+
+        card = _pantry_card(_generate(db, diego, context))
+
+        assert card is not None
+        assert "accounts for 9" in card["rationale"]
+        assert "Recent occurrences of lentils: 9" in card["evidence_summary"]
+
+    def test_a_food_eaten_every_day_does_not_lose_confidence_here(
+        self, db: Session, diego: User, household: Household, lentils: FoodItem
+    ) -> None:
+        """El descuento por recencia vive en el scorer, que además lo apaga con los días.
+
+        Cobrado en los dos lados, un favorito comido ayer perdía 0.35 acá **más** 0.15 allá con
+        dos ventanas distintas, y la de acá no se apagaba nunca.
+        """
+        _stock(db, household, lentils, 40)
+
+        blind = _pantry_card(_generate(db, diego, _context()))
+        eaten_daily = _pantry_card(
+            _generate(db, diego, _context(recent_food_counts={"lentils": 12}))
+        )
+
+        assert blind is not None and eaten_daily is not None
+        assert blind["confidence"] == meal_generator._PANTRY_CONFIDENCE
+        assert eaten_daily["confidence"] == meal_generator._PANTRY_CONFIDENCE

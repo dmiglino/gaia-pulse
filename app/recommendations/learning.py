@@ -72,6 +72,7 @@ from app.models.signal import BehaviorSignal
 from app.nlp import rules
 from app.repositories.food_repo import FoodRepository
 from app.repositories.suggestion_repo import BehaviorSignalRepository
+from app.repositories.workout_repo import ExerciseTypeRepository
 
 logger = logging.getLogger(__name__)
 
@@ -140,23 +141,43 @@ CONSUMPTION_SIGNAL_TYPES: frozenset[str] = frozenset(
     }
 )
 
-#: Los tipos de sujeto que existen **solo como atributo**: son a lo que generaliza un
-#: sujeto puntual, y a propósito **no** están en `SUBJECT_TYPES`, así que `record_signal`
-#: los rechaza y nunca hay una fila con estos tipos.
+#: Los vocabularios del **nivel atributo**: a qué puede generalizar un sujeto puntual. Es lo
+#: que `attribute_index` devuelve como tipo, y por lo tanto lo que el panel de `/profile/`
+#: tiene que saber rotular.
 #:
-#: Que no se graben es la decisión, no un pendiente. La otra opción era escribir una
-#: segunda fila por comida con la categoría del alimento —es lo que la 4.4.1 dejó
-#: anotado— y es peor por dos razones: congelaría la categoría del día en que se comió
-#: (recategorizar la palta de "fat" a "fruit" no arreglaría nada de lo ya aprendido), y
-#: solo aprendería de las comidas futuras, cuando lo que la app ya tiene son meses de
-#: señales de alimentos cuya categoría el catálogo sabe hoy. Derivar en cada lectura es
-#: retroactivo y se corrige solo. Y de paso no hay escritor que pueda olvidarse: el
-#: atributo sale del catálogo, no de que tres servicios se acuerden de grabarlo.
-ATTRIBUTE_SUBJECT_TYPES: frozenset[str] = frozenset(
+#: Existe desde la 4.5.8, cuando el nivel dejó de tener un solo vocabulario. Hasta ahí el
+#: único atributo era la categoría de un alimento, así que un solo conjunto contestaba las
+#: dos preguntas que se le hacían —"¿qué atributos hay?" y "¿cuáles no se pueden grabar?"— y
+#: el que quedaba escrito era el segundo. Ahora un ejercicio generaliza a su grupo muscular,
+#: `muscle_group` **sí** se puede grabar (una captura de entrenamiento escribe esas filas), y
+#: las dos respuestas dejaron de coincidir.
+ATTRIBUTE_TYPES: frozenset[str] = frozenset(
     {
         "food_category",  # `FoodItem.category`: vegetable/fruit/protein/grain/dairy/…
+        "muscle_group",  # `ExerciseType.muscle_group`, ya resuelto contra `MUSCLE_GROUPS`
     }
 )
+
+#: Los tipos que existen **solo** como atributo: los que no son también un tipo de sujeto.
+#: Se deriva y no se escribe porque escribirlo era tener dos veces la misma lista de
+#: vocabularios, y la que no se usa para nada es la que queda vieja.
+#:
+#: Lo que esto significa hacia abajo: `record_signal` los rechaza, así que nunca hay una fila
+#: con estos tipos y la afinidad de una categoría de alimento no puede salir más que del
+#: catálogo. Para `muscle_group`, que quedó afuera de este conjunto, sí hay filas propias — y
+#: la consecuencia se ve en el panel de `/profile/`, donde un grupo muscular puede aparecer
+#: dos veces: como sujeto con botón de olvido, por lo que se entrenó, y como conclusión de
+#: categoría sin botón, por lo que se opinó de los ejercicios de ese grupo.
+#:
+#: Que las categorías de alimento no se graben es la decisión, no un pendiente. La otra
+#: opción era escribir una segunda fila por comida con la categoría del alimento —es lo que
+#: la 4.4.1 dejó anotado— y es peor por dos razones: congelaría la categoría del día en que
+#: se comió (recategorizar la palta de "fat" a "fruit" no arreglaría nada de lo ya
+#: aprendido), y solo aprendería de las comidas futuras, cuando lo que la app ya tiene son
+#: meses de señales de alimentos cuya categoría el catálogo sabe hoy. Derivar en cada lectura
+#: es retroactivo y se corrige solo. Y de paso no hay escritor que pueda olvidarse: el
+#: atributo sale del catálogo, no de que tres servicios se acuerden de grabarlo.
+ATTRIBUTE_SUBJECT_TYPES: frozenset[str] = ATTRIBUTE_TYPES - SUBJECT_TYPES
 
 #: Las franjas horarias que una señal puede declarar en su `context_json["meal_type"]`.
 #: Es una lista explícita y no "cualquier string" por un valor en particular: `"other"`,
@@ -928,31 +949,56 @@ def learned_subjects(
 
 
 def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
-    """El atributo al que generaliza cada sujeto puntual que el catálogo sepa clasificar.
+    """El atributo al que generaliza cada sujeto puntual que un catálogo sepa clasificar.
 
-    Hoy solo alimentos: `("food", "espinaca") → ("food_category", "vegetable")`, y los
-    alias del catálogo entran con la misma categoría que su nombre canónico, porque el
-    texto libre de una captura escribe el alias y la señal quedó guardada con ese nombre.
+    Dos vocabularios, uno por catálogo:
 
-    Se arma una vez por corrida del motor y se pasa al scorer: es una consulta sobre una
-    tabla de decenas de filas, y el scorer no toca la base —lo que le llega es un
-    diccionario, así que sigue siendo una función de sus argumentos y se puede testear sin
-    sesión—.
+    - `("food", "espinaca") → ("food_category", "vegetable")`, de `FoodItem`. Los alias del
+      catálogo entran con la misma categoría que su nombre canónico, porque el texto libre de
+      una captura escribe el alias y la señal quedó guardada con ese nombre.
+    - `("exercise", "bench press") → ("muscle_group", "chest")`, de `ExerciseType` (4.5.8).
+      El grupo se normaliza con `normalize_muscle_group` y una fila cuyo grupo no cae en
+      `MUSCLE_GROUPS` no entra: para **leer** un estímulo un grupo desconocido sigue siendo su
+      propio grupo, pero un balde de atributo con un grupo que ningún otro lado nombra no
+      generaliza a nada.
 
-    Los ejercicios **no** están todavía, y lo que falta ya no es la lista hardcodeada: la
-    4.5.2 la sacó y los candidatos de actividad salen del catálogo de `ExerciseType`. Lo que
-    falta es que los dos lados usen el mismo nombre. El catálogo está en inglés ("Bench
-    Press", "Cycling") y las señales de `repeated_activity` las escribe una captura en
-    castellano ("press de banca", "bicicleta"), y `ExerciseType` **no tiene `aliases_json`**
-    —`FoodItem` sí, y es exactamente por eso que los alimentos resuelven acá—. Sin esa
-    columna un índice de ejercicios se llenaría de entradas que ninguna señal matchea: no
-    resolvería mal, resolvería nada.
+    Se arma una vez por corrida del motor y se pasa al scorer: son dos consultas sobre tablas
+    de decenas de filas, y el scorer no toca la base —lo que le llega es un diccionario, así
+    que sigue siendo una función de sus argumentos y se puede testear sin sesión—. Las dos
+    consultas viven acá y no en `UserContext` aunque el contexto ya traiga el catálogo de
+    ejercicios: `LearningService._categories` llama a esta función para el panel de `/profile/`
+    y no tiene contexto, así que un índice que dependiera de él tendría dos formas de armarse.
 
-    Agregar la columna es una migración y v3 no tiene presupuesto de migración (`0003` está
-    gastada), así que la 4.5.8 entra por el otro lado: el grupo muscular, que **sí** comparten
-    los dos vocabularios desde que existe `MUSCLE_GROUPS`. Un candidato de catálogo declara su
-    grupo y una captura lo graba con la misma clave, así que ahí el atributo discrimina de
-    verdad. La intensidad queda para cuando el nombre del ejercicio pueda resolverse.
+    **Del lado de los ejercicios el índice cubre menos de lo que parece**, y conviene decirlo
+    en vez de dejarlo como sorpresa. Lo que **no** llena el balde de un grupo:
+
+    - las señales de `repeated_activity` que escribe una captura, que están en castellano
+      ("press de banca") mientras el catálogo está en inglés ("Bench Press") — `ExerciseType`
+      **no tiene `aliases_json`** y `FoodItem` sí, que es exactamente por qué los alimentos
+      resuelven de las dos puntas y los ejercicios de una sola. Agregar la columna es una
+      migración y v3 no tiene presupuesto (`0003` está gastada);
+    - las señales de `("muscle_group", …)` que la misma captura escribe con la clave ya
+      normalizada. Un grupo no es un ejercicio, así que no es una clave de este índice y no
+      cae en su propio balde. Se leen en el nivel **puntual**, que es donde ya pesan: hacerlas
+      entrar al balde pide una entrada del índice que mapee un grupo a sí mismo, y eso es
+      aritméticamente sano —`generalized_affinity` le resta al balde lo que el sujeto puso—
+      pero se lee como un error y le pone al scorer un rótulo de atributo igual al sujeto que
+      está explicando. Queda anotado como extensión en `docs/v3-plan.md`, no como olvido;
+    - los nombres de la sección de actividad preferida, que son texto libre del perfil.
+
+    Lo que sí resuelve de las dos puntas es el camino que importa: una tarjeta de catálogo
+    declara `("exercise", row.name)` y el feedback se guarda contra esa misma clave, así que
+    rechazar "Bench Press" y "Push-ups" enseña sobre `chest` y mueve "Incline Press" — el
+    mismo cuento que "rechazar brócoli, coliflor y kale enseña sobre las verduras", un dominio
+    más allá.
+
+    `ExerciseType.category` (strength/cardio/flexibility/…) e `intensity` quedan afuera por
+    dos razones distintas. La del plan es de vocabulario: para que un atributo sirva de verdad
+    hace falta que las dos puntas lo escriban igual, y el grupo es el único que `MUSCLE_GROUPS`
+    ya comparte entre el catálogo, la captura y las ventanas de recuperación. La otra es de
+    ancho de brocha: `category` tiene seis valores para veinte filas, así que dos rechazos
+    concluirían sobre un tercio del catálogo, y la conclusión no tendría dónde mostrarse —el
+    panel de `/profile/` nombra grupos musculares, no categorías de ejercicio—.
     """
     index: dict[tuple[str, str], tuple[str, str]] = {}
     for canonical_name, category, aliases in FoodRepository(db).name_categories():
@@ -963,6 +1009,13 @@ def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
             point = subject_key("food", name)
             if point[1]:
                 index[point] = attribute
+    for exercise in ExerciseTypeRepository(db).list_all():
+        group = normalize_muscle_group(exercise.muscle_group or "")
+        if group not in MUSCLE_GROUPS:
+            continue
+        point = subject_key("exercise", exercise.name)
+        if point[1]:
+            index[point] = subject_key("muscle_group", group)
     return index
 
 
@@ -979,9 +1032,10 @@ def attribute_affinities(
     qué opina de su categoría. Rechazar brócoli, coliflor y kale no enseñaba nada sobre la
     espinaca.
 
-    Una señal cuyo sujeto el catálogo no clasifica no entra —de un alimento de texto libre
-    no sabemos la categoría, y adivinarla es exactamente el match difuso que la 4.4 vino a
-    sacar—. Y la vara de evidencia es la del atributo: más alta que la puntual.
+    Una señal cuyo sujeto el catálogo no clasifica no entra —de un alimento de texto libre no
+    sabemos la categoría, ni el grupo de un "press de banca" que el catálogo tiene en inglés,
+    y adivinarlo es exactamente el match difuso que la 4.4 vino a sacar—. Y la vara de
+    evidencia es la del atributo: más alta que la puntual.
     """
     reference = now or datetime.now(tz=timezone.utc)
     nets: dict[tuple[str, str], float] = {}

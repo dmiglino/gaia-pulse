@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.recommendations.learning import SUBJECT_TYPES
+from app.recommendations.learning import ATTRIBUTE_TYPES, MUSCLE_GROUPS, SUBJECT_TYPES
 from app.web.helpers import templates
 
 env = templates.env
@@ -161,6 +161,90 @@ def test_every_subject_type_the_engine_learns_has_a_label_and_an_icon(subject_ty
     #: concatenación, así que un tono inventado rinde una clase que Tailwind no genera y el
     #: ícono sale transparente **sin ningún error** (mismo riesgo que `test_every_tone_*`).
     assert dm.SUBJECT_TYPE_TONES[subject_type] in TONES
+
+
+def test_every_muscle_group_has_an_entry_of_its_own_in_the_label_map() -> None:
+    """Los ocho de `MUSCLE_GROUPS` con rótulo propio, no el valor crudo de la columna.
+
+    El fallback existe porque `WorkoutExercise.muscle_group` es un `String(80)` sin
+    restricción y una captura puede dejar ahí cualquier cosa, pero para el vocabulario
+    declarado es un error: imprimía "Full_Body" en una app en castellano, en la tarjeta de
+    entrenamiento y ahora también en el panel de aprendizaje.
+
+    Se verifica contra **las claves del mapa** y no comparando el rótulo con el valor
+    capitalizado, que fue el primer intento y no puede funcionar: mientras el msgid no esté
+    en el catálogo, `pgettext` devuelve el inglés, y "Shoulders" es exactamente lo que
+    también devolvería el fallback. Las dos ramas coinciden carácter por carácter y la
+    diferencia que importa —que la clave esté declarada— no se ve desde la salida.
+    """
+    source = env.loader.get_source(env, "components/domain.html")[0]  # type: ignore[union-attr]
+    macro = source.split("macro muscle_group_label", 1)[1].split("endmacro", 1)[0]
+    declared = set(re.findall(r"'([a-z_]+)': pgettext\(", macro))
+    assert declared >= MUSCLE_GROUPS, f"sin rótulo: {sorted(MUSCLE_GROUPS - declared)}"
+    for muscle_group in sorted(MUSCLE_GROUPS):
+        assert str(dm.muscle_group_label(muscle_group)).strip()
+
+
+def test_a_muscle_group_label_does_not_borrow_the_translation_of_a_button() -> None:
+    """Cada rótulo en su contexto: `_('Back')` ya era el "Volver" de los dos botones.
+
+    Con `_()` el grupo `back` salía rotulado "Volver" —traducido, sin fallar, y mal—, que es
+    el modo de falla que un contexto de gettext existe para evitar. Este test lo fija en la
+    palabra donde el catálogo ya tenía la colisión; "Core", "Arms" y "Cardio" son las tres
+    siguientes que un rótulo de navegación puede reclamar.
+    """
+    from app.i18n import _ as translate
+
+    assert str(dm.muscle_group_label("back")).strip() != translate("Back")
+
+
+def test_an_unknown_muscle_group_is_shown_as_it_was_stored() -> None:
+    """El fallback es para los datos, no para el vocabulario: se muestra, legible.
+
+    `normalize_muscle_group` conserva un grupo que ningún vocabulario nombra en vez de
+    fusionarlo en "other", así que la pantalla tiene que poder imprimirlo: un `''` dejaría
+    la tarjeta de entrenamiento sin decir de qué fue el ejercicio.
+    """
+    assert str(dm.muscle_group_label("hip_flexors")).strip() == "Hip Flexors"
+    assert str(dm.muscle_group_label(None)).strip() == ""
+
+
+@pytest.mark.parametrize("attribute_type", sorted(ATTRIBUTE_TYPES))
+def test_every_attribute_type_says_what_kind_of_group_it_is(attribute_type: str) -> None:
+    """Desde la 4.5.8 el nivel atributo tiene dos vocabularios, y la lista los mezcla.
+
+    Sin el rótulo de tipo, "Verduras" y "Pecho" salen una debajo de la otra sin nada que
+    diga de qué es cada una — y un grupo muscular aparece **dos veces** en el panel, arriba
+    como sujeto y acá como conclusión, que sin rótulo se lee como un error de la app.
+    """
+    assert str(dm.learned_attribute_kind_label(attribute_type)).strip()
+
+
+def test_the_attribute_label_dispatches_on_the_type_instead_of_assuming_food() -> None:
+    """Cada vocabulario se rotula con **su** mapa: el de `muscle_group` no es el de alimentos.
+
+    Los dos mapas tienen claves que el otro no, así que pasar un grupo muscular por el de
+    categorías no falla: cae en su fallback y muestra el valor crudo.
+    """
+    assert (
+        str(dm.learned_attribute_label("muscle_group", "full_body")).strip()
+        == str(dm.muscle_group_label("full_body")).strip()
+    )
+    assert (
+        str(dm.learned_attribute_label("food_category", "vegetable")).strip()
+        == str(dm.food_category_label("vegetable")).strip()
+    )
+
+
+def test_an_unknown_attribute_type_looks_like_a_gap_and_not_like_a_food_group() -> None:
+    """Un tercer vocabulario sin rótulo tiene que verse como lo que es: algo que falta.
+
+    Si el `{% else %}` de la clase mandara al mapa de alimentos —el único que había hasta la
+    4.5.8—, un atributo nuevo saldría rotulado "grupo de alimentos" y mal, en silencio. Que
+    el nombre se muestre y el tipo no es un hueco visible en pantalla.
+    """
+    assert str(dm.learned_attribute_kind_label("cuisine")).strip() == ""
+    assert str(dm.learned_attribute_label("cuisine", "peruvian")).strip() == "Peruvian"
 
 
 @pytest.mark.parametrize(

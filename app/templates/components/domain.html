@@ -82,6 +82,40 @@
 {%- endmacro %}
 
 
+{#- ── Grupo muscular ──────────────────────────────────────────────────────────
+    Las ocho claves de `learning.MUSCLE_GROUPS`, que es el vocabulario único desde
+    la 4.5.2: las escribe el catálogo de `ExerciseType`, la captura del NLP y el
+    generador de rotación, y las tres usan la misma forma normalizada.
+
+    El default es el valor crudo con guiones bajos hechos espacios, y eso no es un
+    descuido: `WorkoutExercise.muscle_group` es un `String(80)` sin restricción, así
+    que una captura puede dejar ahí un grupo que ningún vocabulario nombra, y
+    `normalize_muscle_group` lo conserva a propósito en vez de fusionarlo en
+    `"other"`. Un grupo desconocido se muestra tal como se guardó.
+
+    Los ocho van con `pgettext` y no con `_()` por un caso que ya estaba en el
+    catálogo: `_('Back')` es el rótulo de los dos botones de "volver" de la app
+    (`ui.back_link` y el paso anterior del onboarding) y está traducido como
+    "Volver", así que el grupo muscular salía rotulado "Volver" — traducido, sin
+    fallar, y mal. Un contexto propio le da a cada palabra corta su casilla:
+    "Core", "Arms" y "Cardio" son las tres siguientes que un rótulo de navegación
+    o de catálogo puede reclamar. -#}
+{% macro muscle_group_label(muscle_group) -%}
+{%- set labels = {
+  'chest': pgettext('muscle group', 'Chest'),
+  'shoulders': pgettext('muscle group', 'Shoulders'),
+  'arms': pgettext('muscle group', 'Arms'),
+  'back': pgettext('muscle group', 'Back'),
+  'legs': pgettext('muscle group', 'Legs'),
+  'core': pgettext('muscle group', 'Core'),
+  'cardio': pgettext('muscle group', 'Cardio'),
+  'full_body': pgettext('muscle group', 'Full body'),
+} -%}
+{%- set key = muscle_group | lower if muscle_group else '' -%}
+{{- labels.get(key, muscle_group | replace('_', ' ') | title if muscle_group else '') -}}
+{%- endmacro %}
+
+
 {#- ── Categoría de alimento ───────────────────────────────────────────────────
     `FoodItem.category` guarda los nueve valores en minúscula que siembra
     `seed.py` (`vegetable`, `grain`, `processed`…). La despensa los mostraba con
@@ -446,6 +480,39 @@
 {%- elif days == 0 -%}{{ _('today') }}
 {%- elif days == 1 -%}{{ _('yesterday') }}
 {%- else -%}{{ ngettext('%(num)d day ago', '%(num)d days ago', days) }}
+{%- endif -%}
+{%- endmacro %}
+
+
+{#- Lo aprendido a nivel **atributo** (`LearnedCategory`), que tiene dos vocabularios
+    desde la 4.5.8: `food_category` de `FoodItem` y `muscle_group` de `ExerciseType`.
+    Antes había uno solo y el rótulo estaba clavado a `food_category_label`, que a un
+    grupo muscular le habría contestado "Chest" | title y no la traducción.
+
+    El segundo macro dice de **qué** es la conclusión, y va siempre y no solo cuando hay
+    dos tipos en pantalla: "Pecho" al lado de "Verduras" no se lee como la misma clase de
+    cosa, y un rótulo que aparece según lo que haya en la lista cambia de significado
+    entre dos visitas. Además hace falta para el caso raro pero real de un grupo muscular
+    que aparece **dos veces** en el panel —como sujeto, por lo que la persona entrenó, y
+    como conclusión, por lo que opinó de los ejercicios de ese grupo—, donde sin el rótulo
+    las dos filas se leerían como una repetición.
+
+    Un tipo que no esté acá cae en el nombre crudo capitalizado y **no** en el rótulo de
+    alimentos: un vocabulario nuevo se tiene que ver como un hueco, no disfrazarse del que
+    ya estaba. Que los dos declarados tengan rótulo lo sostiene un test parametrizado
+    sobre `learning.ATTRIBUTE_TYPES` (`test_every_attribute_type_says_what_kind_of_group_it_is`),
+    así que declarar un tercero sin rotularlo falla en vez de salir mal en pantalla. -#}
+{% macro learned_attribute_label(attribute_type, name) -%}
+{%- if attribute_type == 'muscle_group' -%}{{ muscle_group_label(name) }}
+{%- elif attribute_type == 'food_category' -%}{{ food_category_label(name) }}
+{%- else -%}{{ name | replace('_', ' ') | title }}
+{%- endif -%}
+{%- endmacro %}
+
+
+{% macro learned_attribute_kind_label(attribute_type) -%}
+{%- if attribute_type == 'muscle_group' -%}{{ _('muscle group') }}
+{%- elif attribute_type == 'food_category' -%}{{ _('food group') }}
 {%- endif -%}
 {%- endmacro %}
 

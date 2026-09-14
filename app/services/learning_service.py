@@ -52,12 +52,23 @@ class LearnedCategory:
     generalización: es lo que hace que rechazar brócoli, coliflor y kale diga algo sobre la
     espinaca (4.4.4).
 
-    No lleva control de olvido, y eso es una propiedad y no un pendiente: una categoría no
-    tiene señales propias —`ATTRIBUTE_SUBJECT_TYPES` está fuera de `SUBJECT_TYPES` justamente
-    para que `record_signal` las rechace—, se deriva del catálogo en cada lectura. Se olvida
-    olvidando los alimentos que la sostienen, que es lo que la pantalla dice.
+    No lleva control de olvido, y eso es una propiedad y no un pendiente: la fila **no** sale
+    de señales propias, sale del catálogo en cada lectura. Se olvida olvidando los sujetos que
+    la sostienen, que es lo que la pantalla dice.
+
+    Eso vale incluso cuando el tipo del atributo *también* es un tipo de sujeto: desde la
+    4.5.8 `attribute_index` generaliza un ejercicio a su `muscle_group`, y `muscle_group` tiene
+    filas propias porque una captura de entrenamiento las escribe. Las dos cosas no son la
+    misma y por eso `subject_type` está acá: la fila de "Pecho" en el grupo de sujetos sale de
+    lo que la persona **entrenó**, y esta sale de lo que opinó de los **ejercicios** de pecho.
+    Olvidar la primera no borra la segunda, y el botón que la pantalla no dibuja es el que
+    habría prometido lo contrario.
     """
 
+    #: El tipo del atributo (`food_category`, `muscle_group`): sin él la pantalla no puede
+    #: rotular la fila, porque hasta la 4.5.8 había un solo vocabulario y el rótulo estaba
+    #: clavado al de categorías de alimento.
+    subject_type: str
     name: str
     affinity: SubjectAffinity
     #: Cuántos sujetos puntuales distintos la sostienen. Es la cifra que hace legible una
@@ -192,11 +203,17 @@ class LearningService:
                 backing.setdefault(attribute, set()).add(key)
         rows = [
             LearnedCategory(
+                subject_type=attribute_type,
                 name=name,
                 affinity=affinity,
                 subjects=len(backing.get((attribute_type, name), ())),
             )
             for (attribute_type, name), affinity in affinities.items()
         ]
-        rows.sort(key=lambda row: (-abs(row.affinity.strength), row.name))
+        #: El tipo entra en el desempate y no en la primera clave: lo que ordena la lista sigue
+        #: siendo cuánto está moviendo cada conclusión, y agrupar por vocabulario pondría las
+        #: categorías de alimento arriba de un grupo muscular que pesa el doble. El tipo evita
+        #: que dos conclusiones con el mismo nombre —un `food_category` y un `muscle_group` se
+        #: pueden llamar igual— queden en un orden que dependa del diccionario.
+        rows.sort(key=lambda row: (-abs(row.affinity.strength), row.name, row.subject_type))
         return rows

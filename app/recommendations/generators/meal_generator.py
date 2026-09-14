@@ -68,8 +68,27 @@ _MACRO_SHORTFALL_RATIO = 0.7
 #: el único en la despensa.
 _MACRO_CARRIER_PER_100G: dict[str, float] = {"protein_g": 10.0, "fiber_g": 3.0}
 
-#: Por debajo de toda sección que reporta un hecho (0.85 la despensa, 0.8 el stock bajo):
-#: esta reporta una **comparación**, armada sobre dos muestras chicas de la propia persona.
+#: La escalera de confianza de las cinco secciones, junta y en orden. Estaban sueltas dentro
+#: de cada `dict` y el comentario de `_MACRO_CONFIDENCE` repetía dos de memoria ("0.85 la
+#: despensa, 0.8 el stock bajo"), que es la forma en que dos números se separan: mover uno
+#: dejaba el comentario mintiendo sin que nada fallara.
+#:
+#: Lo que ordena la escalera es qué tan directo es el hecho que la tarjeta afirma. La
+#: despensa reporta una cantidad medida; el stock bajo también, pero contra un umbral que
+#: puso una persona y no una medición; la variedad reporta una **ausencia**, que es más fácil
+#: de tener por una captura incompleta que por no haber comido; y el hueco de macros reporta
+#: una **comparación**, armada sobre dos muestras chicas de la propia persona.
+#:
+#: Ninguno se descuenta acá por nada aprendido: eso lo hace el scorer, que es el único que ve
+#: las señales. Hasta la 4.5.8 esta sección se lo descontaba sola —
+#: `max(0.5, 0.85 - 0.05 * freq_penalty)`— y era el mismo eje de saciedad
+#: (`scorer._SATIETY_PENALTY`) escrito dos veces con dos números que no se conocían: un
+#: alimento de todos los días perdía hasta 0.35 acá **más** 0.15 allá, con dos ventanas
+#: distintas y, del lado de acá, sin decaimiento —un escalón plano de siete días que no se
+#: apagaba nunca—. Quedó el que decae.
+_PANTRY_CONFIDENCE = 0.85
+_LOW_STOCK_CONFIDENCE = 0.8
+_VARIETY_CONFIDENCE = 0.7
 _MACRO_CONFIDENCE = 0.6
 
 
@@ -150,6 +169,15 @@ def generate(
 
     `db` sigue haciendo falta —la despensa es del hogar y por eso no está en el contexto,
     que es personal— pero ya no se abren consultas acá: se piden por repositorio.
+
+    **Dónde termina este generador y dónde empieza el scorer**, que es la línea que la 4.5.8
+    vino a poner: acá se decide *si hay algo que decir* y el scorer decide *cuánto compite*.
+    `recent_foods` se sigue leyendo en las secciones 2 y 3, y eso no es la duplicación que se
+    sacó: la sección 2 lo usa para **elegir** el alimento del que la tarjeta puede afirmar
+    "hace tiempo que no comés esto" —sin eso la tarjeta sería falsa, no floja— y la 3 lo usa
+    para callarse cuando un favorito ya se come todos los días, porque ahí el empujón no
+    aporta nada. Lo que se fue era otra cosa: un descuento de **confianza** por frecuencia,
+    que es exactamente el trabajo del eje de saciedad y estaba escrito dos veces.
     """
     if meal_type is None:
         meal_type = _current_meal_type()
@@ -181,8 +209,11 @@ def generate(
                 f"You have {', '.join(featured)} in your pantry. "
                 f"Consider incorporating them into {meal_type}."
             )
-            freq_penalty = sum(recent_foods.get(f, 0) for f in featured)
-            confidence = max(0.5, 0.85 - 0.05 * freq_penalty)
+            #: Del alimento que encabeza, no de los cinco. Antes era la **suma** sobre los
+            #: cinco destacados, y con eso la frase del `rationale` —"y {esto} aparece N
+            #: veces"— afirmaba sobre el sujeto un total de otras cuatro cosas: con cinco
+            #: ítems normales podía decir "12" de algo que la persona no comió nunca.
+            recent_count = recent_foods.get(featured[0], 0)
             suggestions.append(
                 {
                     "category": "meal",
@@ -205,13 +236,17 @@ def generate(
                     #: en `evidence_summary`, que es el rastro auditable.
                     "rationale": (
                         f"{featured[0]} has the least left of anything in your pantry, and "
-                        f"{_recency_phrase(freq_penalty, 'it')}."
+                        f"{_recency_phrase(recent_count, 'it')}."
                     ),
+                    #: "Recent frequency score: 3" nombraba un puntaje que no existe —era una
+                    #: cuenta— y encima ya no se usa para nada: la recencia la cobra el
+                    #: scorer. Queda la cuenta, dicha como cuenta y con el sujeto nombrado,
+                    #: igual que en la sección 3.
                     "evidence_summary": (
                         f"Pantry items: {', '.join(featured)}. "
-                        f"Recent frequency score: {freq_penalty}."
+                        f"Recent occurrences of {featured[0]}: {recent_count}."
                     ),
-                    "confidence": round(confidence, 3),
+                    "confidence": _PANTRY_CONFIDENCE,
                     "source_type": "stock",
                 }
             )
@@ -234,7 +269,7 @@ def generate(
                 ),
                 "rationale": f"{_recency_phrase(0, pick)}, and it is in stock.",
                 "evidence_summary": f"{pick} not consumed in past {RECENT_FOOD_DAYS} days.",
-                "confidence": 0.7,
+                "confidence": _VARIETY_CONFIDENCE,
                 "source_type": "rule",
             }
         )
@@ -309,7 +344,7 @@ def generate(
                     f"Current stock: {stock.current_quantity} {stock.unit}. "
                     f"Threshold: {stock.low_stock_threshold}."
                 ),
-                "confidence": 0.8,
+                "confidence": _LOW_STOCK_CONFIDENCE,
                 "source_type": "stock",
             }
         )

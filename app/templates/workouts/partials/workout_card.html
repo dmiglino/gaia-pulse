@@ -76,7 +76,10 @@
             </span>
             {%- endif %}
             {%- if exercise.muscle_group %}
-            <span class="text-xs text-ink-subtle">{{ exercise.muscle_group | title }}</span>
+            {#- Por el macro y no por `| title`: la columna guarda las claves en inglés y
+                en minúscula, así que `| title` imprimía "Full_Body" en una app en
+                castellano. El mismo valor lo rotula el panel de aprendizaje. -#}
+            <span class="text-xs text-ink-subtle">{{ dm.muscle_group_label(exercise.muscle_group) }}</span>
             {%- endif %}
           </li>
           {% endfor %}

@@ -29,8 +29,10 @@ from app.i18n import _, get_translations
 from app.models.food import FoodItem
 from app.models.signal import BehaviorSignal
 from app.models.user import User
+from app.models.workout import ExerciseType
 from app.recommendations import learning
 from app.repositories.suggestion_repo import BehaviorSignalRepository
+from app.web.helpers import templates
 
 
 def _record(
@@ -82,6 +84,19 @@ def _plural(singular: str, plural: str, num: int) -> str:
     """
     translations = get_translations(get_settings().default_locale)
     return translations.ungettext(singular, plural, num) % {"num": num}
+
+
+#: Los dos rótulos del nivel atributo, pedidos a los macros que la página usa. Ver el
+#: comentario dentro del test que los compara: no se pueden escribir como msgid suelto.
+_dm = templates.env.globals["dm"]
+
+
+def _muscle_group_label(muscle_group: str) -> str:
+    return str(_dm.muscle_group_label(muscle_group)).strip()
+
+
+def _kind_label(attribute_type: str) -> str:
+    return str(_dm.learned_attribute_kind_label(attribute_type)).strip()
 
 
 def _forget(client: TestClient, subject_type: str, subject_name: str, *, htmx: bool = True):
@@ -199,6 +214,56 @@ def test_the_category_block_counts_only_the_signals_that_are_an_opinion(
         " with them."
     )
     assert no_button in r.text
+
+
+def test_a_muscle_group_conclusion_says_it_is_a_muscle_group_and_not_a_food_one(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """Desde la 4.5.8 la lista de categorías mezcla dos vocabularios, y tiene que decir cuál.
+
+    Un ejercicio del catálogo generaliza a su grupo muscular, así que "Pecho" sale en la
+    misma lista que "Verduras". Hasta la 4.5.8 el rótulo estaba clavado al mapa de
+    categorías de alimento, que a `chest` le contestaba el valor crudo capitalizado: la
+    conclusión salía en inglés y sin decir de qué era.
+
+    Y el caso que hace falta el rótulo de tipo: el mismo grupo muscular aparece **dos
+    veces** en el panel —arriba como sujeto, por lo que la persona entrenó, y acá como
+    conclusión, por lo que opinó de los ejercicios de ese grupo—. Son dos filas distintas,
+    una con botón de olvido y la otra sin él, y sin el rótulo se leen como una repetición.
+    """
+    db.add(ExerciseType(name="Bench Press", category="strength", muscle_group="chest"))
+    db.flush()
+
+    #: La conclusión: una opinión sobre el ejercicio del catálogo, que es lo que
+    #: `attribute_index` sabe mapear a su grupo.
+    _record(
+        db,
+        diego,
+        "bench press",
+        entity_type="exercise",
+        signal_type="rejected_suggestion",
+        value=-1.0,
+    )
+    #: Y el sujeto: la captura de un entrenamiento escribe el grupo con la clave ya
+    #: normalizada, que sí tiene filas propias — a diferencia de una categoría de alimento.
+    _record(db, diego, "chest", entity_type="muscle_group", signal_type="repeated_activity")
+
+    r = authenticated_client.get("/profile/")
+    assert r.status_code == 200, r.text[:500]
+
+    assert _("Patterns across categories") in r.text
+    #: Los rótulos esperados se piden a los macros y no se escriben acá: los ocho grupos van
+    #: con `pgettext('muscle group', …)` —porque `_('Back')` ya era el "Volver" de los
+    #: botones— y un `_("Chest")` en el test compararía contra otra entrada del catálogo, que
+    #: hoy coincide y en la fase 5, cuando se traduzcan, deja de coincidir.
+    assert _muscle_group_label("chest") in r.text, "el grupo rotulado con su propio mapa"
+    assert _kind_label("muscle_group") in r.text, "y diciendo de qué clase de grupo es"
+    #: Sin señales de alimentos no hay ninguna categoría de alimento, así que el otro
+    #: rótulo no puede estar: si estuviera, el macro habría caído en el mapa equivocado.
+    assert _kind_label("food_category") not in r.text
+    #: Las dos filas conviven: la de sujeto lleva su campo oculto de olvido y la de
+    #: conclusión no tiene ninguno propio.
+    assert 'value="chest"' in r.text
 
 
 def test_the_two_screens_no_longer_call_declared_preferences_learned(

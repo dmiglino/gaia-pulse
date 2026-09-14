@@ -1333,8 +1333,15 @@ ejercicios esperan la 4.5)
       para apagar la saciedad apaga también la mitad de la evidencia: la curva medida así ya
       no es la de la saturación. El test estaba midiendo tres ejes y afirmando algo sobre
       uno.
-- [ ] **Postergado a propósito: la saciedad cruda que ya existe en `meal_generator`.**
-      `meal_generator.py:138-139` descuenta la confianza del candidato por frecuencia
+- [x] **Postergado a propósito: la saciedad cruda que ya existe en `meal_generator`.**
+      **Cerrado en 4.5.8**, y de las tres cosas que este párrafo nombra se fue **una**: el
+      descuento de confianza. La regla de variedad y el `recent_count >= 3` **quedan** y no por
+      olvido — la primera *elige* el alimento del que la tarjeta puede afirmar "hace tiempo que
+      no comés esto" y el segundo hace que la sección se calle cuando el empujón no aporta nada;
+      ninguna de las dos es un descuento, y el docstring de `generate()` traza la línea. El
+      "ningún test afirma hoy ese comportamiento" también quedó cerrado: `TestTheConfidenceLadder`
+      y `TestThePantryCardCountsWhatItNames` lo afirman ahora.
+      El generador descontaba la confianza del candidato por frecuencia
       reciente (`confidence = max(0.5, 0.85 - 0.05 * freq_penalty)`), y hay además una regla
       de variedad que excluye lo muy repetido y otra de preferencia que se saltea con
       `recent_count >= 3`. Es el mismo problema resuelto peor —un escalón plano de 7 días,
@@ -2255,14 +2262,64 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       en el loop de personas, con un dato de salud— en el log. El loop de hogares hereda la
       forma que los otros tres ya tenían; unificarlos en un helper que registre tipo y entidad y
       no el mensaje del driver es un cambio de `app/jobs/` entero, no de este punto.
-- [ ] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
+- [x] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
       `learning.attribute_index` con el **grupo muscular** como atributo (va después de 4.5.2
       porque necesita el vocabulario unificado). `ExerciseType.category` queda afuera y no es un
       olvido: llegar a la categoría pide resolver el nombre capturado contra el catálogo, y
       4.5.2 midió que eso no se puede sin `aliases_json` — el grupo, en cambio, las dos puntas ya
       lo escriben normalizado. Y se unifica el
-      `freq_penalty` de `meal_generator:138-139` con el eje de saciedad del scorer: hoy un
+      `freq_penalty` de `meal_generator` con el eje de saciedad del scorer: hoy un
       alimento de todos los días se penaliza **dos veces** con dos números que no se conocen.
+      **Cerrado.** Lo que salió distinto de como estaba escrito, en el orden en que apareció:
+    - **El nivel atributo dejó de tener un solo vocabulario, y eso se vio en la pantalla antes
+      que en el motor.** `learning.ATTRIBUTE_TYPES` (`food_category`, `muscle_group`) ahora se
+      **declara** y `ATTRIBUTE_SUBJECT_TYPES` se **deriva** por resta: hasta acá un solo conjunto
+      contestaba dos preguntas distintas —"¿qué atributos hay?" y "¿cuáles no se pueden
+      grabar?"— y con `muscle_group`, que sí se graba, dejaron de coincidir. El rótulo del panel
+      pasó a despachar por tipo (`dm.learned_attribute_label`) más un rótulo de **clase**
+      (`learned_attribute_kind_label`), porque un grupo muscular puede aparecer **dos veces** en
+      `/profile/`: arriba como sujeto con botón de olvido, por lo que se entrenó, y abajo como
+      conclusión sin botón, por lo que se opinó de los ejercicios de ese grupo.
+    - **Un rótulo traducido y mal**, encontrado por el test que ata `MUSCLE_GROUPS` al mapa:
+      `_('Back')` ya estaba en el catálogo como el "Volver" de los dos botones de la app, así que
+      el grupo `back` salía rotulado "Volver". Los ocho pasaron a `pgettext('muscle group', …)`.
+      Para la **fase 5** eso significa dos cosas: que la extracción tiene que llevar el keyword
+      `pgettext:1c,2` (está en los defaults de Babel, pero hay que confirmarlo contra el mapping
+      file) y que los ocho msgids con contexto están sin traducir, igual que `muscle group` y
+      `food group`.
+    - **La unificación del `freq_penalty` es la eliminación de un eje duplicado, no un ajuste de
+      números.** El generador ya no se descuenta la confianza por recencia
+      (`max(0.5, 0.85 - 0.05 * freq_penalty)`): era el mismo eje de saciedad del scorer escrito
+      dos veces, con dos ventanas distintas y —del lado del generador— sin decaimiento, un
+      escalón plano de siete días que no se apagaba nunca. Un alimento de todos los días pasó de
+      perder hasta 0.50 (0.35 acá + 0.15 allá) a perder 0.15, y decayendo. Los otros dos lectores
+      de `recent_foods` **quedan**, y el docstring de `generate()` dice por qué: la sección 2 lo
+      usa para **elegir** un alimento del que la tarjeta pueda afirmar "hace tiempo que no comés
+      esto" (sin eso la tarjeta sería falsa, no floja) y la 3 para **callarse** cuando un favorito
+      ya se come todos los días. La línea es: el generador decide *si hay algo que decir*, el
+      scorer *cuánto compite*.
+    - **Las cuatro confianzas de sección son ahora una escalera declarada**
+      (`_PANTRY_CONFIDENCE` 0.85 > `_LOW_STOCK_CONFIDENCE` 0.8 > `_VARIETY_CONFIDENCE` 0.7 >
+      `_MACRO_CONFIDENCE` 0.6), ordenada por qué tan directo es el hecho que la tarjeta afirma —
+      cantidad medida, umbral puesto por una persona, **ausencia**, **comparación**—. Estaban
+      sueltas dentro de cada `dict` y el comentario de `_MACRO_CONFIDENCE` repetía dos de memoria.
+      Un test fija que las cuatro sean distintas y el orden, porque `_macro_cards()` de los tests
+      identifica la tarjeta de macros **por su valor de confianza**: con el descuento viejo, una
+      despensa de cinco alimentos muy repetidos daba exactamente 0.6 y el helper se la confundía.
+    - **Un bug de la 4.5.6 que salió al mover eso:** el `rationale` de la sección 1 decía
+      "y {alimento} aparece N veces" con N siendo la **suma sobre los cinco** destacados, así que
+      podía afirmar "12" de algo que la persona no comió nunca. Ahora cuenta el sujeto que nombra.
+- [ ] **Extensión anotada (no un olvido de 4.5.8): las señales de `("muscle_group", g)` no caen
+      en su propio balde de atributo.** Una captura de entrenamiento escribe el grupo con la
+      clave ya normalizada, y un grupo no es un ejercicio, así que no es clave de
+      `attribute_index` y su señal pesa solo en el nivel **puntual**. Hacerla entrar pide una
+      entrada identidad —`("muscle_group", g) → ("muscle_group", g)`— que es aritméticamente sana
+      (`generalized_affinity` le resta al balde lo que el sujeto puso, así que no se contaría dos
+      veces) pero se lee como un error en el índice y le pone al scorer un rótulo de atributo
+      igual al sujeto que está explicando. Lo que ganaría: hoy "entrené pecho tres veces" no
+      empuja "Incline Press", y "rechacé Bench Press" sí enseña sobre `chest`, o sea que el balde
+      se llena de un solo lado. Cuesta una línea en `attribute_index` y una decisión sobre cómo
+      se nombra eso en el panel, donde la misma fila ya aparece dos veces.
 
 **Archivos:** `app/jobs/{scheduler,notification_jobs,suggestion_jobs}.py`,
 `app/repositories/{notification_repo,user_repo,workout_repo,meal_repo,body_metric_repo,pantry_repo}.py`
@@ -2308,6 +2365,17 @@ panel de 4.4.8, nuevos `app/core/clock.py` y `app/recommendations/context.py`, n
       ```bash
       .venv/bin/pybabel extract -F <cfg> -o /tmp/gp.pot --no-location --sort-output app
       ```
+- [ ] **Los `msgid` con contexto que agregó la 4.5.8, y la razón por la que existen.** Los ocho
+      grupos musculares de `dm.muscle_group_label` van con `pgettext('muscle group', …)` porque
+      `_('Back')` ya estaba en el catálogo como el "Volver" de los dos botones de la app, así que
+      el grupo `back` salía rotulado "Volver" — traducido, sin fallar, y mal. Dos consecuencias
+      para este punto: la extracción tiene que llevar el keyword `pgettext:1c,2` (está en los
+      defaults de Babel; **confirmarlo contra el mapping file** en vez de asumirlo, porque un
+      keyword que no matchea no falla: los ocho simplemente no aparecen en el `.pot`), y las
+      entradas llevan `msgctxt`, así que un `.po` editado a mano tiene que escribirlo. Y
+      "Volver" es una colisión medida, no hipotética: al revisar el resto de los rótulos cortos
+      —`Core`, `Arms`, `Cardio`, `Back`, y los valores de enum que este mismo punto va a mapear—
+      la pregunta a hacerse es si la palabra ya significa otra cosa en otra pantalla.
 - [ ] Recompilar el catálogo `es_AR` (`_ensure_mo_compiled` ya recompila `.po`→`.mo` al
       arrancar).
 

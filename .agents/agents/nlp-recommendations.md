@@ -90,6 +90,21 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   stimulus keeps an unknown group under its own name (mapping it to `"other"`
   would merge distinct groups, and `"other"` already means `muscle_group IS
   NULL`), **proposing** a rotation draws only from the closed set.
+- **The attribute level has two vocabularies, and only one of them is unrecordable.**
+  `learning.ATTRIBUTE_TYPES` is *declared* (`food_category` from `FoodItem`,
+  `muscle_group` from `ExerciseType`) and `ATTRIBUTE_SUBJECT_TYPES` is *derived* by
+  subtraction from `SUBJECT_TYPES` — never write the second set by hand: until 4.5.8
+  one set answered two different questions ("which attributes exist?" and "which
+  cannot be recorded?"), and `muscle_group`, which a workout capture does record,
+  made them diverge. A third vocabulary is three things, not one: an entry in
+  `attribute_index`, a label in `domain.html` (`learned_attribute_label` dispatches on
+  the type and an unlabelled one shows as a visible gap, never as a food group), and a
+  kind label in the same file, all three pinned by tests parametrized over
+  `ATTRIBUTE_TYPES`. Two things stay out of the index on purpose and the docstring
+  says why: `ExerciseType.category` (too broad — six values over twenty rows) and an
+  identity entry mapping a `muscle_group` signal into its own bucket (sound
+  arithmetically, but it labels a candidate with an attribute equal to the subject
+  being explained; it is written down as an extension in `docs/v3-plan.md`).
 - `learning.record_signal()` is the only path that writes a
   `BehaviorSignal` — it validates `subject_type` against `SUBJECT_TYPES` and
   normalizes the name before storing, so a service must never reach for
@@ -136,6 +151,20 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   it is the one that can cede; sections 1, 2 and 4 can still all emit for the same
   subject, because the final de-dup is by **title** — fixing that needs a declared
   priority between the five sections, which does not exist yet (`docs/v3-plan.md`).
+- **A generator decides *whether there is something to say*; the scorer decides *how much
+  it competes*.** That is the line 4.5.8 drew, and it is what keeps an axis from existing
+  twice: `meal_generator` used to discount its own confidence for recent frequency
+  (`max(0.5, 0.85 - 0.05 * freq_penalty)`), which is `scorer._SATIETY_PENALTY` written a
+  second time with a number that did not know about the first — two windows, and the
+  generator's half was a flat seven-day step that never decayed. Reading recency in a
+  generator is fine when it decides *what to say* (picking the food a card can truthfully
+  call neglected) or *whether to stay silent*; it is duplication when it re-prices what the
+  scorer already prices. The four section confidences are one declared ladder
+  (`_PANTRY_CONFIDENCE` > `_LOW_STOCK_CONFIDENCE` > `_VARIETY_CONFIDENCE` >
+  `_MACRO_CONFIDENCE`), ordered by how direct the claim is — a measured quantity, a
+  human-set threshold, an **absence**, a **comparison** — and they must stay distinct:
+  `tests/test_meal_generator.py` identifies the macro card *by its confidence value*, and a
+  test pins both the distinctness and the order.
 - **An explanation is composed, never written twice.** `rationale` has two halves and
   two authors: the generator measures (`rationale` key on the candidate) and the scorer
   reports what moved the order (`explain.PARTS_KEY`, a list of `ScorePart`). Only

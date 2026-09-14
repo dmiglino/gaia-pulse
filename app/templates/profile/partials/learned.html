@@ -158,9 +158,13 @@
       olvidando los alimentos que la sostienen, y eso hay que decirlo en vez de dejar
       un botón que no podría hacer nada.
 
-      El rótulo va por `dm.food_category_label` porque hoy `ATTRIBUTE_SUBJECT_TYPES`
-      es exactamente `{"food_category"}`; cuando entren los ejercicios (4.5),
-      `LearnedCategory` va a tener que decir de qué atributo es. -#}
+      El rótulo va por `cat.subject_type` desde la 4.5.8, cuando el nivel atributo dejó de
+      tener un solo vocabulario: un ejercicio generaliza a su grupo muscular, así que la
+      lista mezcla "Verduras" con "Pecho" y cada fila tiene que decir de qué es. Un grupo
+      muscular puede aparecer **dos veces** en el panel —arriba como sujeto, por lo que se
+      entrenó, y acá como conclusión, por lo que se opinó de los ejercicios de ese grupo—;
+      son dos cosas distintas y el rótulo de tipo es lo que las separa. Olvidar la de
+      arriba no borra esta, que es la otra razón por la que acá no hay botón. -#}
   {% call ui.card() %}
     {{ ui.section_title(_('Patterns across categories'),
                         subtitle=_('What it concluded about whole groups, from the items above.'),
@@ -169,7 +173,10 @@
       {%- for cat in learned.categories %}
       <li class="flex items-center gap-3">
         <span class="text-sm text-ink flex-1 min-w-0 truncate">
-          {{ dm.food_category_label(cat.name) }}
+          {{ dm.learned_attribute_label(cat.subject_type, cat.name) }}
+          <span class="text-xs text-ink-subtle">
+            {{ dm.learned_attribute_kind_label(cat.subject_type) }}
+          </span>
         </span>
         <span class="text-xs text-ink-subtle flex-shrink-0">
           {{ ngettext('%(num)d item', '%(num)d items', cat.subjects) }}

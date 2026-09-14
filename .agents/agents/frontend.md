@@ -21,6 +21,12 @@ relevant templates in `app/templates/` before acting.
 - Preserve bilingual strings (English/Spanish, `app/i18n.py` +
   `app/locales/es_AR/`) and the preview/confirm UI pattern for NLP input —
   never auto-submit an unconfirmed parse.
+- **A short label may already be taken.** A `msgid` is global, so `_('Back')` for a
+  muscle group rendered the catalogue's "Volver" — the label of the app's two back
+  buttons: translated, silent, and wrong. When a new label is one common word
+  (`Back`, `Core`, `Arms`, an enum value), grep the `.po` for that `msgid` first, and
+  use `pgettext('<what kind of thing>', …)` — installed in the Jinja env — when the
+  same word can legitimately mean two things on two screens.
 - Keep forms accessible (labels, keyboard focus, error messaging) and
   responsive at mobile width, matching existing template conventions.
 

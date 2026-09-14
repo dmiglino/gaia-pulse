@@ -14,6 +14,7 @@ from app.models.household import Household
 from app.models.pantry import PantryMovement, PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
+from app.models.workout import ExerciseType
 from app.recommendations import learning, scorer
 from app.recommendations.context import BloodPanel, build_user_context
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
@@ -531,6 +532,15 @@ _FOOD_ATTRIBUTES: dict[tuple[str, str], tuple[str, str]] = {
     ("food", "banana"): ("food_category", "fruit"),
 }
 
+#: La otra mitad del índice desde la 4.5.8: el catálogo de ejercicios, por grupo muscular.
+#: Los nombres son los del catálogo —normalizados, que es como los declara una tarjeta de
+#: actividad— y **no** hay ninguna entrada `("muscle_group", …)`: que un grupo no sea clave de
+#: su propio balde es la asimetría que `attribute_index` documenta.
+_EXERCISE_ATTRIBUTES: dict[tuple[str, str], tuple[str, str]] = {
+    ("exercise", name): ("muscle_group", "chest")
+    for name in ("bench press", "push ups", "incline press")
+}
+
 
 class TestAttributeLevelLearning:
     """Aprender la categoría, no solo el nombre exacto (4.4.4).
@@ -685,6 +695,72 @@ class TestAttributeLevelLearning:
         assert index[("food", "aguacate")] == ("food_category", "fat")
         assert ("food", "tarta de la vecina") not in index
 
+    def test_the_index_reads_the_exercise_catalogue_by_muscle_group(self, db: Session) -> None:
+        """La otra mitad del índice (4.5.8): un ejercicio generaliza a su grupo muscular.
+
+        Tres casos en una: el grupo canónico entra, el alias del grupo entra **normalizado**
+        —`triceps` es `arms` desde que `MUSCLE_GROUPS` es único—, y una fila cuyo grupo no cae
+        en el vocabulario no entra. Ese último no es un descarte por prolijidad: un balde de
+        atributo con un grupo que ningún otro lado nombra no generaliza a nada, porque nunca va
+        a haber un segundo ejercicio adentro.
+        """
+        db.add_all(
+            [
+                ExerciseType(name="Bench Press", category="strength", muscle_group="chest"),
+                ExerciseType(name="Push-ups", category="strength", muscle_group="CHEST"),
+                ExerciseType(name="Triceps Dip", category="strength", muscle_group="triceps"),
+                ExerciseType(name="Eyebrow Raise", category="other", muscle_group="eyebrows"),
+                ExerciseType(name="Walk", category="cardio", muscle_group=None),
+            ]
+        )
+        db.flush()
+
+        index = learning.attribute_index(db)
+        assert index[("exercise", "bench press")] == ("muscle_group", "chest")
+        assert index[("exercise", "push ups")] == ("muscle_group", "chest")
+        assert index[("exercise", "triceps dip")] == ("muscle_group", "arms")
+        assert ("exercise", "eyebrow raise") not in index
+        assert ("exercise", "walk") not in index
+
+    def test_rejecting_two_chest_exercises_moves_a_third(self, diego: User) -> None:
+        """El mismo cuento que las verduras, un dominio más allá — y es el camino que existe.
+
+        Una tarjeta de catálogo declara `("exercise", row.name)` y el feedback se guarda contra
+        esa misma clave, así que las dos puntas se encuentran acá aunque las capturas en
+        castellano no lleguen nunca al índice.
+        """
+        rejections = [
+            _signal(diego, "rejected_suggestion", "exercise", name, -1.0)
+            for name in ("bench press", "push ups")
+        ]
+        unseen = _candidate("Incline Press", "exercise", "incline press")
+
+        (blind,) = score_candidates([unseen], diego, rejections, [])
+        (taught,) = score_candidates(
+            [unseen], diego, rejections, [], subject_attributes=_EXERCISE_ATTRIBUTES
+        )
+        assert blind["_score"] == 0.5, "sin el índice, un ejercicio sin señales no se mueve"
+        assert taught["_score"] < 0.5
+
+    def test_a_muscle_group_signal_does_not_fill_its_own_bucket(self, diego: User) -> None:
+        """La asimetría documentada del índice, medida para que no se rompa en silencio.
+
+        Un grupo no es una clave del índice, así que las señales que una captura de
+        entrenamiento escribe con `("muscle_group", …)` pesan en el nivel **puntual** y no en el
+        balde del atributo. Hacerlas entrar pide una entrada que mapee un grupo a sí mismo, que
+        es la extensión anotada en el plan: si alguien la agrega, este test es el que dice que
+        la asimetría era deliberada y que hay que decidirla de nuevo, no borrarla de paso.
+        """
+        trained = [
+            _signal(diego, "repeated_activity", "muscle_group", "chest", 1.0, age_days=30)
+        ] * 12
+        unseen = _candidate("Incline Press", "exercise", "incline press")
+
+        (scored,) = score_candidates(
+            [unseen], diego, trained, [], subject_attributes=_EXERCISE_ATTRIBUTES
+        )
+        assert scored["_score"] == 0.5
+
     def test_the_attribute_type_is_not_a_recordable_subject(self, db: Session, diego: User) -> None:
         """`food_category` existe solo como atributo: no hay fila con ese tipo.
 
@@ -693,6 +769,7 @@ class TestAttributeLevelLearning:
         comió, y solo aprendería de las comidas futuras. Derivar en cada lectura es
         retroactivo y se corrige solo.
         """
+        assert "food_category" in learning.ATTRIBUTE_SUBJECT_TYPES
         assert "food_category" not in learning.SUBJECT_TYPES
         with pytest.raises(ValueError, match="food_category"):
             learning.record_signal(
@@ -704,6 +781,38 @@ class TestAttributeLevelLearning:
                 value=-1.0,
                 source_type="explicit",
             )
+
+    def test_being_an_attribute_does_not_make_a_type_unrecordable(self) -> None:
+        """Y la vuelta, que la 4.5.8 hizo posible: `muscle_group` es atributo **y** sujeto.
+
+        `ATTRIBUTE_TYPES` es el vocabulario del nivel; `ATTRIBUTE_SUBJECT_TYPES` son los que
+        existen *solo* ahí, y se deriva restando. La diferencia no es de vocabulario: una
+        captura de entrenamiento escribe filas `("muscle_group", …)`, así que un grupo tiene
+        señales propias, sale como sujeto en el panel de `/profile/` con su botón de olvido, y
+        además puede aparecer como conclusión de categoría por lo que se opinó de los ejercicios
+        de ese grupo. Leer el conjunto derivado como "los tipos del nivel atributo" es lo que
+        haría que alguien saque el grupo de `SUBJECT_TYPES` y calle el nivel puntual entero.
+        """
+        assert "muscle_group" in learning.ATTRIBUTE_TYPES
+        assert "muscle_group" in learning.SUBJECT_TYPES
+        assert "muscle_group" not in learning.ATTRIBUTE_SUBJECT_TYPES
+
+    def test_the_declared_attribute_vocabulary_is_the_one_the_index_emits(
+        self, db: Session, banana: FoodItem
+    ) -> None:
+        """`ATTRIBUTE_TYPES` tiene que ser exactamente lo que `attribute_index` produce.
+
+        Es el conjunto que el panel de `/profile/` recorre para saber rotular una conclusión
+        (`components/domain.html`), así que separarlo del índice tiene dos formas de doler: un
+        tipo declarado y nunca producido es un rótulo que nadie ve, y un tipo producido y no
+        declarado sale en pantalla con el nombre crudo de la columna. Con un catálogo que tiene
+        las dos puntas sembradas, la igualdad se puede afirmar de verdad.
+        """
+        db.add(ExerciseType(name="Bench Press", category="strength", muscle_group="chest"))
+        db.flush()
+
+        emitted = {attribute_type for attribute_type, _ in learning.attribute_index(db).values()}
+        assert emitted == learning.ATTRIBUTE_TYPES
 
 
 class TestTimeOfDayLearning:
