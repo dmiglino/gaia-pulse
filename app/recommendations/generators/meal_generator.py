@@ -101,6 +101,23 @@ def _current_meal_type() -> str:
 #: en vez de una por ítem.
 
 
+def _recency_phrase(count: int, name: str) -> str:
+    """Cómo se nombra la frecuencia reciente de un alimento, sin caer en un plural inglés.
+
+    "it appears 1 times" es la clase de detalle que hace que un texto se lea como generado, y
+    `ngettext` no sirve acá: el `rationale` se arma dentro de un job, sin locale de request
+    (ver `app/recommendations/explain.py`). La forma con "of the foods you logged" funciona
+    igual para 0, 1 y 12, y además es la cuenta que el generador de verdad tiene —
+    `context.recent_food_counts` cuenta apariciones, no comidas.
+    """
+    if count == 0:
+        return f"{name} does not appear in your last {RECENT_FOOD_DAYS} days of logged food"
+    return (
+        f"{name} accounts for {count} of the foods you logged in the last "
+        f"{RECENT_FOOD_DAYS} days"
+    )
+
+
 def _get_disliked_names(user: User, preferences: list[RecommendationPreference]) -> set[str]:
     disliked: set[str] = set()
     # From User model fields
@@ -182,7 +199,14 @@ def generate(
                     "meal_type": meal_type,
                     "title": title,
                     "text": text,
-                    "rationale": "Items available in pantry that should be used.",
+                    #: Por qué **esta** tarjeta: la despensa se ordena por cantidad
+                    #: ascendente, así que el ítem que la encabeza es el que menos queda. Eso
+                    #: es la regla de selección con su valor real; los gramos y el umbral van
+                    #: en `evidence_summary`, que es el rastro auditable.
+                    "rationale": (
+                        f"{featured[0]} has the least left of anything in your pantry, and "
+                        f"{_recency_phrase(freq_penalty, 'it')}."
+                    ),
                     "evidence_summary": (
                         f"Pantry items: {', '.join(featured)}. "
                         f"Recent frequency score: {freq_penalty}."
@@ -208,7 +232,7 @@ def generate(
                     f"You haven't had {pick} recently. "
                     f"It's available in your pantry — a good option for {meal_type}."
                 ),
-                "rationale": "Dietary variety supports micronutrient balance.",
+                "rationale": f"{_recency_phrase(0, pick)}, and it is in stock.",
                 "evidence_summary": f"{pick} not consumed in past {RECENT_FOOD_DAYS} days.",
                 "confidence": 0.7,
                 "source_type": "rule",
@@ -241,7 +265,11 @@ def generate(
                     f"Based on your preferences, {pref.item_name} is a great option "
                     f"for {meal_type}."
                 ),
-                "rationale": "Matches explicit food preference.",
+                "rationale": (
+                    f"You marked {pref.item_name} as '{pref.preference_signal}' with "
+                    f"strength {float(pref.strength):.1f}, and "
+                    f"{_recency_phrase(recent_count, 'it')}."
+                ),
                 "evidence_summary": (
                     f"User preference signal: {pref.preference_signal}. "
                     f"Recent occurrences: {recent_count}."
@@ -273,7 +301,10 @@ def generate(
                     f"({stock.current_quantity} {stock.unit} remaining). "
                     "Consider using it before it goes bad."
                 ),
-                "rationale": "Item is near depletion — use to avoid waste.",
+                "rationale": (
+                    f"The low-stock threshold set for {food.canonical_name} is "
+                    f"{stock.low_stock_threshold} {stock.unit}, and it is under it."
+                ),
                 "evidence_summary": (
                     f"Current stock: {stock.current_quantity} {stock.unit}. "
                     f"Threshold: {stock.low_stock_threshold}."
@@ -377,7 +408,15 @@ def _macro_gap_card(
                 f"usually have {base:.0f} g. You have {carrier.canonical_name} in the "
                 f"pantry, which is a good source."
             ),
-            "rationale": f"Today's {label} is below this person's own average at this hour.",
+            #: La 4.5.3 ya la dejó computada, pero decía "this person" —tercera persona en una
+            #: frase que la persona lee— y repetía lo que el texto ya afirma. Lo que agrega
+            #: ahora es la **selección**: cuál de los dos macros ganó el desempate declarado y
+            #: por qué este alimento y no otro de la despensa.
+            "rationale": (
+                f"{label.title()} is the first tracked macro running below your own average "
+                f"at this hour, and {carrier.canonical_name} is a source of it you already "
+                "have."
+            ),
             "evidence_summary": (
                 f"{label.title()} today: {so_far:.1f} g over {today.items_counted} of "
                 f"{today.items_total} logged items. Average to this hour: {base:.1f} g "

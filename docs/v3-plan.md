@@ -2023,7 +2023,7 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       pasaban por la cesión y no por el guardia que querían medir. De ahí el fixture `filler`, que
       declara la intención una vez: un alimento que ocupa las otras secciones y no aporta nada.
       La suite pasa de 619 a **643**; mypy queda en 42 errores, los mismos de antes.
-- [ ] **4.5.4 — `rationale` computado.** Dos mitades que el `engine` compone: la razón de
+- [x] **4.5.4 — `rationale` computado.** Dos mitades que el `engine` compone: la razón de
       *dato* que pone el generador desde el contexto, y la razón de *aprendizaje* que pone el
       scorer. Hoy el scorer calcula el delta de sus cuatro ejes y lo tira a `logger.debug`: pasa
       a devolver un `_score_parts` estructurado, que es el mismo cálculo dejando de descartarse.
@@ -2035,6 +2035,44 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       renderizado, así que queda congelado en el idioma en que se generó — un cambio de idioma
       no reescribe las sugerencias viejas. Es un tradeoff, no un bug, y la Fase 5 tiene que
       saberlo antes de contar msgids.
+- [x] **La composición vive en un módulo propio, `app/recommendations/explain.py`, y no en el
+      scorer ni en el motor.** El scorer puntúa y el motor orquesta; el vocabulario de cómo se
+      dice cada eje es una tercera cosa. La razón concreta: `_make_user_suggestion` y
+      `_make_household_suggestion` tenían **dos** `item.get("rationale", "")`, y con dos copias
+      la explicación de una tarjeta de la casa y la de una persona pueden divergir sin que nada
+      falle. Ahora las dos llaman `explain.rationale(item)`. Que una sugerencia de la casa
+      llegue con **una sola** mitad no es un caso degradado: `generate_for_household` no
+      puntúa, así que su explicación es la medición del generador y nada más.
+- [x] **El orden en que se nombran los ejes es declarado (`AXIS_ORDER`), no el de cómputo.** La
+      misma lección de la 4.5.2 y de `_MACRO_TRACKED`: un orden que sale de dónde quedó una
+      línea se cambia sin querer al agregar otra, y la explicación de dos corridas idénticas
+      dejaría de leerse igual. Y saciedad y diversidad no tienen forma positiva porque por
+      construcción solo restan — si llegara una con delta positivo se saltea en vez de
+      inventarle una frase.
+- [x] **El problema real no era escribir frases, era que los tres campos se pisaban.**
+      `evidence_summary` ya hacía parte del trabajo de `rationale`. La división quedó escrita en
+      el docstring de `explain.py`: `text` es la propuesta dirigida a la persona,
+      `evidence_summary` el rastro auditable con los números crudos, y `rationale` contesta
+      **por qué esta tarjeta y no otra** — la regla de selección instanciada. Así que cada
+      `rationale` nuevo nombra un número o una regla que los otros dos **no** dicen: el umbral
+      de stock bajo que la persona configuró, `_REST_DAY_THRESHOLD`, la ventana de recuperación
+      del grupo, la señal de preferencia con su fuerza, la ventana de recencia, cuál de los dos
+      macros ganó el desempate declarado.
+- [x] **Tres frases plausibles se descartaron por ser falsas, y eso es la mitad del trabajo.**
+      "El grupo que más pasó su ventana" es cierto de la **primera** tarjeta de catálogo y no de
+      la segunda —`_catalog_rows` ordena todo el pool y después toma una por `category`—, así que
+      la frase dice "de las opciones de {category} abiertas hoy". "La mejor fuente de tu
+      despensa" es falso cuando una sección anterior ya se llevó un portador mejor. Y
+      `_recency_phrase` existe porque "it appears 1 times" es la clase de detalle que hace que un
+      texto se lea como generado, y `ngettext` no sirve acá: no hay locale de request en un job.
+- [x] **La red que impide que esto se deshaga de a una cadena por vez.** `tests/test_explain.py`
+      (12 tests): las tres reglas, `AXIS_ORDER` contra el orden de cómputo, el eje desconocido, y
+      uno **estructural** que recorre el AST de los dos generadores y falla ante un `rationale`
+      literal, con una única excepción nombrada —la tarjeta de descanso, que se dispara con
+      `days_since == 0` y no tiene número que interpolar—. `blood_generator` (22 cadenas) y
+      `pantry_generator` (4) quedan fuera de la lista a propósito: son la 4.5.6 y la 4.5.7.
+      Suite de 643 a **655**; mypy sigue en 42 errores, los mismos. De paso, `engine.py` quedó
+      formateado con `black` —ya estaba sucio en HEAD y es un archivo que este cambio toca.
 - [ ] **4.5.5 — `_infer_category` y el atajo.** Una categoría desconocida deja de saltear los
       dos chequeos y pasa a mirar **los dos** conjuntos de bloqueos; el atajo de
       `_drop_blocked` se borra (ver corrección 2). El costo aceptado es más falsos positivos
@@ -2425,3 +2463,27 @@ Explícito, para que no se cuele por la ventana:
   request o de DB interpolado en un atributo `style` o en el parámetro `attrs` de un macro
   no tiene red de contención**, y por eso `components/ui.html` lleva escrita la regla de
   no interpolar nunca ahí, y `avatar_color` se valida en la escritura.
+- **Objetivos nutricionales declarados** (macros o calorías objetivo por persona). Sí es una
+  buena feature, y de las mejores que quedan: es el dato que le falta a la parte más nueva del
+  motor. La 4.5.3 tuvo que comparar a cada persona **consigo misma a la misma hora** —su propio
+  promedio de proteína y fibra en el desayuno— justamente porque no hay un objetivo contra el
+  que medir, y ese es el techo de honestidad de esa tarjeta: sabe decir "hoy vas por debajo de
+  tu propio promedio", no "te faltan 40 g para tu objetivo". Con un objetivo declarado, la escala
+  dejaría de tener un solo lado (hoy solo mira hacia abajo, porque "vas pesado de grasa" sin
+  objetivo es consejo dietario sin referencia), la despensa podría ordenarse por aporte al hueco
+  del día y no por antigüedad, y el hueco sería restable en vez de comparativo. Queda afuera de
+  v3 por tres razones concretas, no por falta de ganas:
+  1. **Es una feature de producto, no un ajuste del motor.** Necesita una pantalla donde
+     declararlos, validación de rangos plausibles, y una decisión de si son por persona o por
+     casa (por persona: `goals_json` y `target_weight_kg` ya existen en `User` y **nadie los
+     lee**, así que el lugar está, pero la UI no).
+  2. **Toca terreno clínico.** Un objetivo calórico o proteico que la app propone —en vez de uno
+     que la persona declara— es prescripción nutricional, y el mismo encuadre no diagnóstico que
+     la 4.5.6 le pone a la sangre habría que diseñarlo acá. Derivar un objetivo de edad, sexo,
+     peso y actividad es fácil de escribir y difícil de justificar.
+  3. **El dato de entrada todavía es flojo.** Los macros salen del catálogo de `FoodItem` y de
+     una cantidad estimada por el NLP; medir contra un objetivo exacto un total con ese margen
+     de error da una precisión falsa. Comparar a alguien consigo mismo tolera el sesgo porque
+     está en los dos lados de la comparación; restar contra un número absoluto no.
+  Candidata fuerte para v4, y el orden natural sería: pantalla de objetivos → los macros dejan
+  de ser comparativos → un panel de "cómo viene el día" que hoy no existe.

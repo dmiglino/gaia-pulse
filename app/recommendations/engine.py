@@ -23,7 +23,7 @@ from app.models.household import Household
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference, Suggestion
 from app.models.user import User
-from app.recommendations import filters, learning, scorer
+from app.recommendations import explain, filters, learning, scorer
 from app.recommendations.context import build_user_context
 from app.recommendations.generators import (
     activity_generator,
@@ -138,9 +138,7 @@ class RecommendationEngine:
             logger.exception("Failed to commit user suggestions for user_id=%d", user.id)
             raise
 
-        logger.info(
-            "Generated %d suggestion(s) for user_id=%d.", len(created), user.id
-        )
+        logger.info("Generated %d suggestion(s) for user_id=%d.", len(created), user.id)
         return created
 
     def generate_for_household(
@@ -199,9 +197,7 @@ class RecommendationEngine:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _get_preferences(
-        self, db: Session, user_id: int
-    ) -> list[RecommendationPreference]:
+    def _get_preferences(self, db: Session, user_id: int) -> list[RecommendationPreference]:
         """Las preferencias explícitas de esta persona.
 
         `SuggestionRepository.get_user_preferences` ya existía con esta misma consulta: el
@@ -247,9 +243,7 @@ class RecommendationEngine:
             for user in users
         ]
 
-    def _get_recent_suggestions_for_user(
-        self, db: Session, user_id: int
-    ) -> list[Suggestion]:
+    def _get_recent_suggestions_for_user(self, db: Session, user_id: int) -> list[Suggestion]:
         cutoff = datetime.now(UTC) - timedelta(days=_RECENT_SUGGESTION_DAYS)
         return SuggestionRepository(db).get_created_since(user_id, cutoff)
 
@@ -313,9 +307,14 @@ class RecommendationEngine:
             kept.append(item)
         return kept
 
-    def _make_user_suggestion(
-        self, user: User, item: dict[str, Any]
-    ) -> Suggestion:
+    #: Las dos formas de armar una sugerencia comparten la composición del `rationale`
+    #: (`explain.rationale`) a propósito: acá había dos `item.get("rationale", "")`, y con dos
+    #: copias la explicación de una tarjeta de la casa y la de una persona pueden divergir sin
+    #: que nada falle. La diferencia real entre los dos caminos queda a la vista: una
+    #: sugerencia de la casa no pasa por el scorer, así que su explicación es la medición del
+    #: generador y nada más.
+
+    def _make_user_suggestion(self, user: User, item: dict[str, Any]) -> Suggestion:
         score = float(item.get("_score", item.get("confidence", 0.5)))
         return Suggestion(
             scope_type="user",
@@ -326,7 +325,7 @@ class RecommendationEngine:
             subject_name=item.get("subject_name"),
             title=item["title"],
             text=item["text"],
-            rationale=item.get("rationale", ""),
+            rationale=explain.rationale(item),
             evidence_summary=item.get("evidence_summary"),
             confidence=round(min(max(score, 0.0), 1.0), 3),
             priority=self._confidence_to_priority(score),
@@ -334,9 +333,7 @@ class RecommendationEngine:
             status="pending",
         )
 
-    def _make_household_suggestion(
-        self, household: Household, item: dict[str, Any]
-    ) -> Suggestion:
+    def _make_household_suggestion(self, household: Household, item: dict[str, Any]) -> Suggestion:
         score = float(item.get("_score", item.get("confidence", 0.5)))
         return Suggestion(
             scope_type="household",
@@ -347,7 +344,7 @@ class RecommendationEngine:
             subject_name=item.get("subject_name"),
             title=item["title"],
             text=item["text"],
-            rationale=item.get("rationale", ""),
+            rationale=explain.rationale(item),
             evidence_summary=item.get("evidence_summary"),
             confidence=round(min(max(score, 0.0), 1.0), 3),
             priority=self._confidence_to_priority(score),

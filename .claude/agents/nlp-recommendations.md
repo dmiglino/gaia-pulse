@@ -102,6 +102,23 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   it is the one that can cede; sections 1, 2 and 4 can still all emit for the same
   subject, because the final de-dup is by **title** — fixing that needs a declared
   priority between the five sections, which does not exist yet (`docs/v3-plan.md`).
+- **An explanation is composed, never written twice.** `rationale` has two halves and
+  two authors: the generator measures (`rationale` key on the candidate) and the scorer
+  reports what moved the order (`explain.PARTS_KEY`, a list of `ScorePart`). Only
+  `explain.rationale()` joins them, and both `engine._make_user_suggestion` and
+  `_make_household_suggestion` call it — a second copy is how a household card and a
+  personal card start explaining differently. A household card legitimately arrives with
+  one half: `generate_for_household` does not score. Three rules hold: an axis with delta
+  0 is never named, ups and downs go in separate sentences (a net sign hides that both
+  happened), and with neither half the card says so (`explain.NOTHING_KNOWN`) instead of
+  falling back to a catalog phrase. New `rationale` values must cite a number or rule from
+  **this** run; `tests/test_explain.py::TestNoFixedRationalesLeft` walks the meal and
+  activity generators' ASTs and fails on a literal, with one named exception. Two
+  consequences: `rationale` is persisted **already rendered**, so it is frozen in the
+  language it was generated in and cannot be flipped at render time — these strings do not
+  pass through `_()` because a background job has no request locale — and
+  `evidence_summary` stays the raw-number trail while `rationale` answers *why this card
+  and not another*.
 - **An inferred negative must not be able to veto.** The filter drops a
   subject at `_FILTER_EVIDENCE_FLOOR` of live negative weight, and the sweep's
   `ABSENCE_VALUE` is set so that no reachable number of absences gets there —

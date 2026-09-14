@@ -40,7 +40,8 @@ from app.core.clock import as_utc
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import Suggestion
 from app.models.user import User
-from app.recommendations import learning
+from app.recommendations import explain, learning
+from app.recommendations.explain import ScorePart
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +107,20 @@ def score_candidates(
             pasa, y sin él el nivel atributo simplemente no aporta nada.
 
     Returns:
-        The same list, each dict augmented with a "_score" key, sorted
-        by _score descending.
+        The same list, each dict augmented with a "_score" key and un
+        `explain.PARTS_KEY` con los ejes que efectivamente lo movieron, ordenada por
+        `_score` descendente.
 
     Un candidato sin sujeto queda con su confianza cruda: no recibe boost, ni penalización,
     ni castigo por repetición. Es la consecuencia buscada de no tener fallback al título
     (ver `learning.candidate_subject`); que ningún generador se olvide de declararlo lo
     cuida un test que los recorre, no una rama acá.
+
+    Hasta la 4.5.4 los cinco deltas se calculaban, se tiraban a `logger.debug` y se
+    descartaban: la explicación que el usuario veía era una frase fija por regla y la razón
+    real del orden se perdía en un log que nadie mira. Ahora el mismo cálculo se devuelve —
+    ver `app/recommendations/explain.py`—; lo que queda del log es **una** línea de resumen
+    por candidato, que además se lee mejor que cinco sueltas.
     """
     if not candidates:
         return []
@@ -163,6 +171,9 @@ def score_candidates(
         base_score = float(candidate.get("confidence", 0.5))
         subject = learning.candidate_subject(candidate)
         adjustment = 0.0
+        #: Los ejes que movieron **este** candidato, y solo esos: un eje con delta 0 no entra,
+        #: porque nombrarlo es cómo una explicación vuelve a ser una plantilla (`explain`).
+        parts: list[ScorePart] = []
 
         if subject is not None:
             learned = affinity.get(subject)
@@ -177,14 +188,7 @@ def score_candidates(
             if strength:
                 delta = _learned_delta(strength)
                 adjustment += delta
-                logger.debug(
-                    "Candidate %r: %+.3f from subject %s (dirección=%+.2f, evidencia=%.2f)",
-                    candidate.get("title"),
-                    delta,
-                    subject,
-                    learned.direction if learned else 0.0,
-                    learned.evidence if learned else 0.0,
-                )
+                parts.append(ScorePart(explain.AXIS_SUBJECT, delta, subject[1]))
 
             #: El segundo nivel: lo que la app sabe de la categoría del candidato, sin
             #: contar al candidato mismo. Es lo único que puede mover una espinaca que
@@ -198,13 +202,12 @@ def score_candidates(
             if generalized is not None and generalized.strength:
                 delta = _learned_delta(generalized.strength) * _ATTRIBUTE_SIGNAL_SCALE
                 adjustment += delta
-                logger.debug(
-                    "Candidate %r: %+.3f from attribute %s (dirección=%+.2f, evidencia=%.2f)",
-                    candidate.get("title"),
-                    delta,
-                    attributes.get(subject),
-                    generalized.direction,
-                    generalized.evidence,
+                #: La etiqueta es el **valor** del atributo ("vegetable") y no el par entero:
+                #: lo que la explicación puede decir es "las verduras te caen bien", no
+                #: "food_category=vegetable".
+                attribute = attributes.get(subject)
+                parts.append(
+                    ScorePart(explain.AXIS_ATTRIBUTE, delta, attribute[1] if attribute else "")
                 )
 
             #: El tercer eje: la hora. Solo participan los candidatos que declaran para
@@ -217,13 +220,7 @@ def score_candidates(
                 if contrast:
                     delta = _learned_delta(contrast)
                     adjustment += delta
-                    logger.debug(
-                        "Candidate %r: %+.3f from slot %s (contraste=%+.2f)",
-                        candidate.get("title"),
-                        delta,
-                        slot,
-                        contrast,
-                    )
+                    parts.append(ScorePart(explain.AXIS_SLOT, delta, slot))
 
             #: Y lo que no es un gusto: cuánto de esto ya hubo hace muy poco. Nunca suma, y
             #: no es lo mismo que la penalización por diversidad de abajo: esa mira lo que
@@ -234,24 +231,23 @@ def score_candidates(
             if pressure:
                 delta = -_SATIETY_PENALTY * pressure
                 adjustment += delta
-                logger.debug(
-                    "Candidate %r: %+.3f from satiety (presión=%.2f)",
-                    candidate.get("title"),
-                    delta,
-                    pressure,
-                )
+                parts.append(ScorePart(explain.AXIS_SATIETY, delta, subject[1]))
 
             if subject in recent_subjects:
                 adjustment -= _DIVERSITY_PENALTY
-                logger.debug(
-                    "Candidate %r: -%.2f diversity penalty (subject %s already suggested).",
-                    candidate.get("title"),
-                    _DIVERSITY_PENALTY,
-                    subject,
-                )
+                parts.append(ScorePart(explain.AXIS_DIVERSITY, -_DIVERSITY_PENALTY, subject[1]))
 
         final_score = max(0.0, min(1.0, base_score + adjustment))
-        scored_candidate = {**candidate, "_score": round(final_score, 4)}
+        if parts:
+            logger.debug(
+                "Candidate %r: %.4f = %.3f base %+.3f (%s)",
+                candidate.get("title"),
+                final_score,
+                base_score,
+                adjustment,
+                ", ".join(f"{part.axis} {part.delta:+.3f}" for part in parts),
+            )
+        scored_candidate = {**candidate, "_score": round(final_score, 4), explain.PARTS_KEY: parts}
         scored.append(scored_candidate)
 
     scored.sort(key=lambda c: c["_score"], reverse=True)

@@ -285,7 +285,13 @@ def generate(
                     "You already worked out today. A short walk or yoga session can support "
                     "recovery without over-training."
                 ),
-                "rationale": "Adequate rest is essential for muscle repair and performance.",
+                #: Por qué esta tarjeta: `days_since == 0`. No hay número más que ese, y decir
+                #: "el descanso es esencial para la reparación muscular" era afirmar
+                #: fisiología general en el lugar donde va la razón de **esta** tarjeta.
+                "rationale": (
+                    "You already logged a session today, so what is missing is recovery, "
+                    "not another stimulus."
+                ),
                 "evidence_summary": "Workout logged today.",
                 "confidence": 0.75,
                 "source_type": "rule",
@@ -298,6 +304,17 @@ def generate(
             "No workouts logged yet"
             if days_since is None
             else f"{days_since} days since last workout"
+        )
+        #: Los dos casos se dicen distinto por lo mismo que la rotación los distingue: "no hay
+        #: nada registrado" y "hace ocho días" son dos situaciones, y el umbral solo aplica a
+        #: la segunda. Nombrarlo es lo que el texto no dice y lo que contesta por qué hoy.
+        nudge_why = (
+            "You have no sessions on record at all, which is where this nudge starts."
+            if days_since is None
+            else (
+                f"{days_since} days without a session, past the {_REST_DAY_THRESHOLD}-day "
+                "mark where this nudge starts."
+            )
         )
         suggestions.append(
             {
@@ -314,10 +331,7 @@ def generate(
                     "It's been a few days since your last workout. "
                     "Even a 30-minute session can boost your mood and energy."
                 ),
-                "rationale": (
-                    "Consistency is key for fitness — regular activity supports "
-                    "long-term wellness."
-                ),
+                "rationale": nudge_why,
                 "evidence_summary": reason + ".",
                 "confidence": 0.8,
                 "source_type": "rule",
@@ -339,6 +353,10 @@ def generate(
                 "routine and helps keep both sides of your body evenly loaded."
             )
             evidence = f"No {group} stimulus on record."
+            rotation_why = (
+                f"{group} has no stimulus on record, which puts it ahead of every group "
+                "that has one."
+            )
         else:
             text = (
                 f"It's been {group_days_since} days since your last {group} session, past "
@@ -349,6 +367,10 @@ def generate(
                 f"(recovery window: {_recovery_window(group)} days). "
                 f"Still recovering: {', '.join(sorted(recovering)) or 'none'}."
             )
+            rotation_why = (
+                f"Of the groups outside their recovery window, {group} is the one that has "
+                f"waited longest past its own {_recovery_window(group)} days."
+            )
         suggestions.append(
             {
                 "category": "activity",
@@ -356,10 +378,7 @@ def generate(
                 "subject_name": group,
                 "title": f"Train {group} today",
                 "text": text,
-                "rationale": (
-                    "Balanced muscle group training reduces injury risk and improves "
-                    "overall strength."
-                ),
+                "rationale": rotation_why,
                 "evidence_summary": evidence,
                 "confidence": 0.65,
                 "source_type": "rule",
@@ -377,7 +396,14 @@ def generate(
                 "subject_name": activity,
                 "title": f"Go {activity}",
                 "text": f"You enjoy {activity} — it's a great option for today's workout.",
-                "rationale": "Suggests an activity the user has expressed preference for.",
+                #: Lo que decide esta tarjeta es la **precedencia**, no la actividad: la
+                #: lista de preferidas se recorre antes que el catálogo y sus nombres se
+                #: excluyen de él (`excluded=... | set(preferred)`), así que estar en la
+                #: lista es la razón entera por la que esta salió y no una del catálogo.
+                "rationale": (
+                    f"{activity} is on the list of activities you said you like, which is "
+                    "ranked ahead of the catalog."
+                ),
                 "evidence_summary": f"User preference signal: likes/preferred for '{activity}'.",
                 "confidence": 0.8,
                 "source_type": "preference",
@@ -408,6 +434,24 @@ def generate(
             group = normalize_muscle_group(row.muscle_group or "")
             intensity = (row.intensity or "moderate").strip().lower()
             category = (row.category or "other").strip().lower()
+            #: Por qué **esta** fila y no otra del catálogo, dicho sin exagerar lo que el
+            #: orden garantiza. `_catalog_rows` ordena todo el pool elegible por atraso y
+            #: después se queda con la primera de cada `category`, así que lo cierto de la
+            #: segunda tarjeta no es "el grupo más atrasado de todos" —eso es la primera—
+            #: sino "el más atrasado **de su categoría**". Y "abiertas hoy" y no "del
+            #: catálogo": lo imposible, lo que no gusta, lo preferido y lo de alta
+            #: intensidad después de una sesión ya quedaron afuera antes de ordenar.
+            catalog_why = (
+                (
+                    f"{group} is not inside its recovery window, and of the {category} "
+                    "options open to you today it is the one that has waited longest."
+                )
+                if group
+                else (
+                    "It declares no muscle group, so there is nothing overdue to rank it "
+                    f"by: it is simply the first {category} option in today's order."
+                )
+            )
             suggestions.append(
                 {
                     "category": "activity",
@@ -422,10 +466,7 @@ def generate(
                         + (f" for {group}" if group else "")
                         + ". It fits what your week is missing."
                     ),
-                    "rationale": (
-                        "Draws on the exercise catalog, favouring the muscle group that has "
-                        "gone longest past its recovery window."
-                    ),
+                    "rationale": catalog_why,
                     "evidence_summary": (
                         f"Catalog exercise ({category}, {intensity} intensity"
                         + (f", {group}" if group else "")
