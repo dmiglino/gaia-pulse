@@ -121,15 +121,16 @@ class TestRationale:
 
 
 class TestNoFixedRationalesLeft:
-    """Que ningún `rationale` de comida o actividad vuelva a ser una cadena literal.
+    """Que ningún `rationale` de un generador vuelva a ser una cadena literal.
 
     Sirve para lo que un test de comportamiento no alcanza: una frase fija nueva pasa todos
-    los tests de generador porque el campo sigue siendo un `str`. `blood_generator` y
-    `pantry_generator` quedan afuera a propósito — sus cadenas son la 4.5.6 y la 4.5.7, y
-    listarlas acá haría fallar el test por trabajo que todavía no toca.
+    los tests de generador porque el campo sigue siendo un `str`. `pantry_generator` queda
+    afuera a propósito —sus cuatro cadenas son la 4.5.7 y listarlo acá haría fallar el test
+    por trabajo que todavía no toca—; `blood_generator` entró con la 4.5.6, cuando sus 22
+    razones pasaron a citar el valor medido y la fecha del panel.
     """
 
-    _GENERATORS = ("meal_generator.py", "activity_generator.py")
+    _GENERATORS = ("meal_generator.py", "activity_generator.py", "blood_generator.py")
 
     #: La única excepción, y con nombre para que agregar otra cueste una decisión: la tarjeta
     #: de descanso se dispara con `days_since == 0` y no hay número que interpolar — "hoy" es

@@ -49,6 +49,27 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   empty the comparisons cannot drop anything, which is precisely why a shortcut
   there is a trap: the day the filter must consult something else, the shortcut
   skips it silently with the suite green.
+- **A lab number expires, and an app does not diagnose.** `blood_generator` reads
+  `BloodPanel.age_days` before it reads a single marker, and the band decides the
+  behaviour: fresh advises and names the panel's date, stale advises with a caveat
+  and `_STALE_CONFIDENCE_FACTOR` applied, and past `_OBSOLETE_DAYS` — or with **no
+  date at all** — no advice is emitted, only one "repeat the panel" card with its own
+  subject (`_REFRESH_SUBJECT`). Undated is its own band on purpose: an unknown age
+  weighs as old rather than new, but a two-year-old panel gets repeated while an
+  unreadable date gets re-uploaded. That card says **how many** markers went unread,
+  never which — naming them is the advice the branch exists not to give — and an
+  obsolete panel with nothing out of range emits nothing, because the reason to
+  repeat it is that something was left unread. Each catalog entry declares only what
+  it alone knows (`_Advice`: the food or movement, the mechanism that ties it to the
+  marker, and a title that names the route, not the order); `_compose` writes the
+  observation, the date and the caveat **once**, which is the 4.5.4 rule one level
+  down. Two things stay out of the card: a condition's name — that is the step that
+  is not ours, and `TestBloodPanelBands` fails on the vocabulary — and the
+  not-a-diagnosis notice, which lives once per screen and translated in
+  `_DISCLAIMER_TEMPLATES`; putting it back in `text` writes the same rule twice, in
+  frozen English, three times per screen. The referral cards for TSH and creatinine
+  stay (telling someone to ask whoever ordered the panel is the right thing to say)
+  and go through `apply_hard_constraints` like everything else.
 - `app/recommendations/learning.py` is not a fifth stage: it is the shared
   vocabulary of what the app learns —what a subject is (`subject_type` +
   `subject_name`), which `signal_type`s count, temporal decay, confidence by

@@ -1,6 +1,7 @@
 """Tests for the recommendation engine."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -16,7 +17,21 @@ from app.models.user import User
 from app.recommendations import learning, scorer
 from app.recommendations.context import BloodPanel, build_user_context
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
+from app.recommendations.generators import blood_generator
 from app.recommendations.scorer import score_candidates
+
+
+def _panel(values: dict[str, Any], age_days: int | None) -> BloodPanel:
+    """Un panel de sangre con la antigüedad que el test quiere medir y la fecha que le toca.
+
+    Los dos campos tienen que contar la misma historia: `age_days` es lo que el generador lee
+    para decidir la banda, y `analysis_date` es lo que sale escrito en la tarjeta. Armarlos
+    por separado en cada caso es cómo se cuela un panel que dice "hace ocho meses" con la
+    fecha de ayer, que pasaría verde midiendo una contradicción. `age_days=None` es el panel
+    cuya fecha el parser no pudo leer, y ahí no hay fecha que poner.
+    """
+    analysis_date = None if age_days is None else date.today() - timedelta(days=age_days)
+    return BloodPanel(values=values, analysis_date=analysis_date, age_days=age_days)
 
 
 class TestHardConstraints:
@@ -1567,11 +1582,12 @@ class TestEveryCandidateDeclaresItsSubject:
             # normal: no produce nada, y está para que eso siga siendo cierto
             "glucose": {"value": 90, "unit": "mg/dL", "status": "normal"},
         }
-        #: Un panel sin fecha: `age_days=None` es "no sé de cuándo es", que es el caso
-        #: real cuando el parser no encuentra la fecha. Que el generador siga produciendo
-        #: candidatos con eso es lo que hace que 4.5.6 —usar la antigüedad— sea un cambio
-        #: de conducta y no un arreglo de un `None` que rompía.
-        panel = BloodPanel(values=blood_values, analysis_date=None, age_days=None)
+        #: Un panel **fresco y con fecha**: es la única banda en la que el generador aconseja
+        #: sobre los marcadores. Antes acá había un panel sin fecha (`age_days=None`) y el
+        #: generador producía las mismas cinco tarjetas, que es justo lo que la 4.5.6 dejó de
+        #: hacer: la antigüedad ahora decide. Las otras tres bandas se miden en
+        #: `TestBloodPanelBands`.
+        panel = _panel(blood_values, age_days=7)
         candidates = blood_generator.generate(diego, panel)
         self._assert_subjects(candidates, 5)
         assert all(c["subject_type"] == "biomarker" for c in candidates)
@@ -1585,3 +1601,184 @@ class TestEveryCandidateDeclaresItsSubject:
         candidates = pantry_generator.generate(db, household.id)
         # agotados + bajos + regulares + el par de co-compra
         self._assert_subjects(candidates, 4)
+
+
+class TestBloodPanelBands:
+    """Qué hace el generador de sangre según de cuándo sea el panel.
+
+    Hasta la 4.5.6 la respuesta era "lo mismo siempre": `analysis_date` estaba en el modelo,
+    la antigüedad no se leía en ningún lado, y un panel de hace tres años dictaba el consejo
+    de hoy con la misma confianza que uno de la semana pasada. Ahora hay cuatro bandas y cada
+    una tiene una conducta distinta, así que hay un caso por banda: sin eso, borrar el umbral
+    dejaría la suite en verde.
+    """
+
+    _ABNORMAL = {
+        "hemoglobin": {"value": 10.1, "unit": "g/dL", "status": "low"},
+        "ldl": {"value": 190, "unit": "mg/dL", "status": "critical_high"},
+    }
+    _ALL_NORMAL = {
+        "hemoglobin": {"value": 14.2, "unit": "g/dL", "status": "normal"},
+        "glucose": {"value": 90, "unit": "mg/dL", "status": "normal"},
+    }
+
+    @staticmethod
+    def _generate(diego: User, values: dict[str, Any], age_days: int | None) -> list[Any]:
+        from app.recommendations.generators import blood_generator
+
+        return blood_generator.generate(diego, _panel(values, age_days))
+
+    def test_a_fresh_panel_advises_and_says_which_panel_it_read(self, diego: User) -> None:
+        from app.recommendations.generators import blood_generator
+
+        panel = _panel(self._ABNORMAL, age_days=10)
+        candidates = blood_generator.generate(diego, panel)
+
+        assert candidates, "un panel fresco con dos marcadores fuera de rango tiene que aconsejar"
+        assert all(c["subject_type"] == "biomarker" for c in candidates)
+        assert panel.analysis_date is not None
+        iso = panel.analysis_date.isoformat()
+        #: La fecha va en el texto y no solo en `evidence_summary`: el punto de la 4.5.6 es que
+        #: la persona pueda ver de cuándo es el número antes de decidir si le sirve.
+        assert all(iso in c["text"] for c in candidates)
+        assert all(iso in c["rationale"] for c in candidates)
+
+    #: Lo que decía el catálogo antes de la 4.5.6, palabra por palabra: `rationale` era
+    #: *"Low hemoglobin may indicate iron deficiency anemia."* y el `text` un imperativo con
+    #: la condición nombrada. Nombrar una condición a partir de un número es el paso que no
+    #: le toca a la app, y es el que una entrada nueva reintroduce sin que nada más lo note.
+    _DIAGNOSTIC_WORDS = (
+        "anemia",
+        "deficiency",
+        "diabetes",
+        "hypothyroid",
+        "hyperthyroid",
+        "disease",
+        "disorder",
+        "syndrome",
+        "may indicate",
+        "suggests",
+        "diagnos",
+    )
+
+    def test_no_entry_in_the_catalog_names_a_condition(self) -> None:
+        offenders = [
+            f"{key}/{bucket}: {word}"
+            for key, buckets in blood_generator._BIOMARKER_ADVICE.items()
+            for bucket, entries in buckets.items()
+            for advice in entries
+            for word in self._DIAGNOSTIC_WORDS
+            if word in f"{advice.title} {advice.action} {advice.mechanism}".lower()
+        ]
+        assert offenders == [], (
+            "una entrada volvió al encuadre diagnóstico: la tarjeta observa un número y "
+            f"propone comida o movimiento, no nombra una condición ({', '.join(offenders)})"
+        )
+
+    def test_the_screens_that_show_these_cards_carry_the_disclaimer(self) -> None:
+        """La otra mitad del encuadre, y la que se puede borrar sin que falle nada más.
+
+        La línea de no-diagnóstico no va dentro del `text` de cada tarjeta —quedaba tres veces
+        en la misma pantalla y en inglés fijo, porque estas cadenas se persisten renderizadas—
+        sino una vez por pantalla y traducida. Eso deja el encuadre dependiendo de dos
+        plantillas, así que acá se mide que sigan llevándolo: sin este test, borrar el
+        `ui.notice` deja el consejo de sangre sin ningún aviso y la suite en verde.
+        """
+        root = Path(__file__).resolve().parents[1]
+        for relative in blood_generator._DISCLAIMER_TEMPLATES:
+            source = (root / relative).read_text(encoding="utf-8")
+            assert "not a diagnosis" in source, (
+                f"{relative} dejó de llevar el aviso de no-diagnóstico, que es el único "
+                "lugar donde vive: las tarjetas de sangre no lo repiten"
+            )
+            assert "blood_analysis" in source, (
+                f"{relative} lleva el aviso pero ya no lo condiciona a que haya una tarjeta "
+                "de sangre en la lista"
+            )
+
+    def test_a_stale_panel_advises_with_the_caveat_and_ranks_lower(self, diego: User) -> None:
+        fresh = {c["title"]: c for c in self._generate(diego, self._ABNORMAL, 10)}
+        stale = {c["title"]: c for c in self._generate(diego, self._ABNORMAL, 200)}
+
+        #: Mismas tarjetas: pasada la frescura el consejo no cambia de contenido, cambia de
+        #: peso y de encuadre. Si dejaran de coincidir, comparar las confianzas de abajo no
+        #: mediría nada.
+        assert set(fresh) == set(stale)
+        for title, stale_card in stale.items():
+            assert stale_card["confidence"] < fresh[title]["confidence"]
+            assert "may no longer describe you" in stale_card["text"]
+            assert str(blood_generator._FRESH_DAYS) in stale_card["rationale"]
+
+    def test_an_obsolete_panel_advises_nothing_and_asks_for_a_new_one(self, diego: User) -> None:
+        candidates = self._generate(diego, self._ABNORMAL, 500)
+
+        assert len(candidates) == 1, "pasado el techo sale una sola tarjeta, no una por marcador"
+        card = candidates[0]
+        assert card["subject_type"] == "habit"
+        assert card["subject_name"] == blood_generator._REFRESH_SUBJECT
+        #: Cuántos marcadores quedaron sin leer, no cuáles: nombrarlos sería dar exactamente el
+        #: consejo que esta rama existe para no dar.
+        assert "2" in card["text"]
+        assert not {"hemoglobin", "ldl"} & set(card["text"].lower().split())
+
+    def test_an_undated_panel_gets_its_own_message_and_no_advice(self, diego: User) -> None:
+        """Sin fecha cuenta como viejo, no como nuevo — y lo dice distinto.
+
+        Son dos situaciones que se arreglan de maneras distintas: un panel de dos años se
+        repite, uno cuya fecha no se pudo leer se vuelve a subir. Que compartan la banda
+        haría que la tarjeta le pidiera un análisis nuevo a quien ya tiene uno reciente.
+        """
+        undated = self._generate(diego, self._ABNORMAL, None)
+        obsolete = self._generate(diego, self._ABNORMAL, 500)
+
+        assert len(undated) == 1
+        assert undated[0]["subject_name"] == blood_generator._REFRESH_SUBJECT
+        assert undated[0]["title"] != obsolete[0]["title"]
+        assert "no date" in undated[0]["text"]
+
+    def test_an_obsolete_panel_with_nothing_out_of_range_says_nothing(self, diego: User) -> None:
+        """El aviso de repetir el panel tiene una razón, y sin la razón no hay aviso.
+
+        La razón es que había algo sin leer. Con todos los marcadores en rango, pedir un
+        análisis nuevo sería una nota al pie con forma de alarma.
+        """
+        assert self._generate(diego, self._ALL_NORMAL, 500) == []
+        assert self._generate(diego, self._ALL_NORMAL, None) == []
+
+    def test_the_referral_cards_stay_and_are_filtered_like_every_other_candidate(
+        self, diego: User
+    ) -> None:
+        """Las derivaciones se quedan —decirle a alguien que consulte a quien pidió el análisis
+        es lo correcto— pero atraviesan los filtros como todas. Son las tarjetas
+        `category="habit"` que hasta la 4.5.5 los eludían por venir de una categoría que el
+        filtro no sabía clasificar, así que acá se mide lo que quedó cerrado: que sigan
+        saliendo, y que un bloqueo declarado alcance a la que le corresponde.
+        """
+        candidates = self._generate(
+            diego,
+            {
+                "tsh": {"value": 6.1, "unit": "mUI/L", "status": "high"},
+                "creatinine": {"value": 1.6, "unit": "mg/dL", "status": "high"},
+            },
+            age_days=10,
+        )
+        referrals = [c for c in candidates if c["category"] == "habit"]
+        assert len(referrals) == 2, "las dos derivaciones tienen que seguir emitiéndose"
+
+        #: Sin nada que bloquear no desaparece ninguna, ni por accidente: Diego tiene natación
+        #: como imposible y ninguna de estas dos tarjetas la nombra.
+        assert apply_hard_constraints(candidates, diego, []) == candidates
+
+        #: Una restricción de líquidos es exactamente el caso en el que "tomá más agua" no se
+        #: le puede decir a alguien, y es un bloqueo declarado como cualquier otro.
+        no_water = RecommendationPreference(
+            user_id=diego.id,
+            item_type="food",
+            item_name="water",
+            preference_signal="avoid",
+            strength=1.0,
+        )
+        kept = apply_hard_constraints(candidates, diego, [no_water])
+        creatinine_card = next(c for c in referrals if c["subject_name"] == "creatinine")
+        assert creatinine_card not in kept
+        assert next(c for c in referrals if c["subject_name"] == "tsh") in kept

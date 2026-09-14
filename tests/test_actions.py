@@ -131,7 +131,7 @@ class TestSuggestionActionMap:
     @pytest.mark.parametrize("category", ["meal", "activity", "habit"])
     def test_blood_panel_advice_never_gets_an_action(self, category):
         # Es el caso que importa, y no se puede decidir por la categoría: el generador de
-        # sangre emite 19 filas de `meal` y 5 de `activity` — "comé menos carne roja" —,
+        # sangre emite 15 entradas de `meal` y 4 de `activity` — "comé menos carne roja" —,
         # así que mirar solo la categoría le ponía un "Anotar una comida" a un consejo de
         # **no** comer algo, y encima reemplazando al "Me parece bien": la única respuesta
         # afirmativa posible abría la captura con "Comimos " escrito.
@@ -143,28 +143,34 @@ class TestSuggestionActionMap:
         # El test de arriba vale por lo que este verifica, que son los dos hechos en los
         # que se apoya la exclusión: que el generador estampe este `source_type` en cada
         # candidato, y que sus categorías no lo distingan de nada — son las mismas `meal`
-        # y `activity` que emite el resto, no `habit`. Si cualquiera de las dos cosas
-        # cambia, el consejo del panel vuelve a llevar botón y nada más lo nota.
+        # y `activity` que emite el resto. Si cualquiera de las dos cosas cambia, el consejo
+        # del panel vuelve a llevar botón y nada más lo nota.
+        from datetime import date, timedelta
+
         from app.recommendations.context import BloodPanel
         from app.recommendations.generators.blood_generator import (
-            _BIOMARKER_SUGGESTIONS,
+            _BIOMARKER_ADVICE,
             generate,
         )
 
         declared = {
-            s["category"]
-            for buckets in _BIOMARKER_SUGGESTIONS.values()
+            advice.category
+            for buckets in _BIOMARKER_ADVICE.values()
             for bucket in buckets.values()
-            for s in bucket
+            for advice in bucket
         }
         assert "meal" in declared
 
+        # El panel va con fecha reciente a propósito: desde la 4.5.6 uno viejo o sin fecha no
+        # produce consejo sino una sola tarjeta de "repetí el panel", que también sale con este
+        # `source_type` y por lo tanto también queda sin botón —lo correcto, porque la acción
+        # que pide es subir un análisis y no registrar nada— pero no es lo que este test mide.
         produced = generate(
             diego,
             BloodPanel(
                 values={"hemoglobin": {"status": "low", "value": 10, "unit": "g/dL"}},
-                analysis_date=None,
-                age_days=None,
+                analysis_date=date.today() - timedelta(days=14),
+                age_days=14,
             ),
         )
         assert produced, "el generador dejó de emitir para un hemograma bajo"

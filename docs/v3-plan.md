@@ -2109,7 +2109,7 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       el log de descarte pasa a decir **cuál** de los dos lados bloqueó: en un filtro que borra
       sin dejar rastro en la UI, es la única forma de auditar por qué desapareció una tarjeta.
       Cuatro tests nuevos en `TestHardConstraints`, suite de 655 a **659**; mypy sigue en 42.
-- [ ] **4.5.6 — Sangre: antigüedad del panel y encuadre no diagnóstico.** El contexto lleva
+- [x] **4.5.6 — Sangre: antigüedad del panel y encuadre no diagnóstico.** El contexto lleva
       fecha y antigüedad —hoy `BloodAnalysisService.get_latest_values` ordena por
       `analysis_date` y devuelve **solo** `values_json`, que es exactamente por qué la
       antigüedad nunca se chequea—. Umbral de frescura (~180 días) y techo de obsolescencia
@@ -2119,6 +2119,79 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       médico; las derivaciones de TSH y creatinina **se quedan** (decirle a alguien que
       consulte es lo correcto) pero atraviesan los filtros como todas. **Revisión de
       `security-privacy` obligatoria**, por dato de salud y por encuadre.
+- [x] **No son tres bandas sino cuatro, y la cuarta es "sin fecha".** El plan hablaba de
+      frescura y techo; el panel sin fecha no es ninguno de los dos y es un caso real, porque
+      `blood_analysis_parser._extract_date` no siempre encuentra la fecha. Se decidió que
+      **una antigüedad desconocida pesa como vieja y no como nueva** —el costo de aconsejar
+      sobre un número que podría ser de hace años es peor que una tarjeta de menos, y el
+      docstring de `BloodPanel` ya lo decía—, pero con mensaje propio: un panel de dos años se
+      repite, uno cuya fecha no se pudo leer **se vuelve a subir**. Compartir la banda haría
+      que la tarjeta le pidiera un análisis nuevo a quien acaba de subir uno. Y hay un límite
+      que la frescura no puede prometer: `_extract_date` toma la **primera** fecha del
+      documento, así que puede ser una fecha de nacimiento o de impresión. Anclarla a la
+      etiqueta es un cambio del parser, queda anotado abajo.
+- [x] **Un panel obsoleto con todo en rango no produce nada, ni el aviso de repetirlo.** La
+      razón para hacerse uno nuevo es que había algo que se dejó sin leer; sin eso, el aviso
+      sería una nota al pie con forma de alarma. Y la tarjeta dice **cuántos** marcadores
+      quedaron sin leer, no cuáles: nombrarlos sería dar exactamente el consejo que esa rama
+      existe para no dar.
+- [x] **La tarjeta de "repetí el panel" nombra la pantalla en el texto en vez de llevar botón.**
+      `web.actions.suggestion_action` devuelve `None` para **todo** `source_type ==
+      "blood_analysis"`, y esa regla existe porque ponerle "Anotar una comida" a un consejo de
+      *no* comer algo fue un bug real. Darle acción a esta tarjeta necesitaría un
+      discriminador que no sea `source_type` (un `category="reminder"`, por ejemplo) y
+      reordenar `suggestion_action`; no vale abrir esa puerta por una tarjeta. Queda anotado.
+- [x] **La regla de la 4.5.4 un nivel más abajo: `_Advice` tiene tres campos y no un `text`.**
+      Reescribir a mano las 22 cadenas habría dejado 22 lugares donde el encuadre puede
+      divergir. Cada entrada declara ahora solo lo que **sabe únicamente ella** —`action` (el
+      alimento o el movimiento), `mechanism` (por qué ese alimento se relaciona con ese
+      marcador: una afirmación sobre la comida, nunca sobre el cuerpo de quien lee) y un título
+      que nombra la ruta y no la orden: "Oats at breakfast", no "Limit saturated fats"—, y la
+      observación, la fecha, el reparo por antigüedad y la confianza los compone `_compose` una
+      vez. `_Reading` existe por la misma razón del otro lado: las lecturas del blob del parser
+      (`.get` con default) quedaron en un solo lugar y `_compose` toma cuatro argumentos en vez
+      de siete. Los alimentos y los movimientos son los mismos de antes; lo que se fue son los
+      imperativos y las condiciones nombradas.
+- [x] **Hallazgo de la revisión de `security-privacy`: el aviso de no-diagnóstico quedaba tres
+      veces en la misma pantalla.** La primera versión lo cerraba en el `text` de cada tarjeta,
+      y `suggestions/partials/list.html` y `home.html` **ya lo renderizan** con `ui.notice`,
+      traducido y condicionado a que haya una tarjeta de sangre en la lista. O sea la misma
+      regla escrita dos veces, y la copia de adentro de la tarjeta es la que no se puede
+      traducir ni corregir sin migrar datos, porque `text` y `rationale` se persisten
+      renderizados. Se quitó la copia del generador: la tarjeta observa y propone, la pantalla
+      dice una vez quién puede leer el número. El costo es que el encuadre pasa a depender de
+      dos plantillas, así que hay un test que las lee y falla si dejan de llevarlo
+      (`test_the_screens_that_show_these_cards_carry_the_disclaimer`), más otro que recorre las
+      22 entradas y falla ante vocabulario diagnóstico ("anemia", "deficiency", "may
+      indicate"…), que es la forma en que el encuadre viejo volvería sin que nada lo note.
+      El resto de la revisión: los dos `logger` registran `user_id`, banda y **cantidad** de
+      marcadores, nunca un valor ni un nombre de marcador ni la fecha; las tarjetas son de
+      scope personal (`_visible_to` las filtra por `scope_user_id`), así que el valor de
+      laboratorio que ahora aparece en `rationale` no cruza a la otra persona de la casa —y ya
+      aparecía en `evidence_summary`, que la pantalla renderiza desde la 4.5.4—. Verdicto:
+      `APPROVE`.
+- [x] **Fechas en ISO y no en `%d %b %Y`, y por qué estas cadenas no pasan por `_()`.** El
+      nombre del mes depende del locale del proceso, y esto corre en un job de fondo sin locale
+      de request — la misma razón por la que `rationale` se persiste ya renderizado (4.5.4).
+      Un `2026-01-17` es legible en cualquier locale; un `17 Jan 2026` es una decisión de idioma
+      tomada por accidente.
+- [x] **La antigüedad no cambia solo el texto: cambia el score.** Un panel viejo advierte con
+      el reparo y con la confianza multiplicada por `_STALE_CONFIDENCE_FACTOR`, que es la
+      respuesta graduada entre tratarlo como si fuera de ayer y callarse. Los tres umbrales
+      están declarados como constantes de módulo para que moverlos sea una decisión y no un
+      literal escondido en un `if`.
+- [x] **`blood_generator.py` entra a `TestNoFixedRationalesLeft`** — sus 22 razones ahora citan
+      el valor medido y la fecha del panel, así que ya no hay motivo para la exclusión que la
+      4.5.4 dejó anotada. Queda `pantry_generator` (4 cadenas), que es la 4.5.7. Ocho tests
+      nuevos en `TestBloodPanelBands` (uno por banda, el silencio del panel obsoleto sin nada
+      fuera de rango, las dos derivaciones atravesando `apply_hard_constraints`, y las dos
+      mitades del encuadre), suite de 659 a **667**; mypy sigue en 42. Dos tests existentes
+      cambiaron de panel: el de `TestEveryCandidateDeclaresItsSubject` y el de `test_actions.py`
+      pasaban un panel **sin fecha** y esperaban consejo, que es justo lo que dejó de pasar —
+      ahora usan uno fresco y con fecha, y un helper `_panel(values, age_days)` mantiene la
+      fecha y la antigüedad contando la misma historia. De paso, `blood_generator.py` quedó sin
+      los 26 `E501` (22 ya estaban en HEAD) y el comentario de `test_actions.py` que decía "19
+      filas de `meal` y 5 de `activity`" pasa a decir las cantidades reales: 15 y 4.
 - [ ] **4.5.7 — Conectar `generate_for_household`.** Existe, filtra bien la asimetría
       unión/intersección de 4.4.9 y tiene **cero llamadores**, así que todo el generador de
       pantry y compras nunca llegó a nadie. Un loop de hogares en `suggestion_jobs` sobre
@@ -2517,3 +2590,19 @@ Explícito, para que no se cuele por la ventana:
      está en los dos lados de la comparación; restar contra un número absoluto no.
   Candidata fuerte para v4, y el orden natural sería: pantalla de objetivos → los macros dejan
   de ser comparativos → un panel de "cómo viene el día" que hoy no existe.
+- **Anclar la fecha del panel a su etiqueta.** `blood_analysis_parser._extract_date` toma la
+  **primera** cadena con forma de fecha de todo el documento, así que puede devolver una fecha
+  de nacimiento o de impresión. Eso acota lo que la frescura de la 4.5.6 puede prometer: el
+  generador confía en la fecha que recibe y no tiene forma de dudar de ella. Arreglarlo es un
+  cambio del parser —patrones anclados a etiquetas ("Fecha de extracción", "Collected")— con su
+  propio juego de fixtures de laboratorios reales, y el camino del LLM ya pide `analysis_date`
+  explícito y es mejor. Tampoco hay hoy ninguna ruta que permita **corregir** la fecha de un
+  panel: `app/web/health.py` tiene índice, alta, detalle y borrado, nada más. Las dos cosas van
+  juntas y son un cambio propio.
+- **Botón de acción en la tarjeta de "repetí el panel".** Hoy nombra la pantalla de Salud en el
+  texto porque `web.actions.suggestion_action` devuelve `None` para todo `source_type ==
+  "blood_analysis"`, y esa regla existe por un bug real: mirar la categoría le ponía "Anotar una
+  comida" a un consejo de **no** comer algo. Darle acción a esta tarjeta necesita un
+  discriminador que no sea `source_type` —un `category="reminder"`, por ejemplo— y reordenar la
+  función para que lo consulte antes de la exclusión. Es poco código y una decisión de diseño de
+  la taxonomía de tarjetas; no vale abrirla por una tarjeta.
