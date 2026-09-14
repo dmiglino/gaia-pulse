@@ -264,12 +264,6 @@ aserciones en castellano que ya están—, y por eso la 6.2 lo enseña en negati
 captura") en vez de que la Fase 6 lo abra. Lo que sí funciona son varios hechos del mismo tema:
 `pesé 81 kg y dormí 7 horas` es una sola medición con las dos cosas.
 
-**Anclar la fecha del panel de sangre a su etiqueta.** El parser toma la **primera**
-cadena con forma de fecha del documento, así que puede devolver una fecha de nacimiento o
-de impresión. Eso acota lo que la "frescura del panel" puede prometer: el generador confía
-en la fecha que recibe y no tiene forma de dudar de ella. Tampoco hay ruta para
-**corregirla**. Las dos cosas van juntas.
-
 **Remember-me y recuperación de contraseña.** Tocan sesión y auth; v3 quitó las promesas
 muertas de la UI en vez de implementarlas a medias.
 

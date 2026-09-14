@@ -2899,12 +2899,19 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       gana siempre sobre lo que dijo la frase. `tests/test_nlp_service.py::TestTimestampResolution`
       y las nuevas aserciones de `tests/test_web_capture.py` cubren ambos caminos.
 
-**7.4 — Anclar la fecha del panel de sangre a su etiqueta**
+**7.4 — Anclar la fecha del panel de sangre a su etiqueta** — cerrada (`83fb647`):
 
-- [ ] `blood_analysis_parser._extract_date` deja de tomar la primera fecha del documento y
-      busca patrones anclados a una etiqueta ("Fecha de extracción", "Collected"). Más una
-      ruta para corregir la fecha de un panel ya cargado — `app/web/health.py` solo tiene
-      índice, alta, detalle y borrado hoy.
+- [x] `blood_analysis_parser._extract_date` deja de tomar la primera fecha del documento y
+      busca patrones anclados a una etiqueta ("Fecha de extracción", "Collected"), con una
+      ventana corta después de la etiqueta para no adivinar a distancia; sin etiqueta
+      reconocida no hay fecha. Más `BloodAnalysisService.update_analysis_date` y
+      `POST /health/{id}/date` para corregir la fecha de un panel ya cargado —
+      `app/web/health.py` solo tenía índice, alta, detalle y borrado— con un formulario
+      inline en `health/detail.html` (mismo patrón toggle-confirm que el borrado).
+      `tests/test_blood_analysis_parser.py` (nuevo) cubre el anclaje por etiqueta en
+      castellano e inglés, la prioridad extracción-sobre-informe, y el rechazo de fechas
+      sin etiqueta o demasiado lejos de ella; `tests/test_web_pages_populated.py` cubre la
+      ruta de corrección y su aislamiento por usuario.
 
 **7.5 — Nombres de actividad en castellano**
 
@@ -3064,13 +3071,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 |
-|---|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
