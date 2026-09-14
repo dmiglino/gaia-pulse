@@ -266,6 +266,15 @@ msgstr "Sin artículos registrados"
 msgid "No participants recorded."
 msgstr "Sin participantes registrados."
 
+msgid "Delete this meal"
+msgstr "Borrar esta comida"
+
+msgid "This deletes it for the whole household."
+msgstr "Esto la borra para todo el hogar."
+
+msgid "Meal deleted."
+msgstr "Comida borrada."
+
 # ─── Entrenamientos — strings adicionales ───────────────────────────────────
 
 msgid "Stay active together"
@@ -279,6 +288,15 @@ msgstr "Registrar primer entrenamiento"
 
 msgid "No exercises recorded"
 msgstr "Sin ejercicios registrados"
+
+msgid "Delete this workout"
+msgstr "Borrar este entrenamiento"
+
+msgid "Workout deleted."
+msgstr "Entrenamiento borrado."
+
+msgid "That workout is not available."
+msgstr "Ese entrenamiento no está disponible."
 
 # ─── Métricas corporales — strings adicionales ──────────────────────────────
 
@@ -296,6 +314,15 @@ msgstr "hs"
 
 msgid "Log first metric"
 msgstr "Registrar primera métrica"
+
+msgid "Keep this log entry?"
+msgstr "¿Conservar este registro?"
+
+msgid "Log entry deleted."
+msgstr "Registro borrado."
+
+msgid "That log entry is not available."
+msgstr "Ese registro no está disponible."
 
 # ─── Captura — strings adicionales ──────────────────────────────────────────
 
@@ -1415,6 +1442,16 @@ msgstr "Ajustar"
 
 msgid "Save stock change"
 msgstr "Guardar el cambio de stock"
+
+#, python-format
+msgid "Alert threshold in %(unit)s"
+msgstr "Umbral de aviso en %(unit)s"
+
+msgid "Alert below"
+msgstr "Avisar por debajo de"
+
+msgid "Save alert threshold"
+msgstr "Guardar el umbral de aviso"
 
 msgid "How to apply it"
 msgstr "Cómo aplicarlo"

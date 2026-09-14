@@ -81,3 +81,25 @@ def meal_detail(
     ctx = get_template_context(request, db, current_user)
     ctx["meal"] = meal
     return templates.TemplateResponse("meals/detail.html", ctx)
+
+
+@router.post("/{meal_id}/delete")
+def meal_delete(
+    meal_id: int,
+    current_user: CurrentUser,
+    db: DB,
+) -> RedirectResponse:
+    """Borra una comida del hogar. Mismo chequeo de pertenencia que `meal_detail` y
+    que `DELETE /api/meals/{id}`: un id de otro hogar se trata igual que uno
+    inexistente."""
+    svc = MealService(db)
+    meal = svc.get_meal(meal_id)
+    if not meal or meal.household_id != current_user.household_id:
+        response = RedirectResponse(url="/meals", status_code=302)
+        set_flash(response, _("That meal is not available."), "error")
+        return response
+
+    svc.delete_meal(meal_id)
+    response = RedirectResponse(url="/meals", status_code=302)
+    set_flash(response, _("Meal deleted."), "success")
+    return response

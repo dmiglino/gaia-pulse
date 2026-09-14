@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
+from app.i18n import _
 from app.services.workout_service import WorkoutService
+from app.web.flash import set_flash
 from app.web.helpers import get_template_context, query_date, query_int, templates
 
 router = APIRouter()
@@ -49,3 +51,25 @@ def workouts_index(
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse("workouts/partials/list.html", ctx)
     return templates.TemplateResponse("workouts/index.html", ctx)
+
+
+@router.post("/{session_id}/delete")
+def workout_delete(
+    session_id: int,
+    current_user: CurrentUser,
+    db: DB,
+) -> RedirectResponse:
+    """Borra un entrenamiento del hogar. Mismo chequeo de pertenencia que
+    `DELETE /api/workouts/{id}`: un id de otro hogar se trata igual que uno
+    inexistente."""
+    svc = WorkoutService(db)
+    session = svc.get_session(session_id)
+    if not session or session.household_id != current_user.household_id:
+        response = RedirectResponse(url="/workouts", status_code=302)
+        set_flash(response, _("That workout is not available."), "error")
+        return response
+
+    svc.delete_session(session_id)
+    response = RedirectResponse(url="/workouts", status_code=302)
+    set_flash(response, _("Workout deleted."), "success")
+    return response

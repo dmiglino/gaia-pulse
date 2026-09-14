@@ -82,7 +82,7 @@
     </div>
     <ul class="divide-y divide-line list-none m-0 p-0">
       {%- for metric in metrics %}
-      <li class="px-5 py-3.5 flex items-start gap-4">
+      <li class="px-5 py-3.5 flex items-start gap-4" {% if selected_user.id == current_user.id %}x-data="{ confirming: false }"{% endif %}>
         <div class="flex-shrink-0 w-24">
           {#- `strftime('%b %-d')` mostraba el mes en inglés y el día en UTC: un
               pesaje de las 22:30 aparecía con la fecha del día siguiente. -#}
@@ -93,6 +93,28 @@
           {{ dm.metric_badges(metric) }}
           {%- if metric.notes %}
           <p class="mt-1.5 text-xs text-ink-muted">{{ metric.notes }}</p>
+          {%- endif %}
+
+          {#- Solo la propia persona borra su registro: son datos personales, no
+              del hogar, y la pestaña de arriba puede estar mostrando a la otra
+              persona. Borrado en dos pasos, sin `confirm()` de JS, mismo patrón
+              que `health/detail.html`. -#}
+          {%- if selected_user.id == current_user.id %}
+          <div class="mt-2">
+            <div x-show="!confirming">
+              {{ ui.btn(_('Delete'), tone='danger-soft', size='sm', type='button',
+                        icon='trash', attrs='@click="confirming = true"') }}
+            </div>
+            <div x-show="confirming" x-cloak class="flex flex-wrap items-center gap-2">
+              <p class="text-xs text-ink-muted mr-1">{{ _('Keep this log entry?') }}</p>
+              <form method="post" action="/body-metrics/{{ metric.id }}/delete" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+                {{ ui.btn(_('Delete'), tone='danger', size='sm', icon='trash') }}
+              </form>
+              {{ ui.btn(_('Keep it'), tone='secondary', size='sm', type='button',
+                        attrs='@click="confirming = false"') }}
+            </div>
+          </div>
           {%- endif %}
         </div>
       </li>

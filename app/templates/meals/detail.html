@@ -72,5 +72,25 @@
     </div>
   {% endcall %}
 
+  {#- Borrado en dos pasos, sin `confirm()` de JS: mismo patrón que
+      `health/detail.html`. -#}
+  <div x-data="{ confirming: false }" class="mt-5 pt-2">
+    <div x-show="!confirming">
+      {{ ui.btn(_('Delete this meal'), tone='danger-soft', size='sm', type='button',
+                icon='trash', attrs='@click="confirming = true"') }}
+    </div>
+    <div x-show="confirming" x-cloak class="flex flex-wrap items-center gap-2">
+      <p class="text-sm text-ink-muted mr-1">
+        {{ _('This deletes it for the whole household.') }}
+      </p>
+      <form method="post" action="/meals/{{ meal.id }}/delete" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        {{ ui.btn(_('Delete'), tone='danger', size='sm', icon='trash') }}
+      </form>
+      {{ ui.btn(_('Keep it'), tone='secondary', size='sm', type='button',
+                attrs='@click="confirming = false"') }}
+    </div>
+  </div>
+
 </div>
 {% endblock %}

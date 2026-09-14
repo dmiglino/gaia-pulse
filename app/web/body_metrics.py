@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
+from app.i18n import _
 from app.services.body_metric_service import BodyMetricService
+from app.web.flash import set_flash
 from app.web.helpers import get_template_context, query_int, templates
 
 router = APIRouter()
@@ -38,3 +40,26 @@ def body_metrics_index(
     ctx["trend"] = svc.get_trend(selected.id, days=30)
     ctx["metrics"] = svc.get_user_metrics(selected.id, limit=30)
     return templates.TemplateResponse("body_metrics/index.html", ctx)
+
+
+@router.post("/{metric_id}/delete")
+def body_metric_delete(
+    metric_id: int,
+    current_user: CurrentUser,
+    db: DB,
+) -> RedirectResponse:
+    """Borra un registro de métricas corporales.
+
+    `BodyMetricService.delete_metric` ya scopea por `user_id` (son datos
+    personales, a diferencia de comidas y entrenamientos): nadie borra un
+    pesaje ajeno aunque lo esté mirando desde la pestaña de esa persona.
+    """
+    svc = BodyMetricService(db)
+    if not svc.delete_metric(metric_id, current_user.id):
+        response = RedirectResponse(url="/body-metrics", status_code=302)
+        set_flash(response, _("That log entry is not available."), "error")
+        return response
+
+    response = RedirectResponse(url="/body-metrics", status_code=302)
+    set_flash(response, _("Log entry deleted."), "success")
+    return response
