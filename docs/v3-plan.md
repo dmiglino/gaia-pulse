@@ -2073,12 +2073,42 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       `pantry_generator` (4) quedan fuera de la lista a propósito: son la 4.5.6 y la 4.5.7.
       Suite de 643 a **655**; mypy sigue en 42 errores, los mismos. De paso, `engine.py` quedó
       formateado con `black` —ya estaba sucio en HEAD y es un archivo que este cambio toca.
-- [ ] **4.5.5 — `_infer_category` y el atajo.** Una categoría desconocida deja de saltear los
+- [x] **4.5.5 — `_infer_category` y el atajo.** Una categoría desconocida deja de saltear los
       dos chequeos y pasa a mirar **los dos** conjuntos de bloqueos; el atajo de
       `_drop_blocked` se borra (ver corrección 2). El costo aceptado es más falsos positivos
       del match por substring de `_any_token_matches`, y se acepta en esa dirección a
       propósito: mostrar una tarjeta de menos es preferible a mostrarle carne a quien declaró
       que no come carne.
+- [x] **La función cambió de pregunta, y por eso cambió de nombre.** `_infer_category` devolvía
+      `str | None` y contestaba "qué es esto"; `_sides_to_check` devuelve una tupla de lados y
+      contesta "contra qué se compara". Con la vieja firma el arreglo se escribía como un `None`
+      que significaba "los dos", que es la clase de valor centinela que nadie recuerda al leer el
+      llamador. Con la nueva, el caso de duda es `("food", "activity")` y el bucle de
+      `_drop_blocked` no tiene ninguna rama especial: itera los lados que le dan. Las cuatro
+      listas de palabras y categorías salieron a constantes de módulo (`_FOOD_CATEGORIES`,
+      `_ACTIVITY_CATEGORIES`, `_FOOD_WORDS`, `_ACTIVITY_WORDS`) porque son vocabulario, no lógica.
+- [x] **El alcance real del bypass son tres tarjetas, y son las que peor conviene que lo tengan.**
+      No es "cualquier categoría desconocida" en abstracto: las únicas que hoy llegan con una
+      categoría que ningún lado reconoce son las tres de sangre con `category="habit"` —TSH alta,
+      TSH baja, creatinina alta—, que son justo las que llevan consejo de salud y las que la
+      4.5.6 va a reencuadrar. Medir eso antes de arreglarlo evitó escribir el hallazgo como un
+      agujero genérico: `apply_signal_constraints` nunca tuvo el problema, porque compara por
+      sujeto y no por categoría.
+- [x] **Que un lado conocido siga mirando solo lo suyo no es una inconsistencia.** Ampliar el
+      chequeo a los dos lados para *todo* candidato haría que el match por substring borre por
+      accidente: Diego no puede nadar y "bread swimming in olive oil" no es una propuesta de
+      natación. La ampliación es para lo que no se pudo clasificar. Hay un test por cada mitad de
+      esa frase: el `habit` que nombra un alimento evitado desaparece, y el `meal` que nombra una
+      actividad imposible sobrevive.
+- [x] **El atajo se borró por ser una trampa, no un agujero** (corrección 2). Con los dos
+      conjuntos vacíos las comparaciones no pueden descartar nada, así que borrarlo no cambia
+      ninguna conducta de hoy — y esa es la razón: el día que este filtro tenga que mirar algo que
+      no sean esos dos conjuntos, el atajo lo saltea en silencio y con la suite en verde. Lo que
+      el atajo garantizaba ahora está medido en un test
+      (`test_with_no_blocks_at_all_every_candidate_survives`) en vez de cortocircuitado. De paso,
+      el log de descarte pasa a decir **cuál** de los dos lados bloqueó: en un filtro que borra
+      sin dejar rastro en la UI, es la única forma de auditar por qué desapareció una tarjeta.
+      Cuatro tests nuevos en `TestHardConstraints`, suite de 655 a **659**; mypy sigue en 42.
 - [ ] **4.5.6 — Sangre: antigüedad del panel y encuadre no diagnóstico.** El contexto lleva
       fecha y antigüedad —hoy `BloodAnalysisService.get_latest_values` ordena por
       `analysis_date` y devuelve **solo** `values_json`, que es exactamente por qué la

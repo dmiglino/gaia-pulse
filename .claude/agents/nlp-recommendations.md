@@ -34,6 +34,21 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   (`_drop_blocked`) and differ only in how the blocked sets are built; a
   fourth copy of that comparison is how a block starts counting on one screen
   and not the other.
+- **In stage 2, doubt checks both sides.** `filters._sides_to_check` answers
+  "which blocked sets does this candidate get compared against", and a candidate
+  whose category it cannot place is compared against **both** — not, as
+  `_infer_category`'s `None` did, against neither. Nothing here is a penalty that
+  a later stage can revert: the candidate is gone before it has a score, so the
+  expensive error is letting through what someone declared they cannot have, not
+  dropping one card too many. The accepted cost is `_any_token_matches`'s
+  substring matching producing false positives ("run" blocking "runny honey"),
+  accepted **in that direction on purpose**. A candidate whose category *is*
+  known still only checks its own side, and that is not an inconsistency to
+  tidy up: it is what stops an exercise named "burpee" falling to a look-alike
+  blocked food. `_drop_blocked` carries no fast path either — with both sets
+  empty the comparisons cannot drop anything, which is precisely why a shortcut
+  there is a trap: the day the filter must consult something else, the shortcut
+  skips it silently with the suite green.
 - `app/recommendations/learning.py` is not a fifth stage: it is the shared
   vocabulary of what the app learns —what a subject is (`subject_type` +
   `subject_name`), which `signal_type`s count, temporal decay, confidence by

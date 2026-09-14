@@ -80,6 +80,88 @@ class TestHardConstraints:
         # At minimum, "Walk today" should pass
         assert "Walk today" in titles
 
+    def test_an_unknown_category_is_checked_against_both_blocked_sets(
+        self, db: Session, diego: User
+    ) -> None:
+        """El bypass de `category="habit"`: las tres tarjetas de sangre que lo tenían.
+
+        `_sides_to_check` devolvía `None` para una categoría que no reconocía, y las dos ramas
+        de descarte comparaban contra `"food"` y `"activity"`, así que un `None` no se
+        comparaba contra **ninguno** de los dos conjuntos. El alcance real son las tarjetas de
+        TSH y creatinina, que son justo las que llevan consejo de salud.
+        """
+        prefs = [
+            RecommendationPreference(
+                user_id=diego.id,
+                item_type="food",
+                item_name="liver",
+                preference_signal="avoid",
+                strength=1.0,
+            )
+        ]
+        candidates = [
+            {
+                "title": "Consider discussing thyroid function",
+                "text": "Organ meats such as liver are one dietary route people take.",
+                "category": "habit",
+            },
+            {
+                "title": "Consider a follow-up",
+                "text": "Nothing here names anything you blocked.",
+                "category": "habit",
+            },
+        ]
+        filtered = apply_hard_constraints(candidates, diego, prefs)
+        titles = [c["title"] for c in filtered]
+        assert "Consider discussing thyroid function" not in titles
+        assert "Consider a follow-up" in titles
+
+    def test_an_unknown_category_is_also_checked_against_activity_blocks(
+        self, db: Session, diego: User
+    ) -> None:
+        """Los dos conjuntos, no solo el de comida: Diego tiene `swimming` como imposible."""
+        candidates = [
+            {
+                "title": "A habit worth building",
+                "text": "Some people take up swimming for this.",
+                "category": "habit",
+            }
+        ]
+        assert apply_hard_constraints(candidates, diego, []) == []
+
+    def test_a_known_category_still_only_checks_its_own_side(
+        self, db: Session, diego: User
+    ) -> None:
+        """La ampliación es para lo que no se pudo clasificar, no para todo.
+
+        Si una tarjeta de comida se midiera también contra los bloqueos de actividad, el
+        match por substring de `_any_token_matches` la borraría por accidente: Diego no puede
+        nadar, y "swimming in olive oil" no es una propuesta de natación.
+        """
+        candidates = [
+            {
+                "title": "Bread swimming in olive oil",
+                "text": "A simple dinner.",
+                "category": "meal",
+            }
+        ]
+        filtered = apply_hard_constraints(candidates, diego, [])
+        assert [c["title"] for c in filtered] == ["Bread swimming in olive oil"]
+
+    def test_with_no_blocks_at_all_every_candidate_survives(self, db: Session, rocio: User) -> None:
+        """Lo que el atajo borrado garantizaba, ahora medido en vez de cortocircuitado.
+
+        `rocio` no declara bloqueos, así que los dos conjuntos llegan vacíos: el recorrido
+        completo tiene que dejar pasar todo, incluida una categoría desconocida que ahora
+        mira los dos lados.
+        """
+        candidates: list[dict[str, Any]] = [
+            {"title": "Eat salad", "text": "Fresh salad", "category": "meal"},
+            {"title": "Run today", "text": "Go for a run", "category": "activity"},
+            {"title": "Sleep earlier", "text": "Wind down before midnight", "category": "habit"},
+        ]
+        assert apply_hard_constraints(candidates, rocio, []) == candidates
+
 
 def _signal(
     user: User,

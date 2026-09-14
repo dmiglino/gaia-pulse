@@ -7,6 +7,12 @@ Removes candidates that violate explicit user constraints:
 
 These filters are applied BEFORE scoring — candidates that fail are
 completely removed, not just penalised.
+
+Y por eso la regla de la duda: un candidato cuya categoría **no** se pudo determinar se
+compara contra los dos conjuntos de bloqueos en vez de contra ninguno (ver
+`_sides_to_check`). Acá no hay penalización que se pueda revertir más adelante —el candidato
+desaparece antes de tener score—, así que el error caro no es descartar una tarjeta de más
+sino dejar pasar la que alguien declaró que no puede.
 """
 
 from __future__ import annotations
@@ -106,20 +112,54 @@ def _build_blocked_set(
     return blocked
 
 
-def _infer_category(candidate: dict[str, Any]) -> str | None:
-    """Infer whether a candidate is food- or activity-related from its category field."""
+#: Las categorías que cada lado reconoce. Declaradas y no inferidas del nombre, porque
+#: `recovery` es actividad y `pantry` es comida sin que ninguna de las dos palabras lo diga.
+_FOOD_CATEGORIES = frozenset({"meal", "shopping", "pantry"})
+_ACTIVITY_CATEGORIES = frozenset({"activity", "workout", "exercise", "recovery"})
+
+_FOOD_WORDS = ("eat", "food", "meal", "recipe", "cook", "drink", "pantry")
+_ACTIVITY_WORDS = ("workout", "gym", "run", "swim", "bike", "yoga", "exercise")
+
+#: Qué lados mira un candidato del que no se pudo decidir la categoría: **los dos**. Ver
+#: `_sides_to_check`.
+_BOTH_SIDES = ("food", "activity")
+
+
+def _sides_to_check(candidate: dict[str, Any]) -> tuple[str, ...]:
+    """Contra qué conjuntos de bloqueos se compara *candidate*: comida, actividad, o los dos.
+
+    Antes esto era `_infer_category`, devolvía `str | None`, y el `None` significaba en la
+    práctica **no chequear nada**: `cat == "food" and …` y `cat == "activity" and …` son las dos
+    únicas ramas de descarte, así que una categoría desconocida pasaba entera sin comparar
+    contra un solo bloqueo. El alcance real de eso son las tres tarjetas de sangre con
+    `category="habit"` —TSH alta, TSH baja, creatinina alta—, que son justo las que más
+    conviene que atraviesen los filtros como todas las demás.
+
+    Ahora un desconocido mira los dos conjuntos. El costo es más falsos positivos, porque
+    `_any_token_matches` compara por substring: si alguien bloqueó "run", una tarjeta de
+    comida cuyo texto diga "runny honey" se descarta. Se acepta **en esa dirección a
+    propósito**: mostrar una tarjeta de menos es preferible a mostrarle carne a quien declaró
+    que no come carne, y el candidato desaparece en silencio de una lista que igual se rearma
+    en la próxima corrida.
+
+    Que un lado no chequee lo del otro cuando la categoría **sí** se conoce no es una
+    inconsistencia: es lo que evita que un ejercicio llamado "burpee" caiga por un alimento
+    bloqueado que se le parezca. La ampliación es para lo que no se pudo clasificar, no para
+    todo.
+    """
     cat = candidate.get("category", "").lower()
-    if cat in ("meal", "shopping", "pantry"):
-        return "food"
-    if cat in ("activity", "workout", "exercise", "recovery"):
-        return "activity"
+    if cat in _FOOD_CATEGORIES:
+        return ("food",)
+    if cat in _ACTIVITY_CATEGORIES:
+        return ("activity",)
+
     # Fall back to scanning text
     text = (candidate.get("title", "") + " " + candidate.get("text", "")).lower()
-    if any(w in text for w in ("eat", "food", "meal", "recipe", "cook", "drink", "pantry")):
-        return "food"
-    if any(w in text for w in ("workout", "gym", "run", "swim", "bike", "yoga", "exercise")):
-        return "activity"
-    return None
+    if any(w in text for w in _FOOD_WORDS):
+        return ("food",)
+    if any(w in text for w in _ACTIVITY_WORDS):
+        return ("activity",)
+    return _BOTH_SIDES
 
 
 def apply_signal_constraints(
@@ -211,24 +251,34 @@ def _drop_blocked(
     diferencia entre ellos es de dónde salen `blocked_food` y `blocked_activity`, no cómo
     se comparan. Dos copias de esta comparación es cómo un bloqueo empieza a valer en una
     pantalla y no en la otra.
-    """
-    if not blocked_food and not blocked_activity:
-        return candidates  # fast path
 
+    Acá había un `if not blocked_food and not blocked_activity: return candidates` que era
+    **preservador de conducta por construcción** —con los dos conjuntos vacíos las
+    comparaciones de abajo no pueden descartar nada— y esa es exactamente la razón para
+    borrarlo: es una trampa, no un agujero. El día que este filtro tenga que mirar algo que no
+    sean esos dos conjuntos —una restricción del hogar, un umbral del contexto— el atajo lo
+    saltea en silencio y con la suite en verde. Cuatro comparaciones no valen un modo de falla
+    silencioso.
+    """
     kept: list[dict[str, Any]] = []
     removed = 0
+    blocked_by_side = {"food": blocked_food, "activity": blocked_activity}
 
     for candidate in candidates:
-        cat = _infer_category(candidate)
         full_text = _normalise(candidate.get("title", "") + " " + candidate.get("text", ""))
-
-        if cat == "food" and _any_token_matches(full_text, blocked_food):
-            logger.debug("Filtered out food suggestion: %r", candidate.get("title"))
-            removed += 1
-            continue
-
-        if cat == "activity" and _any_token_matches(full_text, blocked_activity):
-            logger.debug("Filtered out activity suggestion: %r", candidate.get("title"))
+        #: Cuál de los lados lo bloqueó, y no solo si alguno: es lo que hace que el log diga
+        #: por qué desapareció una tarjeta, que en un filtro que borra sin dejar rastro en la
+        #: UI es la única forma de auditarlo.
+        blocking_side = next(
+            (
+                side
+                for side in _sides_to_check(candidate)
+                if _any_token_matches(full_text, blocked_by_side[side])
+            ),
+            None,
+        )
+        if blocking_side is not None:
+            logger.debug("Filtered out %s suggestion: %r", blocking_side, candidate.get("title"))
             removed += 1
             continue
 
