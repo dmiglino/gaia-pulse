@@ -1461,7 +1461,8 @@ ejercicios esperan la 4.5)
       compras del household), y 4 en `test_web_pages_populated.py` (el formulario como escritor
       real, el recorte en el borde, y el 422 de la ruta JSON).
 
-**4.4.8 — Que se pueda ver y corregir lo aprendido**
+**4.4.8 — Que se pueda ver y corregir lo aprendido** ✅ hecho (menos
+`evidence_summary`, que es de la 4.5)
 
 - [x] Un panel *"lo que GaiaPulse fue aprendiendo"* en el perfil
       (`app/templates/profile/partials/learned.html`), agrupado por tipo de sujeto y ordenado
@@ -1518,9 +1519,10 @@ ejercicios esperan la 4.5)
       del perfil para que la otra mitad no la encuentre solo quien ya sabe que existe.
 - [x] Nuevo macro `dm.learned_recency_label(days)` junto a los de dirección y confianza, para
       que la forma de decir la recencia viva en el único módulo de rótulos.
-- [x] Los ~35 `msgid` nuevos traducidos al castellano rioplatense en el mismo commit, con
-      `ngettext` en los cuatro plurales. El resto del atraso de i18n (medido: **165 de 515**
-      `msgid` del repo sin entrada en `es_AR`) queda como el punto de la 5.1.
+- [x] Los **41** `msgid` nuevos traducidos al castellano rioplatense en el mismo commit, con
+      `ngettext` en los cuatro plurales (el catálogo pasa de 526 a 567 entradas). El resto del
+      atraso de i18n (re-medido con la 4.4.8 ya aplicada: **126 de 517** `msgid` del repo sin
+      entrada en `es_AR`) queda como el punto de la 5.1.
 - [x] 16 tests nuevos en `tests/test_web_learned_panel.py`: que el panel muestre lo que el
       motor efectivamente lee con las cifras detrás, que el respaldo de una categoría cuente
       **solo las señales que son una opinión** (posponer no suma un ítem a una conclusión que
@@ -1626,10 +1628,13 @@ ejercicios esperan la 4.5)
       nada, que es justamente por lo que se pasan de largo. La 4.4.7 dejó cinco
       (`Prefer to say why?`, `What put you off?`, `e.g. we do not like broccoli`, el `hint`
       del campo, y el `aria-label` `Not for us, with this reason`). Se buscan comparando los
-      `_()` de `app/templates/` contra el catálogo, no de memoria. **Medido en la 4.4.8: 515
-      `msgid` extraídos del repo (plantillas *y* Python), 165 sin entrada en `es_AR`.** La
-      extracción necesita un archivo de mapeo con los patrones **relativos al directorio de
-      entrada**, o `pybabel` devuelve un solo `msgid` y parece que no hay nada que traducir:
+      `_()` de `app/templates/` contra el catálogo, no de memoria. **Medido con la 4.4.8 ya
+      aplicada: 517 `msgid` extraídos del repo (plantillas *y* Python), 126 sin entrada en
+      `es_AR`.** (La cifra que este punto decía antes —165 de 515— se había tomado antes de
+      que entraran las 41 traducciones de la 4.4.8: hay que re-medir al empezar el punto, no
+      confiar en el número escrito.) La extracción necesita un archivo de mapeo con los
+      patrones **relativos al directorio de entrada**, o `pybabel` devuelve un solo `msgid` y
+      parece que no hay nada que traducir:
 
       ```ini
       [python: **.py]
@@ -1808,9 +1813,9 @@ Reglas:
   todo el índice, incluido lo que alguien dejó staged antes — ver la verruga de arriba.
 - Antes de cualquier comando que pueda descartar trabajo (`checkout`/`restore`/`reset`/
   `clean`, `rm -rf`), correr `git status` primero.
-- Los archivos sin trackear que ya estaban antes de v3 (`.agents/`, `.claude/`, `AGENTS.md`,
-  `CLAUDE.md`, `scripts/`) **no** se mezclan en los commits de v3; son una decisión aparte
-  del usuario.
+- La capa de instrucciones (`.agents/`, `.claude/`, `AGENTS.md`, `CLAUDE.md`, `scripts/`)
+  vivía sin trackear y **se versionó en la `caa4294`** (`chore: versionar la capa de
+  instrucciones`). Sigue yendo en commits propios: **no** se mezcla en un commit de fase.
 
 ---
 

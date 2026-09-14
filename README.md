@@ -423,7 +423,7 @@ pytest tests/
 
 The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides the database URL. No external services are required.
 
-**509 tests** across 24 files:
+**531 tests** across 24 files:
 
 | File | Coverage area |
 |---|---|
