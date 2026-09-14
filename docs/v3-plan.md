@@ -1948,7 +1948,7 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       recién creada, que es el que fija `test_user_context.py::test_the_exercise_catalog_can_be_empty`.
       La suite pasa de 593 a **619**, y los 4 errores de mypy que `activity_generator` arrastraba
       (reuso de variable de loop) desaparecen con la reescritura: 46 → 42.
-- [ ] **4.5.3 — Macros: contar lo que se puede contar, y decir cuánto se contó.** Un
+- [x] **4.5.3 — Macros: contar lo que se puede contar, y decir cuánto se contó.** Un
       `MacroTotals` que lleve `items_counted`/`items_total`, porque el total honesto no es el
       total: sumar necesita `food_item_id` **y** una cantidad convertible a gramos, y
       `MealItemConsumed` tiene los dos como nullable (las capturas de texto libre solo dejan
@@ -1958,6 +1958,71 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       macros** (`goals_json` y `target_weight_kg` no se leen en ningún lado), toda afirmación
       es relativa a la línea de base de la propia persona — "hoy vas más liviano de proteína
       que tu promedio", nunca "te faltan 40 g".
+- [x] **La mitad de datos ya estaba, y no la leía nadie: el punto era el lector.** La 4.5.1 había
+      dejado `macros_today` y `macros_baseline` con su cobertura, y `grep` sobre
+      `app/recommendations/` daba **cero** lectores. Un contexto que se calcula y nadie lee es
+      una consulta de más por corrida, no una feature. Lo que faltaba —y es lo que se hizo— es la
+      tarjeta: `meal_generator` sección 5, `_macro_gap_card`.
+- [x] **La comparación que el plan proponía era, tal como estaba escrita, sistemáticamente
+      falsa.** "Hoy vas más liviano de proteína que tu promedio" medía el día **a medio andar**
+      contra un promedio de días **completos**. El job corre 7:40 y 18:40 (`scheduler._SCHEDULE`):
+      a las 18:40 la cena de hoy no pasó, así que la diferencia no habla de lo que se comió, habla
+      de qué hora es — y le dice "te falta proteína" todas las tardes a quien cena fuerte, que es
+      exactamente el consejo que esta app no debería dar. `_macro_totals` pasa a contar de cada día
+      anterior solo lo anotado **hasta esta hora del día**, así que los dos lados son "hasta acá".
+      Dos consecuencias que se esperan en vez de descubrirse: a las 7:40 casi ningún día anterior
+      tiene algo antes de esa hora, la base sale vacía y el lector se calla; y un día cuyos
+      registros son todos posteriores al corte **no cuenta como día registrado**, que es correcto
+      porque de ese día, hasta esta hora, no hay dato.
+      Descartadas, para el registro: prorratear por fracción de día transcurrido (asume
+      distribución uniforme de las comidas, que es falsa), comparar contra ayer (necesita otro
+      campo y una muestra de uno), y llevar **dos** bases —día completo y hasta esta hora— que es
+      YAGNI: había cero lectores, así que el campo era gratis de cambiar.
+- [x] **`days_counted` es lo que separa un promedio de una anécdota.** Séptimo contador de
+      `MacroTotals`, poblado en las dos puntas: `1` si el día sumó algo, `n` si el promedio dividió
+      por `n`. Sin él, el único día que alguien anotó hace diez días es indistinguible de una
+      costumbre de dos semanas, y las dos cosas habilitarían la misma tarjeta. Un día cuyos ítems
+      no se convirtieron a gramos **no** cuenta: sería denominador sin numerador.
+- [x] **Cuatro guardias, y cada uno tapa una forma distinta de mentir con un número.** La base
+      tiene que ser una base (≥3 días registrados); las dos puntas tienen que estar medidas
+      (cobertura ≥0.6, o la tarjeta mide la captura y no la comida — le avisaría "te falta
+      proteína" justo a quien escribe "cené milanesas" en vez de pesar); la diferencia tiene que
+      ser una diferencia (<70% de la base, porque un promedio de pocos días oscila solo); y algo
+      de la despensa tiene que poder llenarlo, con piso por 100 g, o no hay tarjeta. Sin el
+      último, "te falta proteína" con la despensa vacía es un empujón que no se puede accionar,
+      que es lo que v3 viene a dejar de ser.
+- [x] **La escala tiene un solo lado, como el RPE de la 4.5.2.** Solo proteína y fibra, solo hacia
+      abajo, en un orden **declarado** (`_MACRO_TRACKED`) y no derivado del orden de un `dict`. Sin
+      objetivo de macros, "hoy vas más pesado de grasa" no propone nada —no hay nada que agregar,
+      solo algo que dejar de comer—, y eso es consejo dietario sin objetivo. Una tarjeta por
+      corrida aunque los dos macros estén cortos: son la misma cena. Y el texto dice **los dos
+      números medidos** en vez de afirmar un déficit; el sujeto es el alimento y no el macro,
+      porque "proteína" no es algo que se acepte o se rechace y `learning.SUBJECT_TYPES` no lo
+      conoce.
+- [x] **Hallazgo con alcance recortado a propósito: las secciones 1, 2 y 4 pueden emitir tres
+      tarjetas del mismo sujeto.** "Use your banana today", "Try Banana for variety" y "Use your
+      last banana" son tres títulos distintos, así que el de-dup final —que es **por título**— las
+      deja pasar las tres: se estorban en la lista y el feedback de una enseña sobre las otras. No
+      se arregló acá, y no por comodidad: un de-dup genérico por sujeto con "gana la primera"
+      silenciaría la tarjeta de stock bajo, que es la **más** informativa de las tres. Arreglarlo
+      bien pide una **prioridad declarada entre las cinco secciones**, que hoy no existe y que es
+      también lo que decide si `unique[:limit]` puede truncar la sección 5 cuando la despensa tiene
+      muchos ítems bajos (la 4 no tiene techo). Lo que sí garantiza la 5 es que *ella* nunca se
+      lleva un sujeto ya tomado: va última justamente para poder ver los cuatro conjuntos
+      anteriores, y es la única con libertad de elegir su sujeto, así que es la que puede ceder.
+- [x] **El orden del portador está declarado, y esa es la lección de la 4.5.2 aplicada de
+      entrada.** Mayor aporte por 100 g primero, y a igual aporte el nombre alfabético: sin la
+      segunda mitad la tarjeta cambiaría de alimento entre dos corridas idénticas según cómo
+      ordene la base, que es el mismo bug que la 4.5.2 encontró en
+      `ExerciseTypeRepository.list_all`.
+- [x] 20 tests nuevos en `tests/test_meal_generator.py` (propio módulo, misma razón que
+      `test_activity_generator.py`: lo que se mide es conducta, no un contador de candidatos) y 4
+      más en `tests/test_user_context.py` para el corte por hora. Uno de los hallazgos salió de los
+      propios tests: cinco casos "sale tarjeta" fallaban porque con **un solo** alimento en la
+      despensa las secciones 1 y 2 se lo llevan y la única fuente posible es un sujeto ya tomado —
+      pasaban por la cesión y no por el guardia que querían medir. De ahí el fixture `filler`, que
+      declara la intención una vez: un alimento que ocupa las otras secciones y no aporta nada.
+      La suite pasa de 619 a **643**; mypy queda en 42 errores, los mismos de antes.
 - [ ] **4.5.4 — `rationale` computado.** Dos mitades que el `engine` compone: la razón de
       *dato* que pone el generador desde el contexto, y la razón de *aprendizaje* que pone el
       scorer. Hoy el scorer calcula el delta de sus cuatro ejes y lo tira a `logger.debug`: pasa

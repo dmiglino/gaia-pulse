@@ -75,6 +75,33 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   subject's signals. It reads `learning.py`'s vocabulary and adds no second
   copy of it. New scoring or filtering vocabulary still goes in
   `learning.py`; a new way to *show* or *undo* what was learned goes there.
+- **A number that compares a person to themselves has to earn it.** The macro-gap
+  card (`meal_generator._macro_gap_card`) is the only place that says "today you
+  are below your own average", and it stays silent unless four things hold:
+  `macros_baseline.days_counted >= _MACRO_MIN_BASELINE_DAYS` (one logged day is
+  an anecdote, not an average), both sides at `_MACRO_MIN_COVERAGE` (low coverage
+  means *not measurable* — a free-text capture leaves an item with no grams — so
+  without the floor the card measures the capture and warns the person who types
+  instead of weighing), the gap under `_MACRO_SHORTFALL_RATIO`, and something in
+  the pantry that actually carries the macro (`_MACRO_CARRIER_PER_100G`), because
+  a nudge nobody can act on is what v3 is undoing. `_MACRO_TRACKED` is protein and
+  fiber, **in the declared tie-break order** and only downwards: with no macro
+  target in the app, "you ate more fat than usual" proposes nothing, which is
+  dietary advice without a goal. One card per run even when both are short — it is
+  the same meal — and the text states both measured numbers instead of asserting a
+  deficit. The subject is the food, never the macro: `SUBJECT_TYPES` has no
+  "protein", and a tap teaches that lentils don't go.
+  The baseline is **time-matched** (`context._macro_totals` counts a past day only
+  up to the current local time-of-day). Today is a day in progress — the job runs
+  7:40 and 18:40 — so comparing it against full-day averages measures what hour it
+  is, not what was eaten. Two consequences are by design: at 7:40 the baseline is
+  usually empty (`days_counted == 0`, and the reader must stay quiet), and a day
+  whose only records are after the cutoff is not a recorded day.
+  Section 5 goes **last** in `generate()` and never takes a subject an earlier
+  section already claimed. It is the only section with a free choice of subject, so
+  it is the one that can cede; sections 1, 2 and 4 can still all emit for the same
+  subject, because the final de-dup is by **title** — fixing that needs a declared
+  priority between the five sections, which does not exist yet (`docs/v3-plan.md`).
 - **An inferred negative must not be able to veto.** The filter drops a
   subject at `_FILTER_EVIDENCE_FLOOR` of live negative weight, and the sweep's
   `ABSENCE_VALUE` is set so that no reachable number of absences gets there —
@@ -86,13 +113,18 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
 - When extending intent types or generators, add deterministic
   fixtures/unit tests (`tests/test_nlp.py`, `tests/test_recommendations.py`,
   `tests/test_learning_signals.py`, `tests/test_household_learning.py`,
-  `tests/test_user_context.py`, `tests/test_activity_generator.py`) that
-  don't require a live OpenAI call. `test_household_learning.py` guards the
-  union/intersection asymmetry: leave it out of the command and the two rules
-  can be merged into one with the suite still green. The split of the last two
-  is the same idea one level down: `test_recommendations.py` checks that every
-  generator declares a valid subject, and those two check that the app *chooses*
-  well — which group, why that one, and what it says when a catalog is empty.
+  `tests/test_user_context.py`, `tests/test_activity_generator.py`,
+  `tests/test_meal_generator.py`) that don't require a live OpenAI call.
+  `test_household_learning.py` guards the union/intersection asymmetry: leave it
+  out of the command and the two rules can be merged into one with the suite still
+  green. The split of the last three is the same idea one level down:
+  `test_recommendations.py` checks that every generator declares a valid subject,
+  and those check that the app *chooses* well — which group, why that one, when it
+  refuses to compare, and what it says when a catalog is empty. In
+  `test_meal_generator.py`, a case that expects a card needs the `filler` fixture:
+  sections 1 and 2 always claim the lowest-quantity pantry item, so with a
+  single-food pantry the only possible carrier is an already-taken subject and the
+  case passes through the cede path instead of the guard it meant to measure.
   **`ExerciseType` is not seeded in tests, and no fixture may make it
   `autouse`**: an empty catalog is the state of a freshly created database, so
   an automatic fixture would stop anything from measuring the path the app

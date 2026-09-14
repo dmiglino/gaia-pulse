@@ -132,6 +132,12 @@ class MacroTotals:
     fiber_g: float = 0.0
     items_counted: int = 0
     items_total: int = 0
+    #: Sobre cuántos días se calculó: 1 para el total de un día, y para un promedio la
+    #: cantidad de días que aportaron algo. Es lo que separa "tu promedio" de "el único día
+    #: que anotaste": los dos son un número, y solo uno describe una costumbre. Quien
+    #: compare contra la base tiene que poder exigir un mínimo de días en vez de creerle a
+    #: una muestra de uno.
+    days_counted: int = 0
 
     @property
     def coverage(self) -> float:
@@ -193,10 +199,18 @@ class UserContext:
     #: Cuántas veces comió cada alimento en la ventana reciente, en minúsculas.
     recent_food_counts: Mapping[str, int] = field(default_factory=dict)
     macros_today: MacroTotals = field(default_factory=MacroTotals)
-    #: El promedio **por día registrado** de la ventana, sin contar hoy. La base es
-    #: contra la propia persona porque la app no tiene objetivo de macros:
-    #: `goals_json` y `target_weight_kg` existen y no los lee nadie, así que "te faltan
-    #: 40 g de proteína" no se puede afirmar y "hoy vas más liviano que tu promedio" sí.
+    #: El promedio **por día registrado** de la ventana, sin contar hoy, y contando de
+    #: cada día solo lo anotado **antes de esta hora**. La base es contra la propia
+    #: persona porque la app no tiene objetivo de macros: `goals_json` y
+    #: `target_weight_kg` existen y no los lee nadie, así que "te faltan 40 g de
+    #: proteína" no se puede afirmar y "hoy vas más liviano que tu promedio" sí.
+    #:
+    #: El corte por hora es lo que hace que la comparación sea una comparación.
+    #: `macros_today` es el día **a medio andar** —a las 18:40, que es cuando corre el job
+    #: de la tarde, la cena todavía no pasó—, así que medirlo contra un promedio de días
+    #: completos le da "hoy vas liviano" a todo el mundo, y todos los días a quien cena
+    #: fuerte. Con el corte los dos números son "hasta acá", que es la única forma de que
+    #: la diferencia hable de lo que se comió y no de la hora que es.
     macros_baseline: MacroTotals = field(default_factory=MacroTotals)
 
     #: El catálogo de ejercicios. Puede venir **vacío** (los tests no lo siembran), y
@@ -251,7 +265,7 @@ def build_user_context(db: Session, user: User) -> UserContext:
     macro_since = as_utc(now) - timedelta(days=_MACRO_WINDOW_DAYS)
 
     macros_today, macros_baseline = _macro_totals(
-        meal_repo.get_consumed_items_since(user.id, macro_since), today
+        meal_repo.get_consumed_items_since(user.id, macro_since), today, now
     )
 
     return UserContext(
@@ -354,7 +368,7 @@ def _blood_panel(db: Session, user_id: int, today: date) -> BloodPanel | None:
 
 
 def _macro_totals(
-    items: Sequence[tuple[datetime, MealItemConsumed]], today: date
+    items: Sequence[tuple[datetime, MealItemConsumed]], today: date, now: datetime
 ) -> tuple[MacroTotals, MacroTotals]:
     """Separa los ítems en "hoy" y "los días anteriores", y suma los dos lados.
 
@@ -368,12 +382,31 @@ def _macro_totals(
     14 a alguien que anota tres veces por semana le da una base cuatro veces más baja
     que su día real, y entonces cualquier día normal parece un exceso. Los días sin
     registro no son días de ayuno, son días sin datos.
-    """
-    by_day: dict[date, list[MealItemConsumed]] = {}
-    for moment, item in items:
-        by_day.setdefault(to_local(moment).date(), []).append(item)
 
-    today_items = by_day.pop(today, [])
+    Y de cada día anterior entra solo lo anotado **hasta esta hora del día**, porque el
+    día de hoy siempre está a medio andar. El job corre 7:40 y 18:40
+    (`scheduler._SCHEDULE`): a las 18:40 la cena de hoy no pasó, así que comparar el
+    parcial de hoy contra un promedio de días completos no mide lo que se comió, mide qué
+    hora es — y le dice "hoy vas liviano de proteína" todas las tardes a quien cena
+    fuerte, que es precisamente el consejo que la app no debería dar. Con el corte los
+    dos lados son "hasta acá" y la diferencia vuelve a significar algo.
+
+    Dos consecuencias que conviene esperar en vez de descubrir. A las 7:40 casi ningún
+    día anterior tiene algo antes de esa hora, así que la base sale vacía y quien la lea
+    tiene que callarse: `days_counted == 0` es su forma de decirlo. Y un día anterior
+    cuyos registros son todos posteriores a la hora de corte **no cuenta como día
+    registrado**, que es correcto: de ese día, hasta esta hora, no hay dato.
+    """
+    cutoff = to_local(now).time()
+    by_day: dict[date, list[MealItemConsumed]] = {}
+    today_items: list[MealItemConsumed] = []
+    for moment, item in items:
+        local = to_local(moment)
+        if local.date() == today:
+            today_items.append(item)
+        elif local.time() <= cutoff:
+            by_day.setdefault(local.date(), []).append(item)
+
     return _sum_macros(today_items), _average_macros(
         [_sum_macros(day_items) for day_items in by_day.values()]
     )
@@ -398,6 +431,10 @@ def _sum_macros(items: Sequence[MealItemConsumed]) -> MacroTotals:
         **{key: round(value, 1) for key, value in totals.items()},
         items_counted=counted,
         items_total=len(items),
+        #: Un día es un día cuando algo se pudo sumar. Los ítems que no se convirtieron
+        #: a gramos dejan un día que existe y no mide nada, y contarlo como día
+        #: registrado le pondría denominador a un promedio sin numerador.
+        days_counted=1 if counted else 0,
     )
 
 
@@ -423,6 +460,11 @@ def _average_macros(days: Sequence[MacroTotals]) -> MacroTotals:
         fiber_g=round(sum(d.fiber_g for d in usable) / n, 1),
         items_counted=sum(d.items_counted for d in usable),
         items_total=sum(d.items_total for d in days),
+        #: Los días que entraron en la división, que es lo mismo que `n`. Sale acá afuera
+        #: porque es lo único que distingue un promedio de una anécdota: sin este número,
+        #: el día único que alguien anotó hace diez días es indistinguible de una costumbre
+        #: de dos semanas, y las dos cosas terminarían habilitando la misma tarjeta.
+        days_counted=n,
     )
 
 

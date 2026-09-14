@@ -343,7 +343,7 @@ The engine lives in `app/recommendations/` and is composed of four stages.
 
 Three generators produce raw suggestion dicts:
 
-- **`meal_generator`** — suggests meals based on recent eating patterns, pantry availability, and nutritional goals
+- **`meal_generator`** — suggests meals from pantry availability, recent eating patterns, declared preferences and low stock. Its last section is the only one that compares a person to themselves: when today's protein or fiber is meaningfully below what that person usually has **by this hour**, and something in the pantry actually carries it, the card names that food and states both measured numbers. It stays silent unless the baseline covers at least three recorded days and both sides were actually measurable — a meal captured as free text leaves an item with no grams, so a low total means *not counted*, not *ate less*. There is no macro target anywhere in the app, so it never claims a deficit and never comments on eating more than usual
 - **`activity_generator`** — suggests workouts from the seeded `ExerciseType` catalog, the person's preferred activities, and a per-muscle-group recovery window: it proposes the group that has been past *its* window the longest (legs need 3 days, core 1), never a group still recovering, and no high-intensity exercise the day after a session. The muscle-group vocabulary is `learning.MUSCLE_GROUPS`, which the catalog and the NLP's exercise map both conform to. With an empty catalog — a freshly created database — it emits its rest, consistency and rotation cards and logs that it has no named exercises to offer, rather than falling back to a hardcoded list
 - **`pantry_generator`** — identifies low-stock items and shopping recommendations at the household level
 
@@ -478,6 +478,9 @@ The test suite uses SQLite in-memory via a `conftest.py` fixture that overrides 
 | `test_workouts.py` | Workout session and per-user exercise isolation |
 | `test_body_metrics.py` | Body metric logging and retrieval |
 | `test_recommendations.py` | Candidate scoring, hard constraint filtering, subject suppression |
+| `test_user_context.py` | The once-per-run read: day boundaries, macro coverage, an empty exercise catalogue |
+| `test_activity_generator.py` | Which muscle group gets proposed and why that one |
+| `test_meal_generator.py` | When the macro card is allowed to compare a person to themselves, and when it stays quiet |
 | `test_learning_signals.py` | The learning axes — affinity, decay, attribute level, slot, satiety, reason mining, the absence sweep |
 | `test_household_learning.py` | Household-scope filtering — declared blocks unioned, learned rejections intersected |
 | `test_notifications.py` | Notification creation, read/dismiss lifecycle |

@@ -498,7 +498,9 @@ class TestMacroDayBoundary:
         assert local_meal.astimezone(UTC).date() != day
 
         item = MealItemConsumed(normalized_free_text_name="milanesa", quantity=None, unit=None)
-        today, baseline = _macro_totals([(local_meal, item)], day)
+        today, baseline = _macro_totals(
+            [(local_meal, item)], day, datetime(2026, 3, 15, 23, 30, tzinfo=tz)
+        )
 
         assert today.items_total == 1, "la comida se contó en el día UTC, no en el local"
         assert baseline.items_total == 0
@@ -527,11 +529,119 @@ class TestMacroDayBoundary:
             ),
         ]
 
-        _, baseline = _macro_totals(items, date(2026, 3, 15))
+        # 18:40 es una de las dos horas en que corre el job, y las comidas son de las 13:00.
+        _, baseline = _macro_totals(
+            items, date(2026, 3, 15), datetime(2026, 3, 15, 18, 40, tzinfo=tz)
+        )
 
         # 89 kcal/100 g: un día de 89 y otro de 178 promedian 133.5, no 19 (267/14).
         assert baseline.calories == pytest.approx(133.5, abs=0.1)
         assert baseline.items_counted == 2
+        assert baseline.days_counted == 2, "dos días aportaron, y el promedio tiene que decirlo"
+
+
+class TestTheBaselineStopsAtThisHour:
+    """La base cuenta de cada día pasado solo lo anotado **hasta esta hora**.
+
+    Es lo que hace que la comparación sea una comparación: `macros_today` es siempre un día
+    a medio andar, así que medirlo contra días completos no mide lo que se comió sino qué
+    hora es — y a quien cena fuerte le dice "hoy vas liviano" todas las tardes, que es
+    justamente el consejo que la app no puede sostener sin objetivo de macros.
+    """
+
+    tz = ZoneInfo(get_settings().timezone)
+    today = date(2026, 3, 15)
+
+    def _breakfast_and_dinner(self, banana: FoodItem) -> list[tuple[datetime, MealItemConsumed]]:
+        """Dos días iguales: 100 g a las 08:00 y 300 g a las 21:00."""
+        items = []
+        for day in (10, 12):
+            for hour, grams in ((8, 100.0), (21, 300.0)):
+                items.append(
+                    (
+                        datetime(2026, 3, day, hour, 0, tzinfo=self.tz),
+                        MealItemConsumed(
+                            normalized_free_text_name="banana",
+                            quantity=grams,
+                            unit="g",
+                            food_item=banana,
+                        ),
+                    )
+                )
+        return items
+
+    def test_the_evening_run_counts_breakfast_but_not_last_nights_dinner(
+        self, banana: FoodItem
+    ) -> None:
+        """A las 18:40 —la corrida de la tarde— la cena de los días pasados no entra.
+
+        89 kcal/100 g: solo el desayuno de 100 g, o sea 89 por día.
+        """
+        _, baseline = _macro_totals(
+            self._breakfast_and_dinner(banana),
+            self.today,
+            datetime(2026, 3, 15, 18, 40, tzinfo=self.tz),
+        )
+
+        assert baseline.calories == pytest.approx(89.0, abs=0.1)
+        assert baseline.days_counted == 2
+        assert baseline.items_total == 2, "las dos cenas quedaron afuera, no solo sin sumar"
+
+    def test_the_full_day_is_only_the_baseline_at_the_end_of_the_day(
+        self, banana: FoodItem
+    ) -> None:
+        """Cerca de medianoche sí entra todo: el corte es la hora, no una regla fija."""
+        _, baseline = _macro_totals(
+            self._breakfast_and_dinner(banana),
+            self.today,
+            datetime(2026, 3, 15, 23, 59, tzinfo=self.tz),
+        )
+
+        # 400 g por día → 356 kcal.
+        assert baseline.calories == pytest.approx(356.0, abs=0.1)
+        assert baseline.days_counted == 2
+
+    def test_the_morning_run_has_no_baseline_and_says_so(self, banana: FoodItem) -> None:
+        """A las 7:40 casi nada precede a la hora, y una base vacía tiene que ser legible.
+
+        `days_counted == 0` es cómo lo dice: quien la lea se calla en vez de comparar contra
+        cero y anunciar un déficit del 100%.
+        """
+        _, baseline = _macro_totals(
+            self._breakfast_and_dinner(banana),
+            self.today,
+            datetime(2026, 3, 15, 7, 40, tzinfo=self.tz),
+        )
+
+        assert baseline.days_counted == 0
+        assert baseline.calories == 0.0
+        assert baseline.is_empty
+
+    def test_a_day_whose_only_meals_are_late_is_not_a_recorded_day(self, banana: FoodItem) -> None:
+        """Un día que solo tiene cenas no cuenta como día registrado a las 18:40.
+
+        Y es correcto: de ese día, hasta esta hora, no hay dato. Contarlo como día con cero
+        bajaría el promedio de los demás y convertiría un hueco de captura en una costumbre.
+        """
+        items = [
+            (
+                datetime(2026, 3, day, hour, 0, tzinfo=self.tz),
+                MealItemConsumed(
+                    normalized_free_text_name="banana",
+                    quantity=100.0,
+                    unit="g",
+                    food_item=banana,
+                ),
+            )
+            for day, hour in ((10, 8), (11, 21), (12, 8))
+        ]
+
+        _, baseline = _macro_totals(
+            items, self.today, datetime(2026, 3, 15, 18, 40, tzinfo=self.tz)
+        )
+
+        assert baseline.days_counted == 2, "el día 11 no aportó nada antes de las 18:40"
+        assert baseline.calories == pytest.approx(89.0, abs=0.1)
 
 
 class TestBuildUserContext:
@@ -609,6 +719,7 @@ class TestBuildUserContext:
         # 89 kcal/100 g × 150 g
         assert context.macros_today.calories == pytest.approx(133.5, abs=0.1)
         assert context.macros_today.coverage == 1.0
+        assert context.macros_today.days_counted == 1, "un día es un día cuando algo se sumó"
         assert context.blood_panel is not None
         assert context.blood_panel.analysis_date == date(2026, 1, 1)
         assert context.blood_panel.age_days is not None
