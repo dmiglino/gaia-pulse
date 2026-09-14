@@ -23,9 +23,7 @@ class PantryStockRepository(BaseRepository[PantryStock]):
             .order_by(FoodItem.canonical_name)
         )
         if search:
-            stmt = stmt.where(
-                func.lower(FoodItem.canonical_name).contains(search.lower())
-            )
+            stmt = stmt.where(func.lower(FoodItem.canonical_name).contains(search.lower()))
         if category:
             stmt = stmt.where(FoodItem.category == category)
         return list(self.db.scalars(stmt).unique().all())
@@ -135,4 +133,33 @@ class PantryMovementRepository(BaseRepository[PantryMovement]):
         )
         if movement_type:
             stmt = stmt.where(PantryMovement.movement_type == movement_type)
+        return list(self.db.scalars(stmt).unique().all())
+
+    def get_purchases_since(self, household_id: int, since: datetime) -> list[PantryMovement]:
+        """Las compras de la casa desde *since*, con el alimento ya cargado.
+
+        `get_household_movements` no sirve para esto: pagina (`limit=50`) y ordena de lo más
+        nuevo a lo más viejo, y quien la usa acá cuenta compras dentro de una ventana — un
+        `LIMIT` invisible convertiría "cuántas veces se compró café" en "cuántas de las
+        últimas cincuenta fueron café". Sin tope, entonces, pero acotada por fecha.
+
+        Con `joinedload` porque el consumidor cuenta por ítem y después **nombra** los más
+        comprados: sin eso el nombre es una consulta por ítem. Ese nombre se resolvía con un
+        `db.query(FoodItem)` escrito dentro de `pantry_generator`, que es justo lo que la
+        regla de capas reserva a los repositorios.
+        """
+        stmt = (
+            select(PantryMovement)
+            .where(
+                and_(
+                    PantryMovement.household_id == household_id,
+                    PantryMovement.movement_type == "purchase",
+                    PantryMovement.timestamp >= since,
+                )
+            )
+            .options(joinedload(PantryMovement.food_item))
+            #: `ORDER BY` explícito (regla 5): el agrupado por día del generador de compras
+            #: recorre esta lista, y sin orden lo decide el motor.
+            .order_by(PantryMovement.timestamp)
+        )
         return list(self.db.scalars(stmt).unique().all())

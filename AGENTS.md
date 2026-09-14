@@ -26,22 +26,23 @@ point back here instead of duplicating it.
    **This one is the target, not a description of the tree today**, and
    saying so is the point: a rule the code contradicts in eighteen places
    gets obeyed halfway and stops nothing. Measured on the `v3` branch:
-   `app/api/`, `app/web/` and `app/services/` are clean of `.query(` (3 of 20
-   `web/` modules and 10 of 12 `services/` modules still import `app.models`);
-   `app/recommendations/` has 5 `.query()`, todas en
-   `generators/pantry_generator.py`, with 9 of its 11 modules importing
-   `app.models`.
+   `app/api/`, `app/web/`, `app/services/` **and `app/recommendations/`** are
+   clean of `.query(` (3 of 20 `web/` modules and 10 of 12 `services/` modules
+   still import `app.models`, and 9 of the 11 in `app/recommendations/` do too —
+   that import is expected there for type annotations and is not the violation
+   being counted).
 
    So the rule is a **ratchet**, and that half is non-negotiable: new code
    adds no query outside `repositories/`, and a change that touches a module
    holding inline queries takes *its* queries down to a repository as part of
    the change (`app/recommendations/engine.py` went 15 → 14 → 0 that way, y la
    4.5.1 bajó con él los 2 de `meal_generator`, los 2 de `activity_generator` y
-   los 3 de `blood_analysis_service.py`).
-   Reviewers block on the ratchet, not on the backlog. Closing the remaining
-   5 wholesale is its own commit, not a smuggled side effect — and
-   `app/recommendations/` is expected to import `app.models` for type
-   annotations, which is not the violation being counted.
+   los 3 de `blood_analysis_service.py`; los últimos 5, en
+   `generators/pantry_generator.py`, cayeron con la 4.5.7 — y tres de ellos
+   sin agregar método nuevo, porque el nombre que iban a buscar de a uno ya
+   venía en el `joinedload` de la consulta que el generador ya hacía).
+   Reviewers block on the ratchet, not on the backlog: the remaining backlog is
+   the `app.models` imports above, and those are the expected kind.
 
    **`app/jobs/` is a fourth entry point, and it calls `repositories/`
    directly on purpose.** A job has no request and no acting user: it is the

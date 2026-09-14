@@ -146,13 +146,35 @@ the affected code in `app/nlp/` or `app/recommendations/` before acting.
   0 is never named, ups and downs go in separate sentences (a net sign hides that both
   happened), and with neither half the card says so (`explain.NOTHING_KNOWN`) instead of
   falling back to a catalog phrase. New `rationale` values must cite a number or rule from
-  **this** run; `tests/test_explain.py::TestNoFixedRationalesLeft` walks the meal and
-  activity generators' ASTs and fails on a literal, with one named exception. Two
+  **this** run; `tests/test_explain.py::TestNoFixedRationalesLeft` walks **all four**
+  generators' ASTs and fails on a literal, with one named exception. Keeping that list
+  complete is the point: while one file was missing, the test said "almost no rationale is
+  fixed". Two
   consequences: `rationale` is persisted **already rendered**, so it is frozen in the
   language it was generated in and cannot be flipped at render time — these strings do not
   pass through `_()` because a background job has no request locale — and
   `evidence_summary` stays the raw-number trail while `rationale` answers *why this card
   and not another*.
+- **The household run is a sibling of the person run, never nested inside it.**
+  `suggestion_jobs.run_suggestion_generation` loops people, then loops
+  `HouseholdRepository.list_all()` — `list_all` and not the inherited `get_all()`, which
+  caps at 100 unordered. Nested, a house of two would write the same shopping list twice per
+  run, and the pending-subject de-dup does not save it: that looks at what a *previous* run
+  left. Each entity gets its own `try` **with its own `db.rollback()`** — without it, what a
+  failed entity left pending in the session is committed by the next one. Test it through the
+  job and not through `generate_for_household`: the three tests that call the method directly
+  stayed green through the whole stretch when nothing called it at all.
+- **The pantry generator is the household path, and its four cards measure the house, not a
+  person.** Three of its four cards take a `habit` subject even though their text names up to
+  five foods, because what a tap answers there is the restocking notice and not the milk;
+  only the co-purchase card, which names one food and talks about that food, takes it as its
+  subject. Its rationales cite how many of the tracked items read zero, which one has the
+  least margin against its own threshold, and how many times something was bought — never a
+  number the scorer produced, because this path does not score. "Bought on the same day" is what the
+  co-purchase text says because the grouping is a calendar day and not a receipt; a day is not
+  a basket, and the distinction matters exactly when the card is wrong. Low stock is
+  `PantryStock.is_low` and not a threshold comparison rewritten here — two copies is how the
+  pantry grid and this card start disagreeing.
 - **An inferred negative must not be able to veto.** The filter drops a
   subject at `_FILTER_EVIDENCE_FLOOR` of live negative weight, and the sweep's
   `ABSENCE_VALUE` is set so that no reachable number of absences gets there —

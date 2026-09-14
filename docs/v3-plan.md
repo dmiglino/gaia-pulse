@@ -75,14 +75,14 @@ Tomadas explícitamente por el usuario antes de empezar:
   ruta devuelve SSR HTML y redirige a `/login`. Nunca mezclar los dos estilos en una ruta.
 - **Layering unidireccional**: `api/` y `web/` → `services/` → `repositories/` → modelos
   solo en `repositories/`. **Es el objetivo, no la foto del árbol**, y decirlo es el punto:
-  medido en `v3` hay 14 consultas inline en `app/recommendations/` (`engine.py` 5,
+  al empezar v3 había 14 consultas inline en `app/recommendations/` (`engine.py` 5,
   `pantry_generator` 5, `activity_generator` 2, `meal_generator` 2) y 3 en
-  `blood_analysis_service.py:58,66,74`. Lo que sí es no-negociable es el **trinquete**:
-  código nuevo no agrega consultas fuera de `repositories/`, y un cambio que toca un módulo
-  con consultas inline se lleva las suyas al repositorio (así el engine bajó de 15 a 14 en
-  la 4.4.9). Cerrar las 17 de golpe es su propio commit, no un efecto secundario de otra
-  cosa. Una regla que el código contradice en dieciocho lugares se obedece a medias y no
-  frena nada; escrita como trinquete, frena lo único que importa —que la deuda crezca—.
+  `blood_analysis_service.py:58,66,74`. Hoy quedan **cero**: bajaron de a un módulo por vez,
+  cada una dentro del cambio que ya estaba tocando ese archivo, y las últimas cinco con la
+  4.5.7. Lo que es no-negociable es ese **trinquete**: código nuevo no agrega consultas fuera
+  de `repositories/`, y un cambio que toca un módulo con consultas inline se lleva las suyas
+  al repositorio. Una regla que el código contradice en dieciocho lugares se obedece a medias
+  y no frena nada; escrita como trinquete, frena lo único que importa —que la deuda crezca—.
 - **Compuerta de confirmación NLP**: ningún dato extraído por NLP/LLM llega a una tabla de
   dominio antes de que un humano confirme (`NLPIngestionEvent.status == "pending_confirmation"`).
 - **Aislamiento por usuario**: toda consulta a una tabla de datos personales filtra por el
@@ -2192,11 +2192,69 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       fecha y la antigüedad contando la misma historia. De paso, `blood_generator.py` quedó sin
       los 26 `E501` (22 ya estaban en HEAD) y el comentario de `test_actions.py` que decía "19
       filas de `meal` y 5 de `activity`" pasa a decir las cantidades reales: 15 y 4.
-- [ ] **4.5.7 — Conectar `generate_for_household`.** Existe, filtra bien la asimetría
+- [x] **4.5.7 — Conectar `generate_for_household`.** Existe, filtra bien la asimetría
       unión/intersección de 4.4.9 y tiene **cero llamadores**, así que todo el generador de
       pantry y compras nunca llegó a nadie. Un loop de hogares en `suggestion_jobs` sobre
       `HouseholdRepository.list_all()`, y la línea del `README` que dice que no hay llamador en
       producción deja de ser cierta el mismo día.
+- [x] **El loop de hogares va al lado del de personas, no adentro.** Anidado, una casa de dos
+      escribe la misma lista de compras dos veces por corrida, y el dedup por sujeto no la
+      salva: mira las pendientes que dejó una corrida **anterior**, así que las dos de la misma
+      corrida pasan las dos. Cada casa con su propio `try` —una despensa ilegible no cancela la
+      siguiente—, y cuatro tests que llaman al **job** y no al método: los tres que ya había
+      llamaban a `generate_for_household` ellos mismos, que es exactamente por qué la suite
+      quedaba en verde con cero llamadores.
+- [x] **Un bug encontrado de paso: al `except` del loop de personas le faltaba el
+      `db.rollback()`.** Lo que una corrida fallida dejaba pendiente en la sesión lo commiteaba
+      la entidad siguiente — contaminación cruzada entre usuarios. `_sweep_user` ya tenía ese
+      reparto; el job de generación no. Se arregló antes de agregar el loop de hogares, para no
+      copiar la falta a la mitad nueva.
+- [x] **`pantry_generator` entra a `TestNoFixedRationalesLeft`, y con eso están los cuatro
+      generadores.** Sus cuatro razones eran idénticas para todas las tarjetas de su regla; hoy
+      citan cuántos ítems de la despensa están en cero sobre el total, cuál es el que **menos
+      margen** tiene con su cantidad y su umbral, cuántas veces se compró el que más se repite y
+      cuántas veces dos cosas se compraron el mismo día. Mientras faltaba uno, el test decía
+      "casi ninguna razón es fija". Cinco tests nuevos en `TestPantryCardsCiteWhatTheyMeasured`,
+      que es lo que el test de AST no puede ver: que el número interpolado sea **el** número.
+- [x] **"El mismo día" y no "juntos".** La tarjeta de co-compra agrupaba por
+      `strftime("%Y-%m-%d")` y decía que las dos cosas se compraban juntas. Un día no es un
+      ticket, y la diferencia importa justo cuando la tarjeta se equivoca: dos compras
+      independientes del mismo martes no son un patrón. Ahora el texto dice lo que el agrupado
+      mide.
+- [x] **Cinco `db.query(...)` dentro del generador pasaron a dos llamadas a repositorio.** Tres
+      eran para resolver **un** nombre de alimento por vez; desaparecieron sin agregar un
+      `FoodRepository.get_many` porque el nombre ya viene en el `joinedload` de
+      `PantryMovement.food_item`. La consulta de compras es nueva
+      (`PantryMovementRepository.get_purchases_since`) y deliberadamente **sin `LIMIT`**:
+      `get_household_movements` pagina en 50 y ordena de lo nuevo a lo viejo, y con eso "cuántas
+      veces se compró café" se convierte en "cuántas de las últimas cincuenta fueron café".
+      Acotada por fecha y con `ORDER BY` explícito, porque el agrupado por día la recorre.
+- [x] **Dos duplicaciones más, borradas en el mismo paso.** La comparación de stock bajo estaba
+      escrita a mano acá y también en `PantryStock.is_low`; queda la del modelo, que es donde la
+      pantalla de despensa ya la lee — dos copias es cómo la grilla y la tarjeta empiezan a
+      contar cosas distintas. Y el `limit=5` estaba dos veces como literal en el job: pasa a
+      `_SUGGESTIONS_PER_RUN`, uno solo, porque Home mezcla las personales con las del hogar y un
+      número más alto en un lado se ve como una lista que se llenó de compras.
+- [x] **Suite de 667 a 676; mypy de 42 errores en 7 archivos a 41 en 6** —
+      `pantry_generator.py` salió de la lista al reescribirse. También quedó sin sus 7 errores de
+      `ruff` (cuatro imports muertos, un `UP017`, dos `E501`), y contra eso el punto suma **uno**:
+      el `timezone.utc` del helper de compras nuevo, que es la forma que usan los otros siete de
+      ese archivo. `black` baja de 40 archivos a **39**: `pantry_repo.py` tenía una línea sucia
+      previa a este cambio y se formateó porque el punto ya estaba editando ese archivo.
+- [x] **Revisión de privacidad: la despensa es del hogar, y por eso esta consulta no filtra por
+      persona.** Es la excepción explícita a la regla 4, no un olvido: `PantryStock` y
+      `PantryMovement` llevan `household_id`, la pantalla de movimientos ya los muestra a las dos
+      personas, y la tarjeta sale con `scope_user_id = NULL` justamente para que sea **una** lista
+      de compras. Lo que sigue siendo por persona es el filtro: `apply_household_constraints` lee
+      las preferencias y las señales de cada miembro por separado (4.4.9). Ninguno de los tres
+      `logger` nuevos escribe un nombre de alimento: el `debug` del generador registra
+      `household_id` y cantidades, y los dos del job registran cantidades y el id del hogar.
+- [ ] **Anotado, no arreglado: los `logger.exception` de los jobs pueden volcar parámetros
+      ligados.** Un `IntegrityError` de SQLAlchemy trae el `INSERT` con sus valores en el
+      `__str__`, así que un traceback de la corrida puede terminar con nombres de alimentos —o,
+      en el loop de personas, con un dato de salud— en el log. El loop de hogares hereda la
+      forma que los otros tres ya tenían; unificarlos en un helper que registre tipo y entidad y
+      no el mensaje del driver es un cambio de `app/jobs/` entero, no de este punto.
 - [ ] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
       `learning.attribute_index` con el **grupo muscular** como atributo (va después de 4.5.2
       porque necesita el vocabulario unificado). `ExerciseType.category` queda afuera y no es un
@@ -2347,6 +2405,14 @@ Didáctico, para Diego y Rocío, no para un desarrollador. Nada de nombres de m�
       castellano ("correr", "caminar", "pesas"), hasta que la 4.5 las saque de la base.
 - [ ] **Cómo leer una sugerencia**: el "¿por qué esta sugerencia?", qué significa el
       porcentaje de confianza, y qué **no** significa (no es una recomendación médica).
+- [ ] **La lista de compras es de los dos** (4.5.7): entre las sugerencias personales aparecen
+      algunas del hogar —qué se acabó, qué está por acabarse, qué se compra siempre y hoy no
+      está— y esas las ven las dos personas, son la misma tarjeta y no una copia para cada uno.
+      Dos cosas que conviene saber para no pelearse con ellas: **cargar la despensa es lo que
+      las enciende** (sin stock cargado no hay nada que contar, y sin umbral de "poco" solo se
+      avisa cuando algo llega a cero), y una restricción alimentaria de **una** de las dos saca
+      ese alimento de la lista de la casa, mientras que un "no" a una sugerencia no —para eso
+      tienen que decir las dos que no—.
 - [ ] **Cuando se equivoca**: qué hacer si insiste con algo que no querés, cómo corregir una
       captura mal interpretada, y qué mira la app para dejar de repetirse.
 - [ ] **Ver lo que aprendió, y desdecirlo** (4.4.8): que el perfil muestra lo que la app
@@ -2444,9 +2510,11 @@ docker compose up          # http://localhost:8000
 - **F4**: con `ENABLE_BACKGROUND_JOBS=true`, verificar que un ítem que sigue bajo **no**
   vuelve a notificar, que cada notificación lleva a su pantalla, y que el "¿Por qué esta
   sugerencia?" cita datos reales del usuario y no una frase genérica. El filtro por persona
-  de la 4.4.9 **no se puede recorrer a mano todavía**: `generate_for_household` sigue sin
-  llamadores hasta la 4.5, así que por ahora lo cubren sus tres tests end-to-end y el
-  recorrido de la lista de compras se agrega cuando esa función se prenda.
+  de la 4.4.9 se recorre desde la 4.5.7, que es cuando `generate_for_household` pasó a tener
+  llamador: dejar un alimento en cero en la despensa, marcarlo como imposible para **una** de
+  las dos personas desde `/profile/`, correr `run_suggestion_generation()` y ver que la lista
+  de compras del hogar sale sin él —y con él cuando nadie lo bloquea—. Las dos personas ven la
+  misma tarjeta, porque es del hogar y no tiene dueño.
   De la 4.4.8, en `/profile/`: rechazar una sugerencia y ver aparecer el sujeto en el panel
   de lo aprendido, con su dirección y su cantidad de registros; apretar "olvidar" y ver que
   desaparece y que el sujeto vuelve a poder salir sugerido.

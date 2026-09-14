@@ -1,4 +1,5 @@
 """Background job that triggers recommendation engine for all active users."""
+
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -7,10 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_utc
 from app.db.session import SessionLocal
 from app.models.user import User
+from app.repositories.household_repo import HouseholdRepository
 from app.repositories.suggestion_repo import BehaviorSignalRepository, SuggestionRepository
 from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
+
+#: Cuántas tarjetas puede dejar una corrida por entidad. El mismo número para la persona y
+#: para la casa, y escrito una vez: estaba dos veces como `limit=5` literal, y son las dos
+#: mitades de la misma pantalla —Home mezcla las personales con las del hogar—, así que un
+#: número más alto en un lado se nota como una lista que se llenó de compras.
+_SUGGESTIONS_PER_RUN = 5
 
 #: Cuán ancha es la ventana en la que una tarjeta es barrible: un día, porque
 #: `absence_sweep` corre una vez por día. No se deriva de `_SCHEDULE` porque ahí la
@@ -21,7 +29,14 @@ _SWEEP_WINDOW_DAYS = 1
 
 
 def run_suggestion_generation() -> None:
-    """Generate fresh suggestions for all active users."""
+    """Generar las tarjetas de la corrida: primero las de cada persona, después las de la casa.
+
+    Las dos recorridas son la misma corrida porque las dos mitades salen en la misma
+    pantalla, y están separadas porque las sugerencias de despensa son **del hogar**
+    (`scope_type="household"`, sin dueño): anidar el loop de hogares dentro del de personas
+    generaría la lista de compras dos veces en una casa de dos, y las dos serían la misma
+    lista con distinta hora.
+    """
     logger.info("Running suggestion generation job")
     db = SessionLocal()
     try:
@@ -32,6 +47,7 @@ def run_suggestion_generation() -> None:
 
         # Import here to avoid circular deps at module load time
         from app.recommendations.engine import RecommendationEngine
+
         engine = RecommendationEngine()
 
         #: No hay guardia de "¿existe el hogar?": `User.household_id` es `nullable=False`
@@ -39,12 +55,36 @@ def run_suggestion_generation() -> None:
         #: El `db.get(Household, ...)` que había acá no podía dar falso nunca.
         for user in users:
             try:
-                new_suggestions = engine.generate_for_user(db, user, limit=5)
+                new_suggestions = engine.generate_for_user(db, user, limit=_SUGGESTIONS_PER_RUN)
+                logger.info("Generated %d suggestions for user %d", len(new_suggestions), user.id)
+            except Exception:
+                #: El `rollback` es parte del reparto, no una precaución de más: sin él, lo
+                #: que la corrida fallida dejó pendiente en la sesión lo commitea la
+                #: siguiente entidad. Es el mismo reparto que `_sweep_user` ya hacía —una
+                #: excepción de una no se lleva puesto lo de la otra— y acá faltaba.
+                db.rollback()
+                logger.exception("Error generating suggestions for user %d", user.id)
+
+        #: Y después las casas. `HouseholdRepository.list_all()` y no un `select` acá por la
+        #: regla de capas, y `list_all` y no la `get_all()` heredada porque esa corta en 100
+        #: sin ordenar. Hasta la 4.5.7 este loop no existía: `generate_for_household` estaba
+        #: escrito y filtrado, y no lo llamaba nadie — el generador de despensa y compras no
+        #: llegaba a ninguna pantalla.
+        for household in HouseholdRepository(db).list_all():
+            try:
+                household_suggestions = engine.generate_for_household(
+                    db, household, limit=_SUGGESTIONS_PER_RUN
+                )
                 logger.info(
-                    "Generated %d suggestions for user %d", len(new_suggestions), user.id
+                    "Generated %d household suggestions for household %d",
+                    len(household_suggestions),
+                    household.id,
                 )
             except Exception:
-                logger.exception("Error generating suggestions for user %d", user.id)
+                db.rollback()
+                logger.exception(
+                    "Error generating household suggestions for household %d", household.id
+                )
 
     except Exception:
         logger.exception("Error in suggestion_generation job")

@@ -11,13 +11,13 @@ from app.core import clock
 from app.core.config import get_settings
 from app.models.food import FoodItem
 from app.models.household import Household
-from app.models.pantry import PantryStock
+from app.models.pantry import PantryMovement, PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
 from app.recommendations import learning, scorer
 from app.recommendations.context import BloodPanel, build_user_context
 from app.recommendations.filters import apply_hard_constraints, apply_signal_constraints
-from app.recommendations.generators import blood_generator
+from app.recommendations.generators import blood_generator, pantry_generator
 from app.recommendations.scorer import score_candidates
 
 
@@ -1601,6 +1601,149 @@ class TestEveryCandidateDeclaresItsSubject:
         candidates = pantry_generator.generate(db, household.id)
         # agotados + bajos + regulares + el par de co-compra
         self._assert_subjects(candidates, 4)
+
+
+class TestPantryCardsCiteWhatTheyMeasured:
+    """Que las cuatro tarjetas de despensa expliquen con números de esta corrida.
+
+    Hasta la 4.5.7 las cuatro razones eran frases de catálogo —"Items at zero stock may
+    block meal preparation."— idénticas para toda tarjeta de esa regla. El test de AST
+    (`test_explain.py::TestNoFixedRationalesLeft`) impide que vuelva una constante; estos
+    miden lo que ese no puede: que el número que se cita sea **el que se midió**. Un
+    f-string puede interpolar cualquier cosa y pasar igual.
+    """
+
+    @staticmethod
+    def _food(db: Session, name: str) -> FoodItem:
+        food = FoodItem(canonical_name=name, category="other", base_unit="g")
+        db.add(food)
+        db.flush()
+        return food
+
+    @classmethod
+    def _stock(
+        cls,
+        db: Session,
+        household: Household,
+        name: str,
+        *,
+        quantity: float,
+        threshold: float | None = None,
+    ) -> FoodItem:
+        food = cls._food(db, name)
+        db.add(
+            PantryStock(
+                household_id=household.id,
+                food_item_id=food.id,
+                current_quantity=quantity,
+                unit="g",
+                low_stock_threshold=threshold,
+            )
+        )
+        db.flush()
+        return food
+
+    @staticmethod
+    def _purchases(
+        db: Session, household: Household, food: FoodItem, *, days_ago: list[int]
+    ) -> None:
+        for offset in days_ago:
+            db.add(
+                PantryMovement(
+                    household_id=household.id,
+                    user_id=None,
+                    food_item_id=food.id,
+                    movement_type="purchase",
+                    quantity=1,
+                    unit="g",
+                    timestamp=datetime.now(tz=timezone.utc) - timedelta(days=offset),
+                )
+            )
+        db.flush()
+
+    @staticmethod
+    def _card(candidates: list[dict[str, Any]], subject_name: str) -> dict[str, Any]:
+        matching = [c for c in candidates if c["subject_name"] == subject_name]
+        assert len(matching) == 1, f"se esperaba una tarjeta {subject_name!r}, hay {len(matching)}"
+        return matching[0]
+
+    @staticmethod
+    def _generate(db: Session, household: Household) -> list[dict[str, Any]]:
+        return pantry_generator.generate(db, household.id)
+
+    def test_the_out_of_stock_card_counts_the_zeros_against_the_whole_pantry(
+        self, db: Session, household: Household
+    ) -> None:
+        """Dos en cero de cuatro seguidos: los dos números salen del stock leído."""
+        self._stock(db, household, "leche", quantity=0, threshold=500)
+        self._stock(db, household, "arroz", quantity=0, threshold=200)
+        self._stock(db, household, "avena", quantity=900, threshold=200)
+        self._stock(db, household, "aceite", quantity=900, threshold=200)
+
+        card = self._card(self._generate(db, household), "out of stock alert")
+
+        assert "2 of the 4 items" in card["rationale"]
+
+    def test_the_low_stock_card_names_the_one_with_the_least_margin(
+        self, db: Session, household: Household
+    ) -> None:
+        """El que menos margen tiene sobre su umbral, con sus dos números.
+
+        No es "el primero de la lista": la razón nombra a `avena`, que está 10 por debajo de
+        su umbral, y no a `banana`, que está justo en el suyo — aunque el orden alfabético de
+        la consulta ponga a `avena` antes y el test siga verde por accidente si se elige mal.
+        """
+        self._stock(db, household, "banana", quantity=3, threshold=3)
+        self._stock(db, household, "avena", quantity=190, threshold=200)
+
+        card = self._card(self._generate(db, household), "low stock alert")
+
+        assert "avena is down to 190 g against a threshold of 200" in card["rationale"]
+        assert "the tightest of the 2 items" in card["rationale"]
+
+    def test_the_regulars_card_cites_how_many_times_the_top_one_was_bought(
+        self, db: Session, household: Household
+    ) -> None:
+        """Tres compras de café contra dos de yerba: la razón nombra al más comprado."""
+        cafe = self._food(db, "cafe")
+        yerba = self._food(db, "yerba")
+        self._purchases(db, household, cafe, days_ago=[3, 10, 20])
+        self._purchases(db, household, yerba, days_ago=[4, 11])
+
+        card = self._card(self._generate(db, household), "restock regulars")
+
+        assert "cafe was bought 3 times in the last 60 days" in card["rationale"]
+
+    def test_the_co_purchase_card_says_same_day_because_that_is_what_it_grouped(
+        self, db: Session, household: Household
+    ) -> None:
+        """La medición es un agrupado por día, así que la razón no puede decir "juntos".
+
+        Y nombra cuál de los dos está en cero, que es la parte accionable: el par explica por
+        qué se propone, el faltante es lo que hay que comprar.
+        """
+        cafe = self._stock(db, household, "cafe", quantity=0, threshold=100)
+        azucar = self._stock(db, household, "azucar", quantity=900, threshold=100)
+        self._purchases(db, household, cafe, days_ago=[3, 10])
+        self._purchases(db, household, azucar, days_ago=[3, 10])
+
+        card = self._card(self._generate(db, household), "cafe")
+
+        assert "on the same day 2 times" in card["rationale"]
+        assert "cafe is the one at zero" in card["rationale"]
+        assert azucar.canonical_name in card["rationale"]
+
+    def test_an_item_low_without_a_threshold_is_not_called_low(
+        self, db: Session, household: Household
+    ) -> None:
+        """Sin umbral cargado no hay "poco": 1 g de sal puede ser una vida entera de sal.
+
+        Lo cuida `PantryStock.is_low`, que es de donde la tarjeta lee la regla desde la
+        4.5.7 en vez de tener su propia copia de la comparación.
+        """
+        self._stock(db, household, "sal", quantity=1, threshold=None)
+
+        assert self._generate(db, household) == []
 
 
 class TestBloodPanelBands:

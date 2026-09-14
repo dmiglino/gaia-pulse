@@ -12,16 +12,19 @@ persona no. Si alguien unifica las dos reglas en una, la mitad de este archivo s
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import pytest
 from sqlalchemy.orm import Session
 
+from app.jobs import suggestion_jobs
 from app.models.food import FoodItem
 from app.models.household import Household
 from app.models.pantry import PantryStock
 from app.models.signal import BehaviorSignal
-from app.models.suggestion import RecommendationPreference
+from app.models.suggestion import RecommendationPreference, Suggestion
 from app.models.user import User
 from app.recommendations.engine import RecommendationEngine
 from app.recommendations.filters import HouseholdMember, apply_household_constraints
+from app.recommendations.generators import pantry_generator
 
 
 def _rejection(user: User, subject_name: str, *, subject_type: str = "food") -> BehaviorSignal:
@@ -298,3 +301,115 @@ class TestGenerateForHouseholdRunsTheFilter:
         created = RecommendationEngine().generate_for_household(db, household, limit=5)
 
         assert not any(s.subject_name == "out of stock alert" for s in created)
+
+
+class TestTheGenerationJobReachesEveryHousehold:
+    """Que la corrida llame a `generate_for_household`, que es lo que faltaba (4.5.7).
+
+    La función existía completa —con su filtro por las dos personas, con sus tres tests de
+    arriba— y **cero llamadores**: el generador de despensa y compras no llegaba a ninguna
+    pantalla. Los tests de la clase anterior no podían atrapar eso, porque llaman a la
+    función ellos mismos. Estos llaman al job, que es el único camino de producción.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _job_uses_the_test_session(self, monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+        """Mismo arreglo que `test_notification_jobs.py`: el job abre su propia sesión."""
+        monkeypatch.setattr(suggestion_jobs, "SessionLocal", lambda: db)
+        monkeypatch.setattr(db, "close", lambda: None)
+
+    @staticmethod
+    def _out_of_stock(db: Session, household: Household, name: str) -> None:
+        food = FoodItem(canonical_name=name, category="other", base_unit="g")
+        db.add(food)
+        db.flush()
+        db.add(
+            PantryStock(
+                household_id=household.id,
+                food_item_id=food.id,
+                current_quantity=0,
+                unit="g",
+                low_stock_threshold=100,
+            )
+        )
+        db.flush()
+
+    @staticmethod
+    def _household_cards(db: Session, household: Household) -> list[Suggestion]:
+        return [
+            s
+            for s in db.query(Suggestion).all()
+            if s.scope_type == "household" and s.household_id == household.id
+        ]
+
+    def test_the_run_leaves_the_shopping_card_that_nobody_used_to_create(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        self._out_of_stock(db, household, "cafe")
+
+        suggestion_jobs.run_suggestion_generation()
+
+        cards = self._household_cards(db, household)
+        assert [c.subject_name for c in cards] == ["out of stock alert"]
+        #: Sin dueño y con hogar: es lo que hace que la vea la otra persona también
+        #: (`suggestion_repo._visible_to`).
+        assert cards[0].scope_user_id is None
+
+    def test_a_house_of_two_gets_one_shopping_list_and_not_one_per_person(
+        self, db: Session, household: Household, diego: User, rocio: User
+    ) -> None:
+        """El loop de hogares está al lado del de personas, no adentro.
+
+        Anidado, una casa de dos generaba la misma lista de compras dos veces por corrida
+        —y el dedup por sujeto no la salva: mira las **pendientes previas**, así que las dos
+        de la misma corrida se escriben igual—.
+        """
+        self._out_of_stock(db, household, "cafe")
+
+        suggestion_jobs.run_suggestion_generation()
+
+        assert len(self._household_cards(db, household)) == 1
+
+    def test_the_second_household_gets_its_own_run_and_its_own_cards(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        """`list_all()` y no "el hogar de la persona que corrió": son todos los hogares."""
+        other = Household(name="Otra casa", timezone="UTC")
+        db.add(other)
+        db.flush()
+        self._out_of_stock(db, household, "cafe")
+        self._out_of_stock(db, other, "yerba")
+
+        suggestion_jobs.run_suggestion_generation()
+
+        assert len(self._household_cards(db, household)) == 1
+        assert len(self._household_cards(db, other)) == 1
+
+    def test_one_household_blowing_up_does_not_take_the_next_one_with_it(
+        self, db: Session, household: Household, diego: User, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """El reparto del `try`, del lado del hogar: una casa que falla no cancela la otra.
+
+        Es el mismo reparto que el loop de personas ya tenía. Se mide con el generador
+        explotando en la primera casa, que es la forma más barata de un fallo real —un blob
+        de compras con una fila corrupta, por ejemplo—.
+        """
+        other = Household(name="Otra casa", timezone="UTC")
+        db.add(other)
+        db.flush()
+        self._out_of_stock(db, household, "cafe")
+        self._out_of_stock(db, other, "yerba")
+
+        real_generate = pantry_generator.generate
+
+        def _explode_for_the_first(db_: Session, household_id: int, **kwargs: Any) -> Any:
+            if household_id == household.id:
+                raise RuntimeError("compras ilegibles")
+            return real_generate(db_, household_id, **kwargs)
+
+        monkeypatch.setattr(pantry_generator, "generate", _explode_for_the_first)
+
+        suggestion_jobs.run_suggestion_generation()
+
+        assert self._household_cards(db, household) == []
+        assert len(self._household_cards(db, other)) == 1
