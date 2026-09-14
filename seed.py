@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Seed database with demo data for Diego and Rocío's household."""
+
 from __future__ import annotations
 
 import sys
@@ -41,10 +42,24 @@ def seed() -> None:
     # ── Clear existing data ───────────────────────────────────────────────────
     print("Clearing existing data…")
     for table in [
-        "behavior_signals", "notifications", "suggestions", "recommendation_preferences",
-        "nlp_ingestion_events", "workout_exercises", "workout_participants", "workout_sessions",
-        "meal_items_consumed", "meal_participants", "meal_events", "pantry_movements",
-        "pantry_stock", "body_metric_logs", "recipes", "users", "households", "food_items",
+        "behavior_signals",
+        "notifications",
+        "suggestions",
+        "recommendation_preferences",
+        "nlp_ingestion_events",
+        "workout_exercises",
+        "workout_participants",
+        "workout_sessions",
+        "meal_items_consumed",
+        "meal_participants",
+        "meal_events",
+        "pantry_movements",
+        "pantry_stock",
+        "body_metric_logs",
+        "recipes",
+        "users",
+        "households",
+        "food_items",
         "exercise_types",
     ]:
         db.execute(text(f"DELETE FROM {table}"))
@@ -157,34 +172,105 @@ def seed() -> None:
 
     # ── Exercise Types ────────────────────────────────────────────────────────
     print("Creating exercise types…")
+    # El séptimo campo son los alias en castellano (0004) — ["yoga"], "pilates" y "HIIT"
+    # se escriben igual en los dos idiomas y no llevan uno propio.
     exercises_data = [
-        ("Bench Press", "strength", "chest", "indoor", "barbell, bench", "high"),
-        ("Squat", "strength", "legs", "indoor", "barbell", "high"),
-        ("Deadlift", "strength", "back", "indoor", "barbell", "high"),
-        ("Overhead Press", "strength", "shoulders", "indoor", "barbell", "high"),
-        ("Barbell Row", "strength", "back", "indoor", "barbell", "high"),
-        ("Dumbbell Curl", "strength", "arms", "indoor", "dumbbells", "moderate"),
-        ("Tricep Pushdown", "strength", "arms", "indoor", "cable machine", "moderate"),
-        ("Lat Pulldown", "strength", "back", "indoor", "cable machine", "moderate"),
-        ("Leg Press", "strength", "legs", "indoor", "leg press machine", "high"),
-        ("Plank", "strength", "core", "both", "none", "moderate"),
-        ("Push-ups", "strength", "chest", "both", "none", "moderate"),
-        ("Running", "cardio", "full_body", "outdoor", "none", "high"),
-        ("Cycling", "cardio", "legs", "outdoor", "bicycle", "moderate"),
-        ("Walking", "cardio", "full_body", "outdoor", "none", "low"),
-        ("Jump Rope", "cardio", "full_body", "indoor", "jump rope", "high"),
-        ("Elliptical", "cardio", "full_body", "indoor", "elliptical machine", "moderate"),
-        ("Yoga", "flexibility", "full_body", "both", "yoga mat", "low"),
-        ("Stretching", "flexibility", "full_body", "both", "none", "low"),
-        ("Pilates", "flexibility", "core", "indoor", "mat", "moderate"),
-        ("HIIT", "cardio", "full_body", "both", "none", "high"),
+        (
+            "Bench Press",
+            "strength",
+            "chest",
+            "indoor",
+            "barbell, bench",
+            "high",
+            ["press de banca"],
+        ),
+        ("Squat", "strength", "legs", "indoor", "barbell", "high", ["sentadilla", "sentadillas"]),
+        ("Deadlift", "strength", "back", "indoor", "barbell", "high", ["peso muerto"]),
+        ("Overhead Press", "strength", "shoulders", "indoor", "barbell", "high", ["press militar"]),
+        ("Barbell Row", "strength", "back", "indoor", "barbell", "high", ["remo con barra"]),
+        (
+            "Dumbbell Curl",
+            "strength",
+            "arms",
+            "indoor",
+            "dumbbells",
+            "moderate",
+            ["curl de biceps"],
+        ),
+        (
+            "Tricep Pushdown",
+            "strength",
+            "arms",
+            "indoor",
+            "cable machine",
+            "moderate",
+            ["extension de triceps"],
+        ),
+        (
+            "Lat Pulldown",
+            "strength",
+            "back",
+            "indoor",
+            "cable machine",
+            "moderate",
+            ["jalon al pecho"],
+        ),
+        (
+            "Leg Press",
+            "strength",
+            "legs",
+            "indoor",
+            "leg press machine",
+            "high",
+            ["prensa de piernas"],
+        ),
+        ("Plank", "strength", "core", "both", "none", "moderate", ["plancha"]),
+        ("Push-ups", "strength", "chest", "both", "none", "moderate", ["flexiones", "lagartijas"]),
+        ("Running", "cardio", "full_body", "outdoor", "none", "high", ["correr", "trote"]),
+        (
+            "Cycling",
+            "cardio",
+            "legs",
+            "outdoor",
+            "bicycle",
+            "moderate",
+            ["ciclismo", "andar en bici"],
+        ),
+        ("Walking", "cardio", "full_body", "outdoor", "none", "low", ["caminar", "caminata"]),
+        ("Jump Rope", "cardio", "full_body", "indoor", "jump rope", "high", ["salto de soga"]),
+        (
+            "Elliptical",
+            "cardio",
+            "full_body",
+            "indoor",
+            "elliptical machine",
+            "moderate",
+            ["eliptica"],
+        ),
+        ("Yoga", "flexibility", "full_body", "both", "yoga mat", "low", []),
+        (
+            "Stretching",
+            "flexibility",
+            "full_body",
+            "both",
+            "none",
+            "low",
+            ["estiramiento", "estiramientos"],
+        ),
+        ("Pilates", "flexibility", "core", "indoor", "mat", "moderate", []),
+        ("HIIT", "cardio", "full_body", "both", "none", "high", []),
     ]
     exercise_types: dict[str, ExerciseType] = {}
-    for name, cat, muscle, loc, equip, intensity in exercises_data:
+    for name, cat, muscle, loc, equip, intensity, aliases in exercises_data:
         et = ExerciseType(
-            name=name, category=cat, muscle_group=muscle,
-            indoor_outdoor=loc, equipment_required=equip, intensity=intensity,
+            name=name,
+            category=cat,
+            muscle_group=muscle,
+            indoor_outdoor=loc,
+            equipment_required=equip,
+            intensity=intensity,
             tags_json=[cat, muscle],
+            aliases_json=aliases,
         )
         db.add(et)
         exercise_types[name.lower()] = et
@@ -230,16 +316,18 @@ def seed() -> None:
     for food_name, qty, unit, _ in pantry_items[:10]:
         if food_name not in foods:
             continue
-        db.add(PantryMovement(
-            household_id=household.id,
-            user_id=diego.id,
-            food_item_id=foods[food_name].id,
-            movement_type="purchase",
-            quantity=qty,
-            unit=unit,
-            timestamp=days_ago(7),
-            notes="Weekly grocery run",
-        ))
+        db.add(
+            PantryMovement(
+                household_id=household.id,
+                user_id=diego.id,
+                food_item_id=foods[food_name].id,
+                movement_type="purchase",
+                quantity=qty,
+                unit=unit,
+                timestamp=days_ago(7),
+                notes="Weekly grocery run",
+            )
+        )
     db.flush()
 
     # ── Recipes ───────────────────────────────────────────────────────────────
@@ -316,18 +404,22 @@ def seed() -> None:
     rocio_base_weight = 63.0
     for i in range(30, 0, -3):
         # Diego's metrics (slight downward trend)
-        db.add(BodyMetricLog(
-            user_id=diego.id,
-            timestamp=days_ago(i),
-            weight_kg=round(diego_base_weight - (30 - i) * 0.08 + uniform(-0.3, 0.3), 1),
-            body_fat_pct=round(18.5 - (30 - i) * 0.05, 1) if i % 9 == 0 else None,
-        ))
+        db.add(
+            BodyMetricLog(
+                user_id=diego.id,
+                timestamp=days_ago(i),
+                weight_kg=round(diego_base_weight - (30 - i) * 0.08 + uniform(-0.3, 0.3), 1),
+                body_fat_pct=round(18.5 - (30 - i) * 0.05, 1) if i % 9 == 0 else None,
+            )
+        )
         # Rocío's metrics (stable)
-        db.add(BodyMetricLog(
-            user_id=rocio.id,
-            timestamp=days_ago(i),
-            weight_kg=round(rocio_base_weight + uniform(-0.5, 0.5), 1),
-        ))
+        db.add(
+            BodyMetricLog(
+                user_id=rocio.id,
+                timestamp=days_ago(i),
+                weight_kg=round(rocio_base_weight + uniform(-0.5, 0.5), 1),
+            )
+        )
     db.flush()
 
     # ── Meal Events ───────────────────────────────────────────────────────────
@@ -374,8 +466,22 @@ def seed() -> None:
     print("Creating workout history…")
     workout_templates = [
         # (workout_type, duration, exercises_diego, exercises_rocio)
-        ("gym", 60, [("Bench Press", "chest"), ("Overhead Press", "shoulders"), ("Tricep Pushdown", "arms")], [("Lat Pulldown", "back"), ("Dumbbell Curl", "arms"), ("Plank", "core")]),
-        ("gym", 50, [("Squat", "legs"), ("Leg Press", "legs"), ("Deadlift", "back")], [("Yoga", "full_body"), ("Stretching", "full_body")]),
+        (
+            "gym",
+            60,
+            [
+                ("Bench Press", "chest"),
+                ("Overhead Press", "shoulders"),
+                ("Tricep Pushdown", "arms"),
+            ],
+            [("Lat Pulldown", "back"), ("Dumbbell Curl", "arms"), ("Plank", "core")],
+        ),
+        (
+            "gym",
+            50,
+            [("Squat", "legs"), ("Leg Press", "legs"), ("Deadlift", "back")],
+            [("Yoga", "full_body"), ("Stretching", "full_body")],
+        ),
         ("cycling", 40, [("Cycling", "legs")], None),
         ("yoga", 45, None, [("Yoga", "full_body"), ("Stretching", "full_body")]),
         ("walking", 30, [("Walking", "full_body")], [("Walking", "full_body")]),
@@ -412,15 +518,17 @@ def seed() -> None:
             db.add(wp)
             db.flush()
             for ex_name, muscle in exercises:
-                db.add(WorkoutExercise(
-                    workout_session_id=session.id,
-                    workout_participant_id=wp.id,
-                    exercise_name=ex_name,
-                    muscle_group=muscle,
-                    sets=3,
-                    reps=10 if muscle != "full_body" else None,
-                    duration_minutes=duration // len(exercises),
-                ))
+                db.add(
+                    WorkoutExercise(
+                        workout_session_id=session.id,
+                        workout_participant_id=wp.id,
+                        exercise_name=ex_name,
+                        muscle_group=muscle,
+                        sets=3,
+                        reps=10 if muscle != "full_body" else None,
+                        duration_minutes=duration // len(exercises),
+                    )
+                )
     db.flush()
 
     # ── Recommendation Preferences ────────────────────────────────────────────
@@ -434,60 +542,102 @@ def seed() -> None:
         (rocio.id, "exercise", "yoga", "preferred", 1.0, None),
     ]
     for user_id, item_type, item_name, signal, strength, notes in prefs:
-        db.add(RecommendationPreference(
-            user_id=user_id, item_type=item_type, item_name=item_name,
-            preference_signal=signal, strength=strength, notes=notes,
-        ))
+        db.add(
+            RecommendationPreference(
+                user_id=user_id,
+                item_type=item_type,
+                item_name=item_name,
+                preference_signal=signal,
+                strength=strength,
+                notes=notes,
+            )
+        )
     db.flush()
 
     # ── Behavior Signals ──────────────────────────────────────────────────────
     print("Creating behavior signals…")
     for _ in range(8):
-        db.add(BehaviorSignal(
-            user_id=diego.id, signal_type="repeated_meal_choice",
-            entity_type="food", entity_name="milanesa", value=1.0, source_type="implicit",
-            created_at=days_ago(randint(1, 20)),
-        ))
-        db.add(BehaviorSignal(
-            user_id=rocio.id, signal_type="repeated_activity",
-            entity_type="exercise", entity_name="yoga", value=1.0, source_type="implicit",
-            created_at=days_ago(randint(1, 20)),
-        ))
+        db.add(
+            BehaviorSignal(
+                user_id=diego.id,
+                signal_type="repeated_meal_choice",
+                entity_type="food",
+                entity_name="milanesa",
+                value=1.0,
+                source_type="implicit",
+                created_at=days_ago(randint(1, 20)),
+            )
+        )
+        db.add(
+            BehaviorSignal(
+                user_id=rocio.id,
+                signal_type="repeated_activity",
+                entity_type="exercise",
+                entity_name="yoga",
+                value=1.0,
+                source_type="implicit",
+                created_at=days_ago(randint(1, 20)),
+            )
+        )
     db.flush()
 
     # ── Suggestions ───────────────────────────────────────────────────────────
     print("Creating sample suggestions…")
     suggestions = [
         Suggestion(
-            scope_type="user", household_id=household.id, scope_user_id=diego.id,
-            category="meal", title="Try pasta with tomato sauce tonight",
+            scope_type="user",
+            household_id=household.id,
+            scope_user_id=diego.id,
+            category="meal",
+            title="Try pasta with tomato sauce tonight",
             text="You have pasta and tomato sauce in your pantry. A simple, satisfying dinner option.",
             rationale="Pantry stock analysis: both pasta and tomato sauce are available. You've enjoyed this combination before.",
             evidence_summary="pasta: 500g, tomato sauce: 200g in stock",
-            priority=7, confidence=0.82, source_type="stock", status="pending",
+            priority=7,
+            confidence=0.82,
+            source_type="stock",
+            status="pending",
         ),
         Suggestion(
-            scope_type="user", household_id=household.id, scope_user_id=rocio.id,
-            category="activity", title="Yoga session today",
+            scope_type="user",
+            household_id=household.id,
+            scope_user_id=rocio.id,
+            category="activity",
+            title="Yoga session today",
             text="A 30-45 minute yoga session would complement your recent gym workouts and aid recovery.",
             rationale="You've done strength training 3 times this week. Yoga is in your preferred activities list.",
             evidence_summary="Recent workouts: 3 gym sessions; yoga listed as preferred",
-            priority=6, confidence=0.78, source_type="rule", status="pending",
+            priority=6,
+            confidence=0.78,
+            source_type="rule",
+            status="pending",
         ),
         Suggestion(
-            scope_type="household", household_id=household.id, scope_user_id=None,
-            category="shopping", title="Restock spinach and eggs",
+            scope_type="household",
+            household_id=household.id,
+            scope_user_id=None,
+            category="shopping",
+            title="Restock spinach and eggs",
             text="Spinach is out of stock. Eggs are running low (fewer than 6 remaining).",
             rationale="Low-stock detection: spinach at 0g, eggs below threshold.",
             evidence_summary="spinach: 0g (threshold: 50g), eggs: below 6",
-            priority=8, confidence=0.95, source_type="stock", status="pending",
+            priority=8,
+            confidence=0.95,
+            source_type="stock",
+            status="pending",
         ),
         Suggestion(
-            scope_type="user", household_id=household.id, scope_user_id=diego.id,
-            category="activity", title="Bike ride this weekend",
+            scope_type="user",
+            household_id=household.id,
+            scope_user_id=diego.id,
+            category="activity",
+            title="Bike ride this weekend",
             text="You haven't had an outdoor biking session recently. A 30-40 min ride would be great.",
             rationale="Biking is in your preferred activities. Last outdoor ride was 9 days ago.",
-            priority=5, confidence=0.72, source_type="preference", status="pending",
+            priority=5,
+            confidence=0.72,
+            source_type="preference",
+            status="pending",
         ),
     ]
     db.add_all(suggestions)
@@ -501,21 +651,26 @@ def seed() -> None:
             category="low_stock",
             title="Low pantry stock (2 items)",
             body="Running low on: spinach, eggs",
-            priority=8, source_type="job",
+            priority=8,
+            source_type="job",
         ),
         Notification(
-            user_id=diego.id, household_id=household.id,
+            user_id=diego.id,
+            household_id=household.id,
             category="suggestion",
             title="New meal suggestion ready",
             body="We have a meal idea for tonight based on what's in your pantry.",
-            priority=5, source_type="system",
+            priority=5,
+            source_type="system",
         ),
         Notification(
-            user_id=rocio.id, household_id=household.id,
+            user_id=rocio.id,
+            household_id=household.id,
             category="metric_reminder",
             title="Time to log your weight",
             body="Rocío, you haven't logged your weight in a while. Tracking trends helps us give you better suggestions.",
-            priority=4, source_type="job",
+            priority=4,
+            source_type="job",
         ),
     ]
     db.add_all(notifications)
@@ -523,7 +678,9 @@ def seed() -> None:
     db.commit()
     print("\n✓ Seed complete!")
     print(f"  Household: {household.name}")
-    print(f"  Users: Diego (diego@gaiapulse.app / diego123) · Rocío (rocio@gaiapulse.app / rocio123)")
+    print(
+        f"  Users: Diego (diego@gaiapulse.app / diego123) · Rocío (rocio@gaiapulse.app / rocio123)"
+    )
     print(f"  Food items: {len(foods)}")
     print(f"  Pantry items: {len(pantry_items)}")
     print(f"  Recipes: {len(recipes)}")

@@ -222,19 +222,18 @@ class SuggestionService:
           matcher no hace. Se aguanta porque lo minado **ordena y no filtra**: el pollo baja
           un puesto y vuelve a subir con el primer acto que lo confirme —una compra, una
           comida—, que es una señal más confiable que la sintaxis de una queja.
-        - **El vocabulario de actividades es de claves en inglés** (`rules._EXERCISE_MAP`),
-          así que de una frase en castellano solo salen los nombres que se escriben igual en
-          los dos idiomas —los préstamos, que son varios: "yoga", "pilates", "spinning",
-          "crossfit", "cardio", "running", "hiit", "zumba"—. Lo que no aparece es lo que la
-          casa escribiría en castellano y el mapa no tiene: *"odio correr"*, *"caminar"*,
-          *"pesas"* no enseñan nada hoy. Ensancharlo toca el parser de capturas y no solo
-          esto. Y **no alcanza con cambiar la lista por `ExerciseType`** —que es lo que la
-          4.5 daba por hecho—: el catálogo también está en inglés ("Bench Press",
-          "Cycling") y no tiene `aliases_json` donde poner la forma castellana, así que el
-          cambio movería los nombres de lugar sin ganar un solo término. Lo que falta es la
-          columna de alias, o sea una migración; `docs/v3-plan.md` lo deja anotado como el
-          problema de datos que es. Lo que la 4.5.2 **sí** unificó es el grupo muscular, que
-          es por dónde entra el aprendizaje de ejercicios mientras el nombre no resuelva.
+        - **El vocabulario de actividades** combina dos catálogos cerrados desde la 7.5: las
+          claves en inglés de `rules._EXERCISE_MAP` —los préstamos que el castellano
+          rioplatense usa igual: "yoga", "pilates", "spinning", "crossfit", "cardio",
+          "running", "hiit", "zumba"— y los nombres y alias en castellano de `ExerciseType`
+          (`aliases_json`, `0004`), para los 20 ejercicios sembrados: "press de banca" enseña
+          igual que "Bench Press". Lo que sigue sin aparecer es lo que ninguno de los dos
+          conoce: *"odio correr"* no está en el mapa ni en ningún alias sembrado, así que no
+          enseña nada. Ensanchar esto es sembrar más alias, no tocar código; ensanchar el
+          parser de **capturas** (`_extract_exercises`, lo que reconoce "corrí 30 minutos" al
+          registrar un entrenamiento) es un trabajo distinto que la 7.5 no abrió. Lo que la
+          4.5.2 unificó es el grupo muscular, que sigue siendo por dónde entra el aprendizaje
+          de un ejercicio que ninguno de los dos catálogos nombra.
         """
         reason = (feedback.feedback_notes or "").strip()
         if not reason:
@@ -248,7 +247,9 @@ class SuggestionService:
         mined = [
             subject
             for subject in learning.subjects_in_text(
-                reason, foods=learning.food_vocabulary(self.db)
+                reason,
+                foods=learning.food_vocabulary(self.db),
+                activities=learning.activity_vocabulary(self.db),
             )
             if subject != own_subject
         ]

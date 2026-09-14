@@ -722,6 +722,27 @@ class TestAttributeLevelLearning:
         assert ("exercise", "eyebrow raise") not in index
         assert ("exercise", "walk") not in index
 
+    def test_the_exercise_index_reads_aliases_too(self, db: Session) -> None:
+        """Desde la 7.5, el alias en castellano cae en el mismo balde que su canónico.
+
+        Espejo de `test_the_index_reads_the_catalogue_including_aliases`: el texto libre de
+        una captura o de un motivo escribe "press de banca", no "Bench Press", y la señal
+        queda guardada con ese nombre.
+        """
+        db.add(
+            ExerciseType(
+                name="Bench Press",
+                category="strength",
+                muscle_group="chest",
+                aliases_json=["press de banca"],
+            )
+        )
+        db.flush()
+
+        index = learning.attribute_index(db)
+        assert index[("exercise", "bench press")] == ("muscle_group", "chest")
+        assert index[("exercise", "press de banca")] == ("muscle_group", "chest")
+
     def test_rejecting_two_chest_exercises_moves_a_third(self, diego: User) -> None:
         """El mismo cuento que las verduras, un dominio más allá — y es el camino que existe.
 

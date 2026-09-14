@@ -550,12 +550,13 @@ def find_known_activities(text: str) -> list[str]:
     *"caminar"*, *"pesas"*, *"natación"* no devuelven nada. Ensanchar el mapa cambiaría
     también lo que reconoce una captura, así que no se hace de contrabando acá.
 
-    Y no lo arregla el catálogo, aunque la 4.5 lo diera por hecho: `ExerciseType` **también**
-    está en inglés ("Bench Press", "Cycling", "Walking") y encima no tiene `aliases_json`
-    donde poner las formas castellanas —`FoodItem` sí la tiene, que es por qué del lado de la
-    comida esto funciona—. Cambiar este mapa por el catálogo movería los nombres de un lugar a
-    otro sin ganar un solo término en castellano. Lo que falta es la columna de alias, o sea
-    una migración; queda anotado en `docs/v3-plan.md` como problema de datos, no de código.
+    Y no lo arregla esta función, aunque `ExerciseType` ya tenga `aliases_json` con las
+    formas castellanas desde la 7.5 (`0004`): esta función sigue **sin tocar la base**, a
+    propósito —es el mismo motivo por el que `parse` no toma una `Session`—, así que el
+    castellano de la 7.5 no entra por acá. Entra por `learning.subjects_in_text`, que combina
+    esta función con `activity_vocabulary(db)` —el vocabulario del catálogo, alias
+    incluidos— exactamente como ya hacía con la comida: dos vocabularios cerrados, cada uno
+    resuelto donde corresponde.
 
     Devuelve solo el nombre, no el `ExerciseRef`: el grupo muscular que `_EXERCISE_MAP`
     también sabe queda afuera a propósito, porque deducir de una frase un veto a un grupo

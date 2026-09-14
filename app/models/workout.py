@@ -32,6 +32,9 @@ class ExerciseType(Base):
     )  # low/moderate/high/variable
     tags_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aliases_json: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )  # ["press de banca"] — mismo shape que FoodItem.aliases_json (0004)
 
     def __repr__(self) -> str:
         return f"<ExerciseType id={self.id} name={self.name!r}>"

@@ -486,7 +486,21 @@ def food_vocabulary(db: Session) -> dict[str, str]:
     return FoodRepository(db).known_names()
 
 
-def subjects_in_text(text: str, *, foods: Mapping[str, str]) -> list[tuple[str, str]]:
+def activity_vocabulary(db: Session) -> dict[str, str]:
+    """Los nombres de ejercicio contra los que se busca un sujeto dentro de una frase.
+
+    La contraparte de `food_vocabulary` para `ExerciseType` (7.5): antes de la columna de
+    alias (`0004`) el único vocabulario de actividad era el mapa en inglés de
+    `rules.find_known_activities`, así que "press de banca" o "andar en bici" no enseñaban
+    nada aunque el catálogo tuviera esas filas. Con `ExerciseTypeRepository.known_names` el
+    catálogo resuelve de las dos puntas, igual que la comida.
+    """
+    return ExerciseTypeRepository(db).known_names()
+
+
+def subjects_in_text(
+    text: str, *, foods: Mapping[str, str], activities: Mapping[str, str] | None = None
+) -> list[tuple[str, str]]:
     """Los sujetos que *text* menciona por su nombre, en la forma de `subject_key`.
 
     Sirve para leer el motivo de texto libre de un rechazo: *"no me gusta el brócoli"* tiene
@@ -494,13 +508,14 @@ def subjects_in_text(text: str, *, foods: Mapping[str, str]) -> list[tuple[str, 
     el feedback sabía mirar hasta acá.
 
     Dos vocabularios, los dos **cerrados**: los alimentos que el catálogo conoce
-    (`food_vocabulary`) y las actividades que el parser de reglas conoce
-    (`rules.find_known_activities`). Cerrados es la decisión de diseño entera. La
-    alternativa —quedarse con las palabras de la frase, que es lo que hace
-    `rules._parse_preference`— inventa sujetos: de *"no es para nosotros"* saldría un
-    alimento llamado "para nosotros", y una vez grabado nadie lo borra y nunca matchea nada.
-    Si un nombre no está en ningún catálogo, la frase simplemente no enseña, que es el error
-    barato: la sugerencia igual quedó rechazada por su propio sujeto.
+    (`food_vocabulary`) y las actividades que reconocen, juntos, el parser de reglas
+    (`rules.find_known_activities`, cerrado en inglés y préstamos) y el catálogo
+    (*activities*, de `activity_vocabulary`, con los alias en castellano de la 7.5). Cerrados
+    es la decisión de diseño entera. La alternativa —quedarse con las palabras de la frase,
+    que es lo que hace `rules._parse_preference`— inventa sujetos: de *"no es para nosotros"*
+    saldría un alimento llamado "para nosotros", y una vez grabado nadie lo borra y nunca
+    matchea nada. Si un nombre no está en ningún catálogo, la frase simplemente no enseña,
+    que es el error barato: la sugerencia igual quedó rechazada por su propio sujeto.
 
     El match es de frase entera y de la más larga primero, y cada coincidencia se **consume**
     del texto: sin eso, "queso crema" grabaría también un rechazo de "queso", que es un
@@ -536,9 +551,25 @@ def subjects_in_text(text: str, *, foods: Mapping[str, str]) -> list[tuple[str, 
             if key not in found:
                 found.append(key)
 
-    #: Las actividades se buscan sobre el texto original: el matcher de reglas trae su propio
-    #: `\b` y sus nombres son de una palabra o dos sin tildes, así que normalizar antes no
-    #: aporta nada y perdería los guiones de "pull-ups".
+    #: Los alias de `ExerciseType` —el castellano— se buscan igual que los de comida: frase
+    #: entera, la más larga primero, consumiendo lo que encuentran del mismo `haystack`
+    #: normalizado. Antes de la 7.5 no había nada de este lado más que el mapa en inglés.
+    canonical_by_activity: dict[str, str] = {}
+    for name, canonical in (activities or {}).items():
+        normalized = normalize_subject(name)
+        if normalized:
+            canonical_by_activity[normalized] = canonical
+    for name in sorted(canonical_by_activity, key=len, reverse=True):
+        needle = f" {name} "
+        if needle in haystack:
+            haystack = haystack.replace(needle, "  ")
+            key = subject_key("exercise", canonical_by_activity[name])
+            if key not in found:
+                found.append(key)
+
+    #: Las actividades del parser se buscan sobre el texto original: el matcher de reglas
+    #: trae su propio `\b` y sus nombres son de una palabra o dos sin tildes, así que
+    #: normalizar antes no aporta nada y perdería los guiones de "pull-ups".
     for activity in rules.find_known_activities(text):
         key = subject_key("exercise", activity)
         if key not in found:
@@ -972,11 +1003,6 @@ def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
     **Del lado de los ejercicios el índice cubre menos de lo que parece**, y conviene decirlo
     en vez de dejarlo como sorpresa. Lo que **no** llena el balde de un grupo:
 
-    - las señales de `repeated_activity` que escribe una captura, que están en castellano
-      ("press de banca") mientras el catálogo está en inglés ("Bench Press") — `ExerciseType`
-      **no tiene `aliases_json`** y `FoodItem` sí, que es exactamente por qué los alimentos
-      resuelven de las dos puntas y los ejercicios de una sola. Agregar la columna es una
-      migración y v3 no tiene presupuesto (`0003` está gastada);
     - las señales de `("muscle_group", …)` que la misma captura escribe con la clave ya
       normalizada. Un grupo no es un ejercicio, así que no es una clave de este índice y no
       cae en su propio balde. Se leen en el nivel **puntual**, que es donde ya pesan: hacerlas
@@ -990,7 +1016,10 @@ def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
     declara `("exercise", row.name)` y el feedback se guarda contra esa misma clave, así que
     rechazar "Bench Press" y "Push-ups" enseña sobre `chest` y mueve "Incline Press" — el
     mismo cuento que "rechazar brócoli, coliflor y kale enseña sobre las verduras", un dominio
-    más allá.
+    más allá. Desde la 7.5 el alias también entra al balde de su fila, igual que el de comida:
+    "press de banca" ("press de banca" ∈ `ExerciseType.aliases_json` de "Bench Press") cae en
+    el mismo `chest` que su canónico, porque es lo que la captura en castellano de verdad
+    escribe.
 
     `ExerciseType.category` (strength/cardio/flexibility/…) e `intensity` quedan afuera por
     dos razones distintas. La del plan es de vocabulario: para que un atributo sirva de verdad
@@ -1013,9 +1042,11 @@ def attribute_index(db: Session) -> dict[tuple[str, str], tuple[str, str]]:
         group = normalize_muscle_group(exercise.muscle_group or "")
         if group not in MUSCLE_GROUPS:
             continue
-        point = subject_key("exercise", exercise.name)
-        if point[1]:
-            index[point] = subject_key("muscle_group", group)
+        attribute = subject_key("muscle_group", group)
+        for name in (exercise.name, *(exercise.aliases_json or [])):
+            point = subject_key("exercise", name)
+            if point[1]:
+                index[point] = attribute
     return index
 
 

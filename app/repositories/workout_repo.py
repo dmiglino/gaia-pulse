@@ -225,3 +225,29 @@ class ExerciseTypeRepository(BaseRepository[ExerciseType]):
         mismos datos reciba distintas sugerencias entre corridas.
         """
         return list(self.db.scalars(select(ExerciseType).order_by(ExerciseType.name)).all())
+
+    def known_names(self) -> dict[str, str]:
+        """Todo nombre de ejercicio que el catálogo conoce → el canónico al que pertenece.
+
+        La contraparte de `FoodRepository.known_names` para `ExerciseType` (7.5): el
+        vocabulario contra el que se busca una actividad **dentro de una frase**, en
+        `learning.subjects_in_text`. Mismo motivo, mismo shape —un mapa y no una lista—: el
+        catálogo se siembra con el canónico en inglés y el castellano como alias
+        (`aliases_json`, ver `0004`), y los candidatos declaran su sujeto con
+        `ExerciseType.name`. Con una lista plana, "no nos gusta el press de banca" grababa
+        una señal sobre "press de banca" que ningún candidato —que dice "Bench Press"— iba a
+        encontrar nunca.
+        """
+        stmt = select(ExerciseType.name, ExerciseType.aliases_json)
+        rows = list(self.db.execute(stmt))
+        canonical_by_name: dict[str, str] = {}
+        for canonical_name, aliases in rows:
+            if not canonical_name:
+                continue
+            for alias in aliases or []:
+                if alias:
+                    canonical_by_name[alias] = canonical_name
+        for canonical_name, _aliases in rows:
+            if canonical_name:
+                canonical_by_name[canonical_name] = canonical_name
+        return canonical_by_name

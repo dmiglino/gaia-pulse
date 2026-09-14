@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.jobs import suggestion_jobs
 from app.models.food import FoodItem
 from app.models.household import Household
+from app.models.workout import ExerciseType
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import Suggestion
 from app.models.user import User
@@ -605,6 +606,36 @@ class TestReadingTheReasonSomeoneWrote:
             ("exercise", "yoga")
         ]
 
+    def test_an_activity_alias_teaches_about_the_catalogue_name_and_not_about_itself(
+        self,
+    ) -> None:
+        """La 7.5: el mismo caso de la palta, del lado de los ejercicios.
+
+        El catálogo se siembra con el canónico en inglés y el castellano como alias
+        (`ExerciseType.aliases_json`), y los candidatos declaran su sujeto con
+        `ExerciseType.name`. Grabar "press de banca" tal cual dejaba la señal esperando un
+        candidato que ningún generador escribe.
+        """
+        assert learning.subjects_in_text(
+            "no nos gusta el press de banca",
+            foods={},
+            activities={"Bench Press": "Bench Press", "press de banca": "Bench Press"},
+        ) == [("exercise", "bench press")]
+
+    def test_the_catalogue_alias_and_the_rules_map_both_contribute(self) -> None:
+        """Los dos vocabularios cerrados de la 7.5 se combinan y no se pisan.
+
+        "press de banca" solo lo conoce el catálogo (vía alias); "yoga" solo lo conoce
+        `rules._EXERCISE_MAP`. Ninguno de los dos tapa al otro.
+        """
+        assert set(
+            learning.subjects_in_text(
+                "el press de banca no, y el yoga tampoco",
+                foods={},
+                activities={"press de banca": "Bench Press"},
+            )
+        ) == {("exercise", "bench press"), ("exercise", "yoga")}
+
     def test_a_food_and_an_activity_in_the_same_sentence_are_both_learned(self) -> None:
         assert set(
             learning.subjects_in_text(
@@ -635,6 +666,28 @@ class TestReadingTheReasonSomeoneWrote:
         #: de una frase en castellano se encuentre con el candidato que el generador declara.
         assert vocabulary["brocoli"] == "brócoli"
         assert banana.canonical_name in vocabulary
+
+    def test_the_activity_vocabulary_resolves_from_both_ends(self, db: Session) -> None:
+        """La contraparte de comida (7.5): el alias en castellano apunta al canónico.
+
+        Antes de la `0004` este vocabulario no existía —el único lado de actividades era
+        `rules._EXERCISE_MAP`, en inglés— y `learning.activity_vocabulary` es lo que hace
+        que "press de banca" resuelva contra "Bench Press" igual que "palta" resuelve
+        contra "avocado".
+        """
+        db.add(
+            ExerciseType(
+                name="Bench Press",
+                category="strength",
+                muscle_group="chest",
+                aliases_json=["press de banca"],
+            )
+        )
+        db.flush()
+
+        vocabulary = learning.activity_vocabulary(db)
+        assert vocabulary["Bench Press"] == "Bench Press"
+        assert vocabulary["press de banca"] == "Bench Press"
 
 
 class TestWhatTheReasonTeaches:
@@ -796,6 +849,41 @@ class TestWhatTheReasonTeaches:
             "category": "meal",
             "subject_type": "food",
             "subject_name": "avocado",
+        }
+        (scored,) = score_candidates([candidate], diego, signals, [])
+        assert scored["_score"] < 0.5
+
+    def test_a_reason_in_spanish_reaches_an_exercise_candidate_named_in_english(
+        self, db: Session, diego: User
+    ) -> None:
+        """El camino completo del lado de los ejercicios (7.5), espejo del de comida.
+
+        Antes de la `0004` no había alias que resolver: "press de banca" no era nadie
+        para el índice y el candidato "Bench Press" seguía saliendo igual de arriba.
+        """
+        db.add(
+            ExerciseType(
+                name="Bench Press",
+                category="strength",
+                muscle_group="chest",
+                aliases_json=["press de banca"],
+            )
+        )
+        db.flush()
+        card = _card(db, diego)
+
+        self._respond(db, diego, card, "rejected", "no nos gusta el press de banca")
+
+        signals = _signals(db, diego)
+        (mined,) = [s for s in signals if s.signal_type == "explicit_preference"]
+        assert (mined.entity_type, mined.entity_name) == ("exercise", "bench press")
+
+        candidate = {
+            "title": "Rutina de pecho",
+            "confidence": 0.5,
+            "category": "workout",
+            "subject_type": "exercise",
+            "subject_name": "Bench Press",
         }
         (scored,) = score_candidates([candidate], diego, signals, [])
         assert scored["_score"] < 0.5
