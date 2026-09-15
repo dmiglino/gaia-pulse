@@ -219,19 +219,6 @@ justamente lo que había que arreglar.
 **Build step de Tailwind.** Prohibido por la restricción de no introducir build de
 frontend. Arrastra consigo la CSP y el peso del CDN.
 
-**Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
-escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
-—vuelve `mixed` al 0.10— aunque cada mitad por separado funcione perfecto. No es una compuerta
-incompleta: la **precedencia de `parse()`** hace que comida excluya entrenamiento y viceversa,
-así que la frase con las dos no dispara nada. Y hay un segundo caso con otra causa y otra
-forma: `compré leche y pesé 80 kg` **sí** anota el peso y la leche, y además da de alta un
-producto fantasma llamado *"pesé 80 kg"*, porque cada parser lee la oración entera en vez de su
-propio tramo y el de stock enumera por "y". Arreglarlo es **segmentar la oración**
-y correr cada parser sobre su segmento —un cambio de diseño del módulo, con riesgo sobre las 40
-aserciones en castellano que ya están—, y por eso la 6.2 lo enseña en negativo ("un tema por
-captura") en vez de que la Fase 6 lo abra. Lo que sí funciona son varios hechos del mismo tema:
-`pesé 81 kg y dormí 7 horas` es una sola medición con las dos cosas.
-
 **Remember-me y recuperación de contraseña.** Tocan sesión y auth; v3 quitó las promesas
 muertas de la UI en vez de implementarlas a medias.
 
