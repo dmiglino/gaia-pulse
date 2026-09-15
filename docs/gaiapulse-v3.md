@@ -118,7 +118,7 @@ cadena.
 | Ya estaba en la v2 | Lo que la v3 cambió | Sigue igual a propósito |
 |---|---|---|
 | Las nueve pantallas principales, el CRUD de comidas/entrenamientos/despensa/salud, el parser de dos capas, los cuatro generadores de sugerencias y los jobs de fondo | **Los 13 defectos de la tabla A**: cuatro acciones HTMX apuntaban a rutas inexistentes o a JSON crudo, `appStore()` tiraba un error de Alpine en cada carga, el sistema de flash era una API de Flask que no existe, las seis acciones rápidas del Home llevaban a un textarea vacío, el tab Workouts del historial renderizaba tarjetas en blanco | El modelo de datos: 20 tablas y **tres** migraciones — v3 agregó una sola (`0003`, sujeto de sugerencia) |
-| `app/web/onboarding.py`, completo y migrado | **El onboarding existía y era inalcanzable**: el router no estaba registrado, la plantilla no existía y ninguna ruta miraba `onboarding_completed`. v3 escribió el wizard, registró el router y puso el gate | Que no haya recuperación de contraseña ni "recordarme": v3 **quitó las dos promesas muertas** de la UI en vez de implementarlas a medias |
+| `app/web/onboarding.py`, completo y migrado | **El onboarding existía y era inalcanzable**: el router no estaba registrado, la plantilla no existía y ninguna ruta miraba `onboarding_completed`. v3 escribió el wizard, registró el router y puso el gate | El modelo de sesión: cookie firmada + `httponly`/`samesite=lax`, sin JWT ni tabla de sesiones |
 | La ventana de comida, el cooldown de notificaciones, el mapeo del LLM | Tres bugs que eran bugs y no diseño: la ventana de comida se calculaba en UTC (a las 08:00 locales el motor creía que era el almuerzo), un `or_` mal armado hacía que **la notificación de uno suprimiera la del otro**, y un desajuste `name`/`food_name` hacía que *todo* `log_meal` del LLM lanzara `ValidationError` en silencio — el tipo de captura más frecuente nunca se beneficiaba de la capa 2 | Que la capa 2 sea opcional y degrade a la capa 1 sin avisar al usuario |
 
 ### 3.2 Diseño
@@ -218,9 +218,6 @@ justamente lo que había que arreglar.
 
 **Build step de Tailwind.** Prohibido por la restricción de no introducir build de
 frontend. Arrastra consigo la CSP y el peso del CDN.
-
-**Remember-me y recuperación de contraseña.** Tocan sesión y auth; v3 quitó las promesas
-muertas de la UI en vez de implementarlas a medias.
 
 **Superficie conversacional** ("preguntale a tus datos"). No existe ninguna ruta hoy: es
 una feature nueva, no un upgrade.
