@@ -1,9 +1,16 @@
+from typing import cast
+
 from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.dependencies import DB, CurrentUser
 from app.i18n import _
-from app.schemas.suggestion import RecommendationPreferenceCreate, SuggestionFeedback
+from app.schemas.suggestion import (
+    FeedbackStatus,
+    PreferenceSignal,
+    RecommendationPreferenceCreate,
+    SuggestionFeedback,
+)
 from app.services.suggestion_service import SuggestionService
 from app.web.actions import suggestion_action
 from app.web.flash import set_flash
@@ -124,7 +131,10 @@ def suggestion_feedback(
     svc = SuggestionService(db)
     suggestion = svc.respond_to_suggestion(
         suggestion_id,
-        SuggestionFeedback(status=status, feedback_notes=reason or None),
+        SuggestionFeedback(
+            status=cast(FeedbackStatus, status),
+            feedback_notes=reason or None,
+        ),
         current_user.id,
         current_user.household_id,
     )
@@ -208,7 +218,7 @@ def save_preference(
         RecommendationPreferenceCreate(
             item_type=item_type,
             item_name=item_name,
-            preference_signal=preference_signal,
+            preference_signal=cast(PreferenceSignal, preference_signal),
         ),
     )
     if request.headers.get("HX-Request"):

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from babel.support import Translations
 
@@ -78,10 +78,16 @@ def _ensure_mo_compiled(locale: str) -> None:
 def get_translations(locale: str = DEFAULT_LOCALE) -> Translations:
     """Load (auto-compiling if necessary) gettext Translations for *locale*."""
     _ensure_mo_compiled(locale)
-    return Translations.load(
-        dirname=str(LOCALES_DIR),
-        locales=[locale],
-        domain="messages",
+    # babel's own `Translations.load()` is annotated to return `NullTranslations` (its
+    # base class), but with a `domain="messages"` catalog on disk it always returns a
+    # `Translations` instance — this is babel's own typing gap, not ours.
+    return cast(
+        Translations,
+        Translations.load(
+            dirname=str(LOCALES_DIR),
+            locales=[locale],
+            domain="messages",
+        ),
     )
 
 
@@ -123,5 +129,7 @@ def setup_jinja2_i18n(env: "Environment", locale: str = DEFAULT_LOCALE) -> None:
     """
     env.add_extension("jinja2.ext.i18n")
     translations = get_translations(locale)
-    env.install_gettext_translations(translations, newstyle=True)
+    # jinja2's `ext.i18n` extension installs this method on `Environment` at runtime;
+    # jinja2's own source has `# type: ignore` on these same dynamic assignments.
+    env.install_gettext_translations(translations, newstyle=True)  # type: ignore[attr-defined]
     logger.debug("Jinja2 i18n configured for locale '%s'", locale)

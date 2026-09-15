@@ -25,8 +25,11 @@ class SuggestionRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+FeedbackStatus = Literal["accepted", "rejected", "snoozed", "dismissed"]
+
+
 class SuggestionFeedback(BaseModel):
-    status: Literal["accepted", "rejected", "snoozed", "dismissed"]
+    status: FeedbackStatus
     #: El tope vale para los dos caminos —el formulario y la ruta JSON—: el motivo se
     #: guarda en una columna `Text` sin límite, y el largo no es solo almacenamiento
     #: porque el texto se mina contra el catálogo entero de sujetos. Lo que **no** pasa es
@@ -46,7 +49,7 @@ class RecommendationPreferenceCreate(BaseModel):
     item_type: str = Field(..., max_length=40)
     item_name: str = Field(..., min_length=1, max_length=200)
     preference_signal: PreferenceSignal
-    strength: float = Field(1.0, ge=0.0, le=1.0)
+    strength: float = Field(default=1.0, ge=0.0, le=1.0)
     notes: str | None = None
 
     @field_validator("item_name")

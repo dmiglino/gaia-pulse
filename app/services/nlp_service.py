@@ -425,9 +425,9 @@ class NLPService:
         targets = self.resolve_intent_targets(intent, user_map, acting_user)
 
         if intent_type == "add_stock":
-            svc = PantryService(self.db)
+            pantry_svc = PantryService(self.db)
             items_raw = intent.get("items", [])
-            items = [
+            purchase_items = [
                 PurchaseItem(
                     food_name=i.get("food_name", ""),
                     quantity=i.get("quantity", 1),
@@ -436,19 +436,21 @@ class NLPService:
                 for i in items_raw
                 if i.get("food_name")
             ]
-            if items:
-                svc.process_purchase(household_id, user_id, PurchaseRequest(items=items))
-            return {"added": len(items)}
+            if purchase_items:
+                pantry_svc.process_purchase(
+                    household_id, user_id, PurchaseRequest(items=purchase_items)
+                )
+            return {"added": len(purchase_items)}
 
         elif intent_type == "consume_stock":
-            svc = PantryService(self.db)
+            pantry_svc = PantryService(self.db)
             items_raw = intent.get("items", [])
             consumed = 0
             for i in items_raw:
                 food_name = i.get("food_name", "")
                 if not food_name:
                     continue
-                svc.adjust_stock(
+                pantry_svc.adjust_stock(
                     household_id,
                     user_id,
                     StockAdjustRequest(
@@ -462,7 +464,7 @@ class NLPService:
             return {"consumed": consumed}
 
         elif intent_type == "log_meal":
-            svc = MealService(self.db)
+            meal_svc = MealService(self.db)
             items_per_user = intent.get("items_per_user", {})
             #: Una fila por persona, no por clave: `both` se abre a todo el hogar (antes
             #: caía en el fallback y la cena compartida se guardaba solo a nombre del
@@ -470,7 +472,7 @@ class NLPService:
             #: una sola participación en vez de duplicar a esa persona en la comida.
             items_by_user: dict[int, list[MealItemCreate]] = {}
             for user_key, items_list in items_per_user.items():
-                items = [
+                meal_items = [
                     MealItemCreate(
                         # FoodItemRef uses food_name; legacy dicts may still have 'name'
                         food_name=i.get("food_name") or i.get("name") or "",
@@ -480,36 +482,36 @@ class NLPService:
                     for i in items_list
                 ]
                 for target_user in targets.get(user_key, []):
-                    items_by_user.setdefault(target_user.id, []).extend(items)
-            participants = [
-                MealParticipantCreate(user_id=uid, items=items)
-                for uid, items in items_by_user.items()
+                    items_by_user.setdefault(target_user.id, []).extend(meal_items)
+            meal_participants = [
+                MealParticipantCreate(user_id=uid, items=uid_items)
+                for uid, uid_items in items_by_user.items()
             ]
             if not items_per_user:
                 return {"skipped": intent_type}
-            if not participants:
+            if not meal_participants:
                 #: Nombres que no son del hogar, o una clave ambigua. No se elige a
                 #: nadie por descarte: la comida no se guarda y la pantalla lo dice.
                 return {"unattributed": True}
-            svc.log_meal(
+            meal_svc.log_meal(
                 household_id,
                 MealEventCreate(
                     timestamp=now,
                     meal_type=intent.get("meal_type", "other"),
                     context=intent.get("context", "home"),
-                    participants=participants,
+                    participants=meal_participants,
                 ),
             )
-            return {"participants": len(participants)}
+            return {"participants": len(meal_participants)}
 
         elif intent_type == "log_workout":
-            svc = WorkoutService(self.db)
+            workout_svc = WorkoutService(self.db)
             target_users = self._flatten_targets(targets)
             if not target_users:
                 return {"unattributed": True}
 
             exercises_raw = intent.get("exercises", [])
-            participants = []
+            workout_participants = []
             for u in target_users:
                 exercises = [
                     WorkoutExerciseCreate(
@@ -518,23 +520,25 @@ class NLPService:
                     )
                     for ex in exercises_raw
                 ]
-                participants.append(WorkoutParticipantCreate(user_id=u.id, exercises=exercises))
+                workout_participants.append(
+                    WorkoutParticipantCreate(user_id=u.id, exercises=exercises)
+                )
 
-            if participants:
-                svc.log_workout(
+            if workout_participants:
+                workout_svc.log_workout(
                     household_id,
                     WorkoutSessionCreate(
                         timestamp_start=now,
                         duration_minutes=intent.get("duration_minutes"),
                         workout_type=intent.get("workout_type"),
-                        participants=participants,
+                        participants=workout_participants,
                         source="text",
                     ),
                 )
-            return {"participants": len(participants)}
+            return {"participants": len(workout_participants)}
 
         elif intent_type == "log_body_metric":
-            svc = BodyMetricService(self.db)
+            metric_svc = BodyMetricService(self.db)
             #: Una medida corporal es de una sola persona. `both` acá no se reparte: la
             #: frase "los dos nos pesamos hoy, Rocío 60" traía un solo número y lo
             #: anotaba en el registro de salud del que hablaba. Sin destino único, no
@@ -543,7 +547,7 @@ class NLPService:
             if len(people) != 1:
                 return {"unattributed": True}
             target_user = people[0]
-            svc.log_metric(
+            metric_svc.log_metric(
                 target_user.id,
                 BodyMetricCreate(
                     timestamp=now,
@@ -556,13 +560,13 @@ class NLPService:
             return {"user": target_user.display_name}
 
         elif intent_type == "update_preference":
-            svc = SuggestionService(self.db)
+            pref_svc = SuggestionService(self.db)
             people = self._flatten_targets(targets)
             item_name = intent.get("item_name", "").strip()
             if not people or not item_name:
                 return {"unattributed": True}
             for target_user in people:
-                svc.save_preference(
+                pref_svc.save_preference(
                     target_user.id,
                     RecommendationPreferenceCreate(
                         item_type=intent.get("item_type", "exercise"),

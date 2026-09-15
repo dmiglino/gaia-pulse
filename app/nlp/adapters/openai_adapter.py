@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from app.core.config import get_settings
 from app.nlp.adapters.base import BaseLLMAdapter
@@ -26,6 +26,7 @@ from app.nlp.intents import (
     StockAddIntent,
     StockConsumeIntent,
     StockItemRef,
+    UserKey,
     WorkoutIntent,
 )
 
@@ -187,7 +188,9 @@ def _deserialise_intents(raw_intents: list[dict[str, Any]]) -> list[Any]:
     result: list[Any] = []
     for d in raw_intents:
         itype = d.get("intent_type", "mixed")
-        participants: list[str] = d.get("participants", ["both"])
+        # Untrusted LLM JSON, not statically restricted to UserKey; the whole block below
+        # is wrapped in try/except and Pydantic validates for real on construction.
+        participants = cast(list[UserKey], d.get("participants", ["both"]))
         confidence: float = float(d.get("confidence", 0.5))
 
         try:

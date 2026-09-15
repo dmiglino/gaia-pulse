@@ -19,7 +19,7 @@ Usage:
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 from app.nlp.intents import (
     BodyMetricIntent,
@@ -29,9 +29,11 @@ from app.nlp.intents import (
     ParseResult,
     ParsedIntent,
     PreferenceIntent,
+    PreferenceSignal,
     StockAddIntent,
     StockConsumeIntent,
     StockItemRef,
+    UserKey,
     WorkoutIntent,
 )
 
@@ -76,7 +78,7 @@ _I_PATTERNS = re.compile(
 )
 
 
-def _resolve_participants(text: str, speaking_user: str) -> list[str]:
+def _resolve_participants(text: str, speaking_user: str) -> list[UserKey]:
     """Return list of user keys inferred from text."""
     has_diego = bool(_DIEGO_PATTERNS.search(text))
     has_rocio = bool(_ROCIO_PATTERNS.search(text))
@@ -92,8 +94,8 @@ def _resolve_participants(text: str, speaking_user: str) -> list[str]:
     if has_rocio:
         return ["rocio"]
     if has_i:
-        return [speaking_user]
-    return [speaking_user]
+        return [cast(UserKey, speaking_user)]
+    return [cast(UserKey, speaking_user)]
 
 
 # ---------------------------------------------------------------------------
@@ -749,7 +751,7 @@ def _split_by_user(text: str) -> dict[str, str]:
 
 def _build_items_per_user(
     text: str,
-    participants: list[str],
+    participants: list[UserKey],
     speaking_user: str,
 ) -> dict[str, list[FoodItemRef]]:
     """Build the items_per_user dict for a MealIntent."""
@@ -814,6 +816,7 @@ def _parse_preference(text: str, speaking_user: str) -> PreferenceIntent | None:
     has_suggest = bool(_SUGGEST_WORD.search(text))
 
     # Determine signal
+    signal: PreferenceSignal
     if is_neg:
         if has_suggest:
             signal = "avoid"
@@ -904,7 +907,7 @@ _SLEEP_RE = re.compile(
 
 def _parse_body_metric(text: str, speaking_user: str) -> BodyMetricIntent | None:
     participants = _resolve_participants(text, speaking_user)
-    user_key = participants[0] if len(participants) == 1 else speaking_user
+    user_key = participants[0] if len(participants) == 1 else cast(UserKey, speaking_user)
 
     weight_kg: float | None = None
     body_fat: float | None = None
@@ -1122,8 +1125,8 @@ def _parse_segment(text: str, speaking_user: str) -> ParseResult:
             qty_val = float(qty_each_match.group("val"))
             qty_unit = _normalise_unit(qty_each_match.group("unit"))
             # Apply this quantity to all items that have none
-            for items in items_per_user.values():
-                for item in items:
+            for food_items in items_per_user.values():
+                for item in food_items:
                     if item.qty is None:
                         item.qty = qty_val
                         item.unit = qty_unit

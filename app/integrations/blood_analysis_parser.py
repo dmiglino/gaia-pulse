@@ -185,7 +185,8 @@ async def _parse_with_llm(text: str) -> dict[str, Any] | None:
         # Strip markdown code fences if present
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
         raw = re.sub(r"\s*```$", "", raw.strip())
-        return json.loads(raw)
+        parsed: dict[str, Any] = json.loads(raw)
+        return parsed
     except Exception as exc:
         logger.warning("LLM blood analysis parsing failed: %s", exc)
         return None
@@ -216,7 +217,8 @@ async def _parse_image_with_llm(file_bytes: bytes, mime_type: str) -> dict[str, 
         raw = response.choices[0].message.content or ""
         raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
         raw = re.sub(r"\s*```$", "", raw.strip())
-        return json.loads(raw)
+        parsed: dict[str, Any] = json.loads(raw)
+        return parsed
     except Exception as exc:
         logger.warning("LLM image blood analysis parsing failed: %s", exc)
         return None
