@@ -2298,12 +2298,14 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       las preferencias y las señales de cada miembro por separado (4.4.9). Ninguno de los tres
       `logger` nuevos escribe un nombre de alimento: el `debug` del generador registra
       `household_id` y cantidades, y los dos del job registran cantidades y el id del hogar.
-- [ ] **Anotado, no arreglado: los `logger.exception` de los jobs pueden volcar parámetros
+- [x] **Anotado, no arreglado acá: los `logger.exception` de los jobs pueden volcar parámetros
       ligados.** Un `IntegrityError` de SQLAlchemy trae el `INSERT` con sus valores en el
       `__str__`, así que un traceback de la corrida puede terminar con nombres de alimentos —o,
       en el loop de personas, con un dato de salud— en el log. El loop de hogares hereda la
       forma que los otros tres ya tenían; unificarlos en un helper que registre tipo y entidad y
       no el mensaje del driver es un cambio de `app/jobs/` entero, no de este punto.
+      **Cerrado en la 7.1** (`log_job_error` deja de propagar el `__str__` del driver,
+      `47fdb88`) — ver más abajo.
 - [x] **4.5.8 — Los dos arrastres de la 4.4.** Los ejercicios entran a
       `learning.attribute_index` con el **grupo muscular** como atributo (va después de 4.5.2
       porque necesita el vocabulario unificado). `ExerciseType.category` queda afuera y no es un
@@ -2351,7 +2353,7 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
     - **Un bug de la 4.5.6 que salió al mover eso:** el `rationale` de la sección 1 decía
       "y {alimento} aparece N veces" con N siendo la **suma sobre los cinco** destacados, así que
       podía afirmar "12" de algo que la persona no comió nunca. Ahora cuenta el sujeto que nombra.
-- [ ] **Extensión anotada (no un olvido de 4.5.8): las señales de `("muscle_group", g)` no caen
+- [x] **Extensión anotada (no un olvido de 4.5.8): las señales de `("muscle_group", g)` no caen
       en su propio balde de atributo.** Una captura de entrenamiento escribe el grupo con la
       clave ya normalizada, y un grupo no es un ejercicio, así que no es clave de
       `attribute_index` y su señal pesa solo en el nivel **puntual**. Hacerla entrar pide una
@@ -2362,6 +2364,10 @@ correcciones cambian *qué* hay que hacer, no solo cómo se cuenta:
       empuja "Incline Press", y "rechacé Bench Press" sí enseña sobre `chest`, o sea que el balde
       se llena de un solo lado. Cuesta una línea en `attribute_index` y una decisión sobre cómo
       se nombra eso en el panel, donde la misma fila ya aparece dos veces.
+      **Cerrado en la Fase 7 documentando la decisión como definitiva, no agregando código**
+      (ver la intro de la Fase 7, más abajo): el propio docstring de `attribute_index` ya
+      argumenta en contra de la entrada identidad, así que agregarla ahora sería la misma
+      abstracción sin caso de uso que la Fase 7 pidió explícitamente no crear.
 
 **Archivos:** `app/jobs/{scheduler,notification_jobs,suggestion_jobs}.py`,
 `app/repositories/{notification_repo,user_repo,workout_repo,meal_repo,body_metric_repo,pantry_repo}.py`
@@ -3349,7 +3355,11 @@ líneas de stack/tradeoffs cambian).
 
 ## Fuera de alcance de v3
 
-Explícito, para que no se cuele por la ventana:
+Explícito, para que no se cuele por la ventana. Esta lista se achicó respecto de la
+versión original del plan: "normalizar los marcadores de sangre en filas", "objetivos
+nutricionales declarados" y "anclar la fecha del panel a su etiqueta" entraron a la Fase 7
+(7.7, 7.6 y 7.4 respectivamente) y quedaron cerrados ahí — dejaron de estar fuera de
+alcance, no se retiraron de la lista por descuido.
 
 - **LLM en el camino de recomendación.** Añade latencia, costo y no-determinismo a un job de
   fondo, y hay muchísimo dato ya recolectado sin explotar antes de necesitarlo.
@@ -3357,45 +3367,8 @@ Explícito, para que no se cuele por la ventana:
   una feature nueva, no un upgrade.
 - **Build step de Tailwind** (está en el roadmap del README): prohibido por la restricción de
   no introducir build de frontend.
-- **Remember-me y recuperación de contraseña**: tocan sesión y auth; en v3 se quitan las
-  promesas muertas de la UI en vez de implementarlas a medias.
-- **Normalizar los marcadores de sangre en filas**: hoy viven en un blob JSON, lo que impide
-  tendencia por SQL. Es un refactor de datos que merece su propio cambio.
 - **Validación de CSRF** y **cabeceras de seguridad**: cerradas en la Fase 7 (7.1 y 7.2,
   ver más arriba), no quedaron fuera de alcance.
-- **Objetivos nutricionales declarados** (macros o calorías objetivo por persona). Sí es una
-  buena feature, y de las mejores que quedan: es el dato que le falta a la parte más nueva del
-  motor. La 4.5.3 tuvo que comparar a cada persona **consigo misma a la misma hora** —su propio
-  promedio de proteína y fibra en el desayuno— justamente porque no hay un objetivo contra el
-  que medir, y ese es el techo de honestidad de esa tarjeta: sabe decir "hoy vas por debajo de
-  tu propio promedio", no "te faltan 40 g para tu objetivo". Con un objetivo declarado, la escala
-  dejaría de tener un solo lado (hoy solo mira hacia abajo, porque "vas pesado de grasa" sin
-  objetivo es consejo dietario sin referencia), la despensa podría ordenarse por aporte al hueco
-  del día y no por antigüedad, y el hueco sería restable en vez de comparativo. Queda afuera de
-  v3 por tres razones concretas, no por falta de ganas:
-  1. **Es una feature de producto, no un ajuste del motor.** Necesita una pantalla donde
-     declararlos, validación de rangos plausibles, y una decisión de si son por persona o por
-     casa (por persona: `goals_json` y `target_weight_kg` ya existen en `User` y **nadie los
-     lee**, así que el lugar está, pero la UI no).
-  2. **Toca terreno clínico.** Un objetivo calórico o proteico que la app propone —en vez de uno
-     que la persona declara— es prescripción nutricional, y el mismo encuadre no diagnóstico que
-     la 4.5.6 le pone a la sangre habría que diseñarlo acá. Derivar un objetivo de edad, sexo,
-     peso y actividad es fácil de escribir y difícil de justificar.
-  3. **El dato de entrada todavía es flojo.** Los macros salen del catálogo de `FoodItem` y de
-     una cantidad estimada por el NLP; medir contra un objetivo exacto un total con ese margen
-     de error da una precisión falsa. Comparar a alguien consigo mismo tolera el sesgo porque
-     está en los dos lados de la comparación; restar contra un número absoluto no.
-  Candidata fuerte para v4, y el orden natural sería: pantalla de objetivos → los macros dejan
-  de ser comparativos → un panel de "cómo viene el día" que hoy no existe.
-- **Anclar la fecha del panel a su etiqueta.** `blood_analysis_parser._extract_date` toma la
-  **primera** cadena con forma de fecha de todo el documento, así que puede devolver una fecha
-  de nacimiento o de impresión. Eso acota lo que la frescura de la 4.5.6 puede prometer: el
-  generador confía en la fecha que recibe y no tiene forma de dudar de ella. Arreglarlo es un
-  cambio del parser —patrones anclados a etiquetas ("Fecha de extracción", "Collected")— con su
-  propio juego de fixtures de laboratorios reales, y el camino del LLM ya pide `analysis_date`
-  explícito y es mejor. Tampoco hay hoy ninguna ruta que permita **corregir** la fecha de un
-  panel: `app/web/health.py` tiene índice, alta, detalle y borrado, nada más. Las dos cosas van
-  juntas y son un cambio propio.
 - **Botón de acción en la tarjeta de "repetí el panel".** Hoy nombra la pantalla de Salud en el
   texto porque `web.actions.suggestion_action` devuelve `None` para todo `source_type ==
   "blood_analysis"`, y esa regla existe por un bug real: mirar la categoría le ponía "Anotar una

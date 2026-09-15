@@ -201,14 +201,16 @@ podían arreglar con el botón que tenían al lado.
 Un documento que solo cuenta lo que se hizo es propaganda. Lo valioso para quien llega
 después es el mapa de lo que falta, con nombre y razón.
 
-**Cabeceras de seguridad.** La app no manda ninguna: no hay CSP, ni `X-Frame-Options`, ni
-`Referrer-Policy`, ni HSTS. Y una CSP útil es imposible mientras Tailwind inyecte
-`<style>` en runtime desde el CDN — haría falta `style-src 'unsafe-inline'` para siempre,
-que es justo lo que una CSP viene a cerrar. O sea que está **atado al build step**, que
-también está afuera. La consecuencia práctica quedó anotada donde importa: cualquier dato
-de request o de base interpolado en un atributo `style` o en el parámetro `attrs` de un
-macro no tiene red de contención, y por eso `components/ui.html` lleva escrita la regla de
-no interpolar nunca ahí, y `avatar_color` se valida en la escritura.
+**CSP completa.** Desde la 7.1 la app manda `X-Frame-Options`, `X-Content-Type-Options` y
+HSTS condicionado a HTTPS (`app/core/security_headers.py`), más una CSP tan ajustada como
+permite el CDN de Tailwind/HTMX/Alpine/Chart.js; `Referrer-Policy` ya estaba, en
+`privacy_headers`. Lo que sigue afuera es la CSP **completa**: mientras Tailwind inyecte
+`<style>` en runtime desde el CDN, hace falta `style-src 'unsafe-inline'` para siempre, que
+es justo lo que una CSP viene a cerrar. O sea que está **atado al build step**, que también
+está afuera. La consecuencia práctica quedó anotada donde importa: cualquier dato de
+request o de base interpolado en un atributo `style` o en el parámetro `attrs` de un macro
+no tiene red de contención, y por eso `components/ui.html` lleva escrita la regla de no
+interpolar nunca ahí, y `avatar_color` se valida en la escritura.
 
 **El LLM en el camino de recomendación.** Latencia, costo y no-determinismo dentro de un
 job de fondo, cuando todavía hay datos recolectados sin explotar. El motor de
