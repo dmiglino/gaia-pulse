@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GaiaPulse por dentro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --ink:#211e17; --ink-soft:#5b5a4e;
+    --paper:#e7ece3; --surface:#f6f8f2; --surface-2:#edf1e6;
+    --line:#c9d2bd;
+    --accent:#7c3550; --accent-ink:#5e2740; --accent-soft:#f1e1e7;
+    --good:#3f7350; --good-soft:#e2eee0;
+    --warn:#8c611e; --warn-soft:#f2e6cd;
+    --bad:#a23e3e; --bad-soft:#f4e1de;
+    --shadow: 0 1px 2px rgba(33,30,23,.06), 0 8px 24px -12px rgba(33,30,23,.18);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#ede9dd; --ink-soft:#b6b1a1;
+      --paper:#181611; --surface:#232016; --surface-2:#2b271a;
+      --line:#3a3524;
+      --accent:#e0a0b6; --accent-ink:#f0bccc; --accent-soft:#3a2530;
+      --good:#8fc79b; --good-soft:#243424;
+      --warn:#e0b569; --warn-soft:#3a2f18;
+      --bad:#e2938c; --bad-soft:#3a2320;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#ede9dd; --ink-soft:#b6b1a1;
+    --paper:#181611; --surface:#232016; --surface-2:#2b271a;
+    --line:#3a3524;
+    --accent:#e0a0b6; --accent-ink:#f0bccc; --accent-soft:#3a2530;
+    --good:#8fc79b; --good-soft:#243424;
+    --warn:#e0b569; --warn-soft:#3a2f18;
+    --bad:#e2938c; --bad-soft:#3a2320;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Karla", ui-sans-serif, system-ui, sans-serif;
+    font-size:16px; line-height:1.55;
+  }
+  @media (prefers-reduced-motion:no-preference){ html{ scroll-behavior:smooth; } }
+  h1,h2,h3{ font-family:"Fraunces", ui-serif, Georgia, serif; font-weight:600; text-wrap:balance; margin:0; color:var(--ink); }
+  p{ margin:0; }
+  a{ color:var(--accent-ink); }
+  .mono{ font-family:"IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace; }
+  .tab{ font-variant-numeric:tabular-nums; }
+  .eyebrow{
+    font-family:"IBM Plex Mono", monospace; font-size:.72rem; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--accent-ink); font-weight:500;
+  }
+
+  .wrap{ max-width:1200px; margin:0 auto; padding-inline:max(20px, calc((100vw - 1200px)/2 + 20px)); }
+
+  /* ---------- HERO ---------- */
+  .hero{ padding-block: 56px 40px; border-bottom:1px solid var(--line); }
+  .hero-grid{ display:grid; gap:28px; max-width:1160px; margin:0 auto; padding-inline:20px; }
+  .hero h1{ font-size:clamp(2rem, 4vw, 3rem); line-height:1.08; max-width:16ch; margin-top:10px; }
+  .hero p.sub{ max-width:56ch; color:var(--ink-soft); font-size:1.05rem; margin-top:14px; }
+  .flow{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:26px; }
+  .flow-chip{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:10px 14px; box-shadow:var(--shadow); font-size:.85rem; max-width:280px;
+  }
+  .flow-chip .label{ display:block; font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.06em; color:var(--ink-soft); text-transform:uppercase; margin-bottom:4px; }
+  .flow-arrow{ color:var(--ink-soft); font-size:1.1rem; flex:0 0 auto; }
+  .flow-chip.confirm{ background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 35%, var(--line)); }
+  .flow-chip.confirm .label{ color:var(--good); }
+
+  /* ---------- SHELL / RAIL ---------- */
+  .shell{ display:grid; grid-template-columns:200px 1fr; gap:44px; align-items:start; padding-block:36px 80px; }
+  nav.rail{
+    position:sticky; top:24px; display:flex; flex-direction:column; gap:2px;
+    border-left:1px solid var(--line); padding-left:14px;
+  }
+  nav.rail a{
+    text-decoration:none; color:var(--ink-soft); font-size:.9rem; padding:7px 0;
+    border-left:2px solid transparent; margin-left:-15px; padding-left:13px;
+    transition:color .15s;
+  }
+  nav.rail a.active{ color:var(--ink); border-left-color:var(--accent); font-weight:600; }
+  nav.rail .chapter-mark{ font-family:"IBM Plex Mono",monospace; font-size:.68rem; color:var(--accent-ink); letter-spacing:.08em; margin-top:16px; }
+  nav.rail .chapter-mark:first-child{ margin-top:0; }
+
+  main{ min-width:0; display:flex; flex-direction:column; gap:76px; }
+  section{ display:flex; flex-direction:column; gap:22px; }
+  .chapter-head{ display:flex; flex-direction:column; gap:6px; padding-bottom:6px; border-bottom:1px solid var(--line); margin-bottom:6px; }
+  .chapter-head h2{ font-size:1.7rem; }
+  .subhead{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+  .subhead h3{ font-size:1.2rem; }
+  .subhead .dek{ color:var(--ink-soft); font-size:.95rem; max-width:62ch; }
+
+  /* ---------- COMPONENTS ---------- */
+  .card{ background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); padding:18px; }
+
+  .steps{ display:grid; gap:14px; grid-template-columns:repeat(4,1fr); }
+  .step{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  .step .n{ font-family:"Fraunces",serif; font-size:1.6rem; color:var(--accent-ink); font-weight:600; }
+  .step h4{ margin:0; font-size:.95rem; font-weight:700; }
+  .step p{ font-size:.86rem; color:var(--ink-soft); }
+
+  .rule{ display:flex; gap:14px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; }
+  .rule .tag{ flex:0 0 auto; font-family:"IBM Plex Mono",monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; background:var(--accent-soft); color:var(--accent-ink); padding:4px 8px; border-radius:6px; height:fit-content; }
+  .rule-body{ display:flex; flex-direction:column; gap:8px; }
+  .rule-body p{ font-size:.92rem; }
+  .ex-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:2px; }
+  .ex{ font-family:"IBM Plex Mono",monospace; font-size:.82rem; padding:5px 10px; border-radius:7px; border-left:3px solid; white-space:nowrap; }
+  .ex.good{ background:var(--good-soft); border-color:var(--good); color:var(--ink); }
+  .ex.warn{ background:var(--warn-soft); border-color:var(--warn); color:var(--ink); }
+  .ex.bad{ background:var(--bad-soft); border-color:var(--bad); color:var(--ink); }
+  .ex .arrow{ opacity:.6; margin:0 2px; }
+
+  .cat-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+  .cat{ background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .cat h4{ font-size:.9rem; letter-spacing:.03em; text-transform:uppercase; color:var(--ink-soft); font-weight:700; margin:0; }
+  .say{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:.86rem; }
+  .say .in{ font-family:"IBM Plex Mono",monospace; color:var(--ink); }
+  .say .out{ color:var(--ink-soft); }
+
+  .buttons3{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .btncard{ border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:8px; border:1px solid var(--line); }
+  .btncard .name{ font-weight:700; font-size:1rem; }
+  .btncard.good{ background:var(--good-soft); }
+  .btncard.good .name{ color:var(--good); }
+  .btncard.warn{ background:var(--warn-soft); }
+  .btncard.warn .name{ color:var(--warn); }
+  .btncard.bad{ background:var(--bad-soft); }
+  .btncard.bad .name{ color:var(--bad); }
+  .btncard p{ font-size:.85rem; color:var(--ink); }
+  .btncard p.small{ color:var(--ink-soft); font-size:.8rem; }
+
+  .weight-chart{ display:flex; gap:22px; align-items:flex-end; height:90px; margin-top:4px; }
+  .wbar-col{ display:flex; flex-direction:column; align-items:center; gap:6px; width:60px; }
+  .wbar{ width:26px; background:var(--accent); border-radius:4px 4px 0 0; }
+  .wbar-col .lbl{ font-size:.72rem; color:var(--ink-soft); text-align:center; }
+
+  .suggestion-mock{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow:var(--shadow); max-width:480px; }
+  .suggestion-mock .stitle{ font-family:"Fraunces",serif; font-weight:600; font-size:1.05rem; }
+  .suggestion-mock .rationale{ color:var(--ink-soft); font-size:.88rem; margin-top:6px; }
+  .why{ margin-top:14px; border-top:1px dashed var(--line); padding-top:12px; display:flex; flex-direction:column; gap:8px; }
+  .why .row{ display:flex; gap:8px; font-size:.82rem; }
+  .why .k{ color:var(--ink-soft); flex:0 0 84px; }
+  .meter{ height:8px; background:var(--surface-2); border-radius:5px; overflow:hidden; flex:1; align-self:center; }
+  .meter i{ display:block; height:100%; background:var(--accent); border-radius:5px; }
+  .pct{ font-family:"IBM Plex Mono",monospace; font-size:.8rem; }
+  .caveat{ font-size:.78rem; color:var(--ink-soft); border-left:3px solid var(--accent-soft); padding-left:10px; margin-top:4px; }
+
+  .ladder{ display:flex; flex-direction:column; gap:0; }
+  .rung{ display:flex; align-items:center; gap:16px; padding:13px 0; border-top:1px solid var(--line); }
+  .rung:first-child{ border-top:none; }
+  .rung .rn{ font-family:"IBM Plex Mono",monospace; color:var(--accent-ink); font-size:.85rem; flex:0 0 20px; }
+  .rung .rw{ height:6px; border-radius:4px; background:var(--accent); flex:0 0 auto; }
+  .rung p{ font-size:.9rem; flex:1; }
+  .rung p b{ color:var(--ink); }
+
+  blockquote.thesis{
+    margin:0; padding:26px 28px; background:var(--surface); border-radius:14px;
+    border-left:4px solid var(--accent); box-shadow:var(--shadow);
+    font-family:"Fraunces",serif; font-size:1.25rem; line-height:1.4; font-weight:500;
+  }
+  blockquote.thesis cite{ display:block; margin-top:12px; font-family:"Karla",sans-serif; font-style:normal; font-size:.8rem; color:var(--ink-soft); }
+
+  .split2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .decl-box{ border-radius:12px; padding:16px 18px; border:1px solid var(--line); }
+  .decl-box h4{ margin:0 0 6px; font-size:.85rem; text-transform:uppercase; letter-spacing:.04em; }
+  .decl-box p{ font-size:.87rem; color:var(--ink-soft); }
+  .decl-box.told{ background:var(--surface-2); }
+  .decl-box.told h4{ color:var(--ink); }
+  .decl-box.learned{ background:var(--accent-soft); }
+  .decl-box.learned h4{ color:var(--accent-ink); }
+
+  .ledger{ display:flex; flex-direction:column; gap:16px; }
+  .lrow{ display:grid; grid-template-columns:180px 1fr; gap:16px; align-items:center; }
+  .lrow .lname{ font-size:.88rem; color:var(--ink-soft); }
+  .bars{ display:flex; flex-direction:column; gap:5px; }
+  .brow{ display:grid; grid-template-columns:1fr 52px; gap:10px; align-items:center; }
+  .btrack{ height:12px; border-radius:6px; background:var(--surface-2); overflow:hidden; }
+  .bfill{ height:100%; border-radius:6px; }
+  .bfill.before{ background:var(--ink-soft); opacity:.55; }
+  .bfill.after{ background:var(--accent); }
+  .brow .val{ font-family:"IBM Plex Mono",monospace; font-size:.78rem; text-align:right; }
+
+  .fixgrid{ display:grid; gap:16px; }
+  .fixpair{ display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .fixhalf{ padding:16px 18px; display:flex; flex-direction:column; gap:6px; }
+  .fixhalf.before{ background:var(--bad-soft); }
+  .fixhalf.after{ background:var(--good-soft); }
+  .fixhalf .k{ font-family:"IBM Plex Mono",monospace; font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; }
+  .fixhalf.before .k{ color:var(--bad); }
+  .fixhalf.after .k{ color:var(--good); }
+  .fixhalf p{ font-size:.86rem; }
+  .fixtitle{ font-weight:700; font-size:.92rem; padding:12px 18px 0; }
+
+  .tagcloud{ display:flex; flex-wrap:wrap; gap:8px; }
+  .tagcloud span{ font-size:.82rem; background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:6px 13px; color:var(--ink-soft); }
+
+  footer{ border-top:1px solid var(--line); padding-block:28px 60px; }
+  footer p{ font-size:.82rem; color:var(--ink-soft); max-width:70ch; }
+  footer .wordmark{ font-family:"Fraunces",serif; font-weight:600; color:var(--ink); margin-bottom:8px; }
+
+  @media (max-width:860px){
+    .shell{ grid-template-columns:1fr; }
+    nav.rail{
+      position:sticky; top:0; background:var(--paper); z-index:5;
+      flex-direction:row; overflow-x:auto; border-left:none; border-bottom:1px solid var(--line);
+      padding:10px 0 12px; margin:0 -20px; padding-inline:20px; gap:18px;
+    }
+    nav.rail a{ border-left:none; border-bottom:2px solid transparent; margin:0; padding:4px 0; white-space:nowrap; }
+    nav.rail a.active{ border-left-color:transparent; border-bottom-color:var(--accent); }
+    nav.rail .chapter-mark{ display:none; }
+    .steps{ grid-template-columns:1fr 1fr; }
+    .cat-grid{ grid-template-columns:1fr; }
+    .buttons3{ grid-template-columns:1fr; }
+    .split2{ grid-template-columns:1fr; }
+    .fixpair{ grid-template-columns:1fr; }
+    .lrow{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-grid">
+    <span class="eyebrow">Guía de uso — GaiaPulse</span>
+    <h1>No adivina, deduce y pregunta.</h1>
+    <p class="sub">Escribís una frase con lo que comiste, entrenaste, pesaste o compraste. GaiaPulse te muestra qué entendió y recién cuando confirmás se guarda algo. Esta página explica cómo usarla día a día, y qué cambió entre la versión que había y la que hay ahora.</p>
+    <div class="flow">
+      <div class="flow-chip">
+        <span class="label">Escribís</span>
+        <span class="mono">cenamos milanesas y ensalada</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-chip">
+        <span class="label">Te muestra</span>
+        Cena · Los dos · Milanesas, Ensalada · 92%
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-chip confirm">
+        <span class="label">Confirmás</span>
+        Recién ahí se guarda
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="shell">
+
+<nav class="rail" aria-label="Secciones">
+  <span class="chapter-mark">01 — Usarla</span>
+  <a href="#semana">La primera semana</a>
+  <a href="#hablarle">Cómo hablarle</a>
+  <a href="#botones">Los tres botones</a>
+  <a href="#tarjeta">Leer una tarjeta</a>
+  <a href="#errores">Cuando se equivoca</a>
+  <span class="chapter-mark">02 — v2 → v3</span>
+  <a href="#auditable">El cambio grande</a>
+  <a href="#numeros">Los números</a>
+  <a href="#bugs">Bugs que eran bugs</a>
+  <a href="#v4">Lo que sigue</a>
+</nav>
+
+<main>
+
+  <!-- CHAPTER 1 -->
+  <section id="ch1-head" style="gap:0;">
+    <div class="chapter-head">
+      <span class="eyebrow">Capítulo 01</span>
+      <h2>Cómo usarla</h2>
+    </div>
+  </section>
+
+  <section id="semana">
+    <div class="subhead">
+      <h3>La primera semana</h3>
+      <p class="dek">Las primeras sugerencias van a ser genéricas — no es un defecto, es que todavía no tiene con qué. Esto es lo que pasa día por día.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <span class="n">1</span>
+        <h4>Día 1, mañana</h4>
+        <p>Cuatro pantallas cortas: año y sexo, tus medidas, cuánta actividad hacés normalmente, y si hay algo que no comés. Todo se puede cambiar después desde Perfil.</p>
+      </div>
+      <div class="step">
+        <span class="n">2</span>
+        <h4>Día 1, más tarde</h4>
+        <p>Primera captura: escribís una frase como se la dirías a alguien. La app te muestra qué entendió antes de guardar nada. Hacé esto 3 o 4 veces con cosas que ya pasaron.</p>
+      </div>
+      <div class="step">
+        <span class="n">3</span>
+        <h4>Días 2 y 3</h4>
+        <p>Cargá el peso a la misma hora y empezá la despensa con lo que compraste. Sin stock cargado, las sugerencias de comida no tienen qué mirar.</p>
+      </div>
+      <div class="step">
+        <span class="n">4</span>
+        <h4>Resto de la semana</h4>
+        <p>Las sugerencias se arman a las 7:40 y 18:40. Al cuarto o quinto día empiezan a citar tus propios datos en vez de frases de catálogo.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="hablarle">
+    <div class="subhead">
+      <h3>Cómo hablarle</h3>
+      <p class="dek">Entiende castellano e inglés sin avisarle en cuál estás escribiendo. Dos reglas de escritura hacen que todo lo demás funcione mejor.</p>
+    </div>
+
+    <div class="rule">
+      <span class="tag">Regla 1</span>
+      <div class="rule-body">
+        <p><b>Enumerá con "y", no con "con".</b> "Con" nombra un solo plato ("café con leche"); si cortara ahí, un café con leche se volvería dos alimentos.</p>
+        <div class="ex-row">
+          <span class="ex good">desayuné café <span class="arrow">Y</span> tostadas <span class="arrow">→</span> café + tostadas</span>
+          <span class="ex warn">desayuné café <span class="arrow">CON</span> tostadas <span class="arrow">→</span> solo café</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule">
+      <span class="tag">Regla 2</span>
+      <div class="rule-body">
+        <p><b>Un tema por captura.</b> Varios alimentos o varias compras juntas está bien; mezclar comida con entrenamiento en la misma frase no entiende ninguna de las dos.</p>
+        <div class="ex-row">
+          <span class="ex good">pesé 81 kg <span class="arrow">Y</span> dormí 7 horas <span class="arrow">→</span> las dos cosas</span>
+          <span class="ex bad">cené fideos <span class="arrow">Y</span> corrí 30 minutos <span class="arrow">→</span> ninguna de las dos</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cat-grid">
+      <div class="cat">
+        <h4>Comidas</h4>
+        <div class="say"><span class="in">cenamos milanesas y ensalada</span><span class="out">→ cena, de los dos</span></div>
+        <div class="say"><span class="in">Diego almorzó tarta, Rocío ensalada</span><span class="out">→ un almuerzo, dos platos</span></div>
+      </div>
+      <div class="cat">
+        <h4>Entrenamientos</h4>
+        <div class="say"><span class="in">hice yoga 40 minutos</span><span class="out">→ yoga, 40 min</span></div>
+        <div class="say"><span class="in">corrí 5 km</span><span class="out">→ se guarda, sin duración</span></div>
+      </div>
+      <div class="cat">
+        <h4>Peso y sueño</h4>
+        <div class="say"><span class="in">pesé 81,5 kg y dormí 7 horas</span><span class="out">→ una sola medición</span></div>
+        <div class="say"><span class="in">entrené 30'</span><span class="out">→ 30 minutos</span></div>
+      </div>
+      <div class="cat">
+        <h4>Despensa</h4>
+        <div class="say"><span class="in">compré 1 kg de avena y 6 huevos</span><span class="out">→ dos altas de stock</span></div>
+        <div class="say"><span class="in">se acabó la leche</span><span class="out">→ leche a cero</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="botones">
+    <div class="subhead">
+      <h3>Los tres botones</h3>
+      <p class="dek">Cada tarjeta de sugerencia tiene tres botones, y se parecen entre sí — pero hacen cosas muy distintas.</p>
+    </div>
+    <div class="buttons3">
+      <div class="btncard good">
+        <span class="name">Buena idea</span>
+        <p>Voto a favor. Sube ese tema en la lista de acá en adelante.</p>
+        <p class="small">Es el único de los tres que enseña algo positivo.</p>
+      </div>
+      <div class="btncard warn">
+        <span class="name">Ahora no</span>
+        <p>Calla ese tema tres días. No cuenta como rechazo — es el botón para "hoy no me da".</p>
+        <p class="small">No te está enseñando nada: es una postergación.</p>
+      </div>
+      <div class="btncard bad">
+        <span class="name">No es para nosotros</span>
+        <p>Rechazo deliberado. Saca el tema de la lista — pero caduca en unas semanas.</p>
+        <p class="small">Para siempre: Perfil → Restricciones alimentarias.</p>
+      </div>
+    </div>
+    <div class="card" style="display:flex; gap:28px; align-items:flex-start; flex-wrap:wrap;">
+      <div style="flex:1; min-width:220px;">
+        <p style="font-size:.9rem;"><b>Un toque es una pista, seis son una regla.</b> La escala no es lineal a propósito: un día raro no te cambia el perfil, pero una costumbre real no necesita cincuenta repeticiones para que se note.</p>
+      </div>
+      <div class="weight-chart" aria-hidden="true">
+        <div class="wbar-col"><div class="wbar" style="height:16px;"></div><span class="lbl tab">1 vez</span></div>
+        <div class="wbar-col"><div class="wbar" style="height:45px;"></div><span class="lbl tab">2 veces</span></div>
+        <div class="wbar-col"><div class="wbar" style="height:82px;"></div><span class="lbl tab">6 veces</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tarjeta">
+    <div class="subhead">
+      <h3>Cómo leer una tarjeta</h3>
+      <p class="dek">Cada sugerencia tiene un "¿Por qué esta sugerencia?" que muestra de dónde sale y con cuánta seguridad.</p>
+    </div>
+    <div class="suggestion-mock">
+      <div class="stitle">Hoy te vendría bien correr</div>
+      <p class="rationale">Pasaron 4 días desde tu último entrenamiento de piernas, y esta semana estuviste por debajo de tu propio promedio de actividad.</p>
+      <div class="why">
+        <div class="row"><span class="k">Sale de</span> tu historial de entrenamientos y el balance de grupos musculares</div>
+        <div class="row"><span class="k">Qué tan seguro</span>
+          <div class="meter"><i style="width:78%;"></i></div>
+          <span class="pct tab">78%</span>
+        </div>
+      </div>
+      <p class="caveat">El porcentaje mide qué tanto encaja con tus datos, no qué tan probable es que te haga bien. Si una tarjeta no tiene de dónde sacar el dato, lo dice en vez de inventar una frase.</p>
+    </div>
+  </section>
+
+  <section id="errores">
+    <div class="subhead">
+      <h3>Cuando se equivoca</h3>
+      <p class="dek">Un dato entendido mal antes de confirmar no deja rastro. Insistir con algo que no querés tiene cuatro escalones, de más suave a definitivo.</p>
+    </div>
+    <div class="ladder">
+      <div class="rung"><span class="rn tab">1</span><div class="rw" style="width:40px;"></div><p><b>Ahora no</b> — tres días de silencio sobre ese tema.</p></div>
+      <div class="rung"><span class="rn tab">2</span><div class="rw" style="width:70px;"></div><p><b>No es para nosotros</b> — lo saca de la lista, pero caduca en unas semanas.</p></div>
+      <div class="rung"><span class="rn tab">3</span><div class="rw" style="width:100px;"></div><p><b>No es para nosotros + el motivo</b> con el nombre del alimento — lo saca y le enseña.</p></div>
+      <div class="rung"><span class="rn tab">4</span><div class="rw" style="width:150px;"></div><p><b>Perfil → Restricciones alimentarias</b> — nunca más, sin vencimiento.</p></div>
+    </div>
+  </section>
+
+  <!-- CHAPTER 2 -->
+  <section id="ch2-head" style="gap:0;">
+    <div class="chapter-head">
+      <span class="eyebrow">Capítulo 02</span>
+      <h2>De la v2 a la v3</h2>
+    </div>
+  </section>
+
+  <section id="auditable">
+    <blockquote class="thesis">
+      "Un sistema que aprende de vos y no te deja ver lo aprendido no es opaco por accidente: es una caja negra con tus datos adentro."
+      <cite>Por qué la v3 cambió la relación con el aprendizaje, no solo el comportamiento de la app.</cite>
+    </blockquote>
+    <div class="split2">
+      <div class="decl-box told">
+        <h4>Lo que nos dijiste</h4>
+        <p>Restricciones, actividades imposibles, gustos que escribiste vos mismo. Se corrige diciendo otra cosa, en Perfil.</p>
+      </div>
+      <div class="decl-box learned">
+        <h4>Lo que GaiaPulse fue aprendiendo</h4>
+        <p>Deducido de tu conducta, con cuántas veces lo vio y cuándo fue la última. Se corrige con un botón: "Olvidalo".</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="numeros">
+    <div class="subhead">
+      <h3>Los números, antes y ahora</h3>
+      <p class="dek">Medidos sobre el árbol, no de memoria.</p>
+    </div>
+    <div class="ledger">
+      <div class="lrow">
+        <span class="lname">Tests</span>
+        <div class="bars">
+          <div class="brow"><div class="btrack"><div class="bfill before" style="width:15%;"></div></div><span class="val tab">117</span></div>
+          <div class="brow"><div class="btrack"><div class="bfill after" style="width:100%;"></div></div><span class="val tab">783</span></div>
+        </div>
+      </div>
+      <div class="lrow">
+        <span class="lname">Módulos de test</span>
+        <div class="bars">
+          <div class="brow"><div class="btrack"><div class="bfill before" style="width:29%;"></div></div><span class="val tab">9</span></div>
+          <div class="brow"><div class="btrack"><div class="bfill after" style="width:100%;"></div></div><span class="val tab">31</span></div>
+        </div>
+      </div>
+      <div class="lrow">
+        <span class="lname">Rutas web con test</span>
+        <div class="bars">
+          <div class="brow"><div class="btrack"><div class="bfill before" style="width:2%;"></div></div><span class="val tab">0</span></div>
+          <div class="brow"><div class="btrack"><div class="bfill after" style="width:100%;"></div></div><span class="val tab">37</span></div>
+        </div>
+      </div>
+      <div class="lrow">
+        <span class="lname">Jobs con hora correcta</span>
+        <div class="bars">
+          <div class="brow"><div class="btrack"><div class="bfill before" style="width:2%;"></div></div><span class="val tab">0</span></div>
+          <div class="brow"><div class="btrack"><div class="bfill after" style="width:100%;"></div></div><span class="val tab">8</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="bugs">
+    <div class="subhead">
+      <h3>Bugs que eran bugs, no diseño</h3>
+      <p class="dek">Tres defectos concretos de la v2 que se comportaban como si fueran a propósito, y no lo eran.</p>
+    </div>
+    <div class="fixgrid">
+      <div>
+        <p class="fixtitle">La ventana de comida se calculaba en UTC</p>
+        <div class="fixpair">
+          <div class="fixhalf before"><span class="k">Antes</span><p>A las 8:00 locales el motor creía que era el almuerzo.</p></div>
+          <div class="fixhalf after"><span class="k">Ahora</span><p>Un solo reloj local (<code class="mono">app/core/clock.py</code>) para toda la app.</p></div>
+        </div>
+      </div>
+      <div>
+        <p class="fixtitle">La notificación de uno tapaba la del otro</p>
+        <div class="fixpair">
+          <div class="fixhalf before"><span class="k">Antes</span><p>Un <code class="mono">or_</code> mal armado hacía que avisarle a Diego cancelara el aviso de Rocío.</p></div>
+          <div class="fixhalf after"><span class="k">Ahora</span><p>Dedup por sujeto: se avisa una vez por persona, y de nuevo solo si empeora.</p></div>
+        </div>
+      </div>
+      <div>
+        <p class="fixtitle">El tipo de captura más común fallaba en silencio</p>
+        <div class="fixpair">
+          <div class="fixhalf before"><span class="k">Antes</span><p>Un desajuste <code class="mono">name</code>/<code class="mono">food_name</code> hacía que todo <code class="mono">log_meal</code> del LLM lanzara un error que nadie veía.</p></div>
+          <div class="fixhalf after"><span class="k">Ahora</span><p>Corregido y cubierto por test — la capa 2 vuelve a ayudar en el caso más frecuente.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="v4">
+    <div class="subhead">
+      <h3>Lo que sigue afuera, por ahora</h3>
+      <p class="dek">Anotado con el porqué de cada uno en <code class="mono">docs/v4-plan.md</code>, no perdido en una conversación.</p>
+    </div>
+    <div class="tagcloud">
+      <span>Redacción del "por qué" con más naturalidad</span>
+      <span>Panel de "cómo viene el día"</span>
+      <span>Despensa ordenada por objetivo</span>
+      <span>Superficie conversacional</span>
+      <span>Gráfico de tendencia de sangre</span>
+      <span>Exportar los propios datos</span>
+    </div>
+  </section>
+
+</main>
+</div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p class="wordmark">GaiaPulse</p>
+    <p>Esta página resume <code class="mono">docs/guia-de-uso.md</code> (el detalle completo de uso) y <code class="mono">docs/gaiapulse-v3.md</code> (el estado técnico de la app). Los números se remiden en cada checkpoint sobre el árbol, no de memoria.</p>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.rail a'));
+    var map = links.map(function(a){ return { link:a, el: document.querySelector(a.getAttribute('href')) }; }).filter(function(m){ return m.el; });
+    if(!map.length) return;
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        var m = map.find(function(x){ return x.el === entry.target; });
+        if(!m) return;
+        if(entry.isIntersecting){
+          links.forEach(function(a){ a.classList.remove('active'); });
+          m.link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+    map.forEach(function(m){ io.observe(m.el); });
+  })();
+</script>
+</body>
+</html>
