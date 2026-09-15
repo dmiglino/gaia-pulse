@@ -514,6 +514,61 @@ class TestListasQueTienenQueCoincidir:
             ), f"{name!r} se tipa como comida"
 
 
+class TestSegmentarTemasMezclados:
+    """gaiapulse-v3.md §5, "Mezclar temas en una sola frase": los dos ejemplos que documenta
+    ese hueco, tal cual están escritos ahí, más el caso que la misma sección dice que *ya*
+    funciona y no debe romperse.
+    """
+
+    def test_cene_fideos_y_corri_no_registra_ninguna_hoy_ambas_despues(
+        self, parser: _ParserProxy
+    ) -> None:
+        result = parser.parse("cené fideos y corrí 30 minutos", speaking_user="diego")
+        meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
+        workout = next((i for i in result.intents if i.intent_type == "log_workout"), None)
+        assert meal is not None
+        assert workout is not None
+        assert workout.duration_minutes == 30
+
+    def test_compre_leche_y_pese_80_kg_sin_item_fantasma(self, parser: _ParserProxy) -> None:
+        result = parser.parse("compré leche y pesé 80 kg", speaking_user="diego")
+        stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+        metric = next((i for i in result.intents if i.intent_type == "log_body_metric"), None)
+        assert stock is not None
+        assert metric is not None
+        names = [i.food_name.lower() for i in stock.items]
+        assert names == ["leche"]
+        assert not any("pes" in n for n in names)
+
+    def test_pese_81_kg_y_dormi_7_horas_sigue_siendo_una_sola_medicion(
+        self, parser: _ParserProxy
+    ) -> None:
+        result = parser.parse("pesé 81 kg y dormí 7 horas", speaking_user="diego")
+        metrics = [i for i in result.intents if i.intent_type == "log_body_metric"]
+        assert len(metrics) == 1
+
+    def test_una_sola_frase_de_un_solo_tema_no_cambia(self, parser: _ParserProxy) -> None:
+        result = parser.parse("We bought 6 bananas and 4 bell peppers", speaking_user="diego")
+        stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
+        assert stock is not None
+        assert len(stock.items) == 2
+
+    def test_me_gusta_el_pollo_y_odio_el_pescado_da_dos_preferencias(
+        self, parser: _ParserProxy
+    ) -> None:
+        result = parser.parse("me gusta el pollo y odio el pescado", speaking_user="diego")
+        prefs = [i for i in result.intents if i.intent_type == "update_preference"]
+        assert len(prefs) == 2
+        likes = next((p for p in prefs if "pollo" in p.item_name.lower()), None)
+        dislikes = next((p for p in prefs if "pescado" in p.item_name.lower()), None)
+        assert likes is not None and likes.preference_signal in ("likes", "preferred")
+        assert dislikes is not None and dislikes.preference_signal in (
+            "impossible",
+            "dislikes",
+            "avoid",
+        )
+
+
 class TestElPlaceholderNoPromete:
     """Lo que la pantalla de captura ofrece como ejemplo tiene que funcionar.
 

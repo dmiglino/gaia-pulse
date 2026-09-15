@@ -962,6 +962,57 @@ def _confidence_from_items(items_per_user: dict[str, list[FoodItemRef]]) -> floa
     return 0.7
 
 
+#: Categorías de disparador que reconoce la segmentación. Cada entrada es (nombre, regex)
+#: y reusa los regex de siempre —agregar una categoría nueva a `_parse_segment` sin
+#: agregarla acá es el único modo de romper la segmentación en silencio.
+_TRIGGER_CATEGORIES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("meal", _MEAL_TRIGGERS),
+    ("workout", _WORKOUT_TRIGGERS),
+    ("body_metric", _BODY_METRIC_TRIGGERS),
+    ("stock_add", _STOCK_ADD_TRIGGERS),
+    ("stock_consume", _STOCK_CONSUME_TRIGGERS),
+    ("pref_neg", _PREFERENCE_NEG_TRIGGERS),
+    ("pref_pos", _PREFERENCE_POS_TRIGGERS),
+)
+
+#: "y"/"and" y el final de oración, los únicos puntos donde `_segment_topics` considera
+#: cortar. A propósito no incluye la coma: alcanza con los dos ejemplos documentados en
+#: gaiapulse-v3.md §5 y una coma corta demasiado seguido dentro de un mismo tema (ver
+#: `test_different_foods_per_person`).
+_TOPIC_CONNECTOR = re.compile(r"(\s+y\s+|\s+and\s+|[.;]\s+)", re.IGNORECASE)
+
+
+def _trigger_types(text: str) -> set[str]:
+    """Qué categorías dispara `text`. Base de la segmentación: dos fragmentos que no
+    comparten ninguna son dos temas distintos; si comparten alguna, son el mismo tema
+    contado dos veces ("pesé 81 kg y dormí 7 horas" son dos hechos de `body_metric`).
+    """
+    return {name for name, trigger in _TRIGGER_CATEGORIES if trigger.search(text)}
+
+
+def _segment_topics(text: str) -> list[str]:
+    """Parte `text` en tramos de un solo tema para que cada parser lea el suyo, no la frase
+    entera. Solo corta en un conector cuando el tramo de después dispara una categoría que
+    el tramo acumulado hasta ahí no tenía —si es la misma categoría, o ninguna, se re-funde
+    con el conector de vuelta y queda idéntico al texto original—.
+    """
+    parts = _TOPIC_CONNECTOR.split(text)
+    if len(parts) == 1:
+        return [text]
+
+    segments = [parts[0]]
+    for i in range(1, len(parts), 2):
+        connector = parts[i]
+        chunk = parts[i + 1] if i + 1 < len(parts) else ""
+        chunk_types = _trigger_types(chunk)
+        current_types = _trigger_types(segments[-1])
+        if chunk_types and not (chunk_types & current_types):
+            segments.append(chunk)
+        else:
+            segments[-1] = segments[-1] + connector + chunk
+    return segments
+
+
 def parse(text: str, speaking_user: str = "diego") -> ParseResult:
     """Entry point for Layer 1 rule-based parsing.
 
@@ -976,6 +1027,33 @@ def parse(text: str, speaking_user: str = "diego") -> ParseResult:
     if not text:
         return ParseResult(raw_text=text, overall_confidence=0.0)
 
+    segments = _segment_topics(text)
+    if len(segments) == 1:
+        return _parse_segment(text, speaking_user)
+
+    intents: list[Any] = [
+        intent
+        for segment in segments
+        for intent in _parse_segment(segment.strip(), speaking_user).intents
+        if intent.intent_type != "mixed"
+    ]
+    if not intents:
+        # Ningún segmento disparó nada por su cuenta: el mismo fallback de "mixed" que
+        # `_parse_segment` ya sabe construir, corrido una vez sobre el texto completo en
+        # vez de duplicar acá su lógica de participantes.
+        return _parse_segment(text, speaking_user)
+
+    overall = sum(i.confidence for i in intents) / len(intents)
+    return ParseResult(
+        intents=intents, overall_confidence=round(overall, 3), parser_layer="rules", raw_text=text
+    )
+
+
+def _parse_segment(text: str, speaking_user: str) -> ParseResult:
+    """El parser de un solo tema, tal como era `parse()` antes de la 7.9. `parse()` lo llama
+    una vez con el texto entero cuando no hay que segmentar (salida idéntica a antes) o una
+    vez por segmento cuando sí.
+    """
     intents: list[Any] = []
 
     is_meal = bool(_MEAL_TRIGGERS.search(text))
