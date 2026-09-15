@@ -6,6 +6,7 @@ de estos casos era exactamente una divergencia entre las dos cosas: el preview
 mostraba los dos avatares y el servicio le anotaba el dato a uno solo.
 """
 
+import json
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
@@ -17,8 +18,9 @@ from app.core.security import hash_password
 from app.i18n import _
 from app.models.body_metric import BodyMetricLog
 from app.models.household import Household
-from app.models.meal import MealEvent, MealParticipant
+from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
 from app.models.nlp import NLPIngestionEvent
+from app.models.pantry import PantryStock
 from app.models.suggestion import RecommendationPreference
 from app.models.user import User
 from app.models.workout import WorkoutParticipant
@@ -368,7 +370,7 @@ def test_preview_shows_a_date_correction_field_wired_into_confirm(
     r = authenticated_client.post("/capture/parse", data={"text": "I ate pasta"})
     assert r.status_code == 200, r.text[:500]
     assert 'id="nlp-override-date"' in r.text
-    assert 'hx-include="#nlp-override-date"' in r.text
+    assert 'hx-include="#nlp-override-date, #nlp-edited-intents"' in r.text
 
 
 def test_add_stock_only_shows_no_date_field(authenticated_client: TestClient) -> None:
@@ -406,6 +408,169 @@ def test_override_date_from_the_confirmation_screen_wins(
 
     meal = db.scalars(select(MealEvent)).one()
     assert to_local(meal.timestamp).date() == chosen_day
+
+
+def test_preview_seeds_editable_inputs_with_the_parsed_values(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """Cantidad y nombre de alimento se pueden corregir sin reescribir la frase.
+
+    `intents` es estado de Alpine sembrado con lo mismo que ya viajaba al cliente —
+    esto comprueba que la siembra (`x-data`) y los inputs (`x-model`) apuntan al
+    mismo valor que trajo el parser, no que Alpine efectivamente reaccione: eso
+    ningún test con `TestClient` puede verlo, porque no corre JS.
+    """
+    r = authenticated_client.post("/capture/parse", data={"text": "I ate half an avocado"})
+    assert r.status_code == 200, r.text[:500]
+    assert "x-data='{ intents:" in r.text
+    assert "items_per_user" in r.text
+    assert "x-model='intents[0].items_per_user[\"diego\"][0].food_name'" in r.text
+    assert 'value="an avocado"' in r.text
+    assert "x-model.number='intents[0].items_per_user[\"diego\"][0].qty'" in r.text
+    assert 'value="0.5"' in r.text
+    assert 'id="nlp-edited-intents"' in r.text
+    assert 'name="edited_intents_json"' in r.text
+
+
+def test_editing_a_stock_item_before_confirming_saves_the_edited_value(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """El campo oculto manda `intents` completo; el servicio guarda esa versión.
+
+    Mismo patrón que `test_override_date_from_the_confirmation_screen_wins`: sin
+    JS no hay forma de simular el `x-model` del navegador, así que esto postea a
+    mano el `edited_intents_json` que Alpine habría serializado tras la edición.
+    """
+    event = _pending(
+        diego,
+        "we bought 6 bananas",
+        [
+            {
+                "intent_type": "add_stock",
+                "items": [{"food_name": "bananas", "quantity": 6, "unit": "unit"}],
+            }
+        ],
+        db,
+    )
+    edited = [
+        {
+            "intent_type": "add_stock",
+            "items": [{"food_name": "plantains", "quantity": 8, "unit": "unit"}],
+        }
+    ]
+    r = authenticated_client.post(
+        f"/capture/confirm/{event.id}",
+        data={"edited_intents_json": json.dumps(edited)},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text[:500]
+
+    db.refresh(event)
+    assert event.status == "edited_and_confirmed"
+    assert event.parsed_intent_json[0]["items"][0]["food_name"] == "bananas"  # unchanged record
+
+
+def test_confirming_without_editing_still_saves_as_plain_confirmed(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """El campo oculto viaja siempre — editado o no — y eso no debe cambiar el status.
+
+    Sin la comparación contra `event.parsed_intent_json`, todo confirm desde el
+    preview quedaría marcado `edited_and_confirmed` aunque nadie tocó nada.
+    """
+    intents = [
+        {
+            "intent_type": "add_stock",
+            "items": [{"food_name": "bananas", "quantity": 6, "unit": "unit"}],
+        }
+    ]
+    event = _pending(diego, "we bought 6 bananas", intents, db)
+    r = authenticated_client.post(
+        f"/capture/confirm/{event.id}",
+        data={"edited_intents_json": json.dumps(intents)},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text[:500]
+
+    db.refresh(event)
+    assert event.status == "confirmed"
+
+
+def test_editing_cannot_move_a_meal_item_to_a_different_household_member(
+    authenticated_client: TestClient, db: Session, diego: User, rocio: User
+) -> None:
+    """La edición inline no puede cambiar a quién se le atribuye la comida.
+
+    Un `edited_intents_json` armado a mano (sin pasar por el `x-model` de Alpine, que
+    nunca expone la clave de atribución como editable) no debe poder anotarle una comida
+    a otro integrante del hogar. `items_per_user` se fusiona clave por clave contra el
+    original — una clave nueva en la edición no tiene por dónde entrar.
+    """
+    event = _pending(
+        diego,
+        "I ate rice",
+        [
+            {
+                "intent_type": "log_meal",
+                "meal_type": "lunch",
+                "items_per_user": {"diego": [{"food_name": "rice", "qty": 1}]},
+            }
+        ],
+        db,
+    )
+    forged = [
+        {
+            "intent_type": "log_meal",
+            "meal_type": "lunch",
+            "items_per_user": {"rocio": [{"food_name": "rice", "qty": 5}]},
+        }
+    ]
+    r = authenticated_client.post(
+        f"/capture/confirm/{event.id}",
+        data={"edited_intents_json": json.dumps(forged)},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text[:500]
+
+    participants = list(db.scalars(select(MealParticipant)).all())
+    assert len(participants) == 1
+    assert participants[0].user_id == diego.id
+    item = db.scalars(
+        select(MealItemConsumed).where(MealItemConsumed.meal_participant_id == participants[0].id)
+    ).one()
+    assert float(item.quantity) == 1
+
+
+def test_editing_cannot_change_the_intent_type_to_write_something_else(
+    authenticated_client: TestClient, db: Session, diego: User
+) -> None:
+    """La edición inline no puede convertir una compra de despensa en un pesaje.
+
+    Si el `intent_type` editado no coincide con el original, la edición de ese intent se
+    descarta entera y se ejecuta lo que el parser realmente entendió.
+    """
+    event = _pending(
+        diego,
+        "we bought 6 bananas",
+        [
+            {
+                "intent_type": "add_stock",
+                "items": [{"food_name": "bananas", "quantity": 6, "unit": "unit"}],
+            }
+        ],
+        db,
+    )
+    forged = [{"intent_type": "log_body_metric", "user_key": "diego", "weight_kg": 999}]
+    r = authenticated_client.post(
+        f"/capture/confirm/{event.id}",
+        data={"edited_intents_json": json.dumps(forged)},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200, r.text[:500]
+
+    assert list(db.scalars(select(BodyMetricLog)).all()) == []
+    stock = db.scalars(select(PantryStock)).one()
+    assert float(stock.current_quantity) == 6
 
 
 def test_discarding_says_so_and_leaves_nothing_behind(

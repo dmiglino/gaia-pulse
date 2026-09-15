@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Annotated, Any
 
@@ -129,6 +130,7 @@ async def capture_transcribe(
 
     audio_bytes = await audio.read()
     from app.integrations.stt.whisper_adapter import WhisperSTTAdapter
+
     stt = WhisperSTTAdapter()
     try:
         transcription = await stt.transcribe(audio_bytes, audio.content_type or "audio/webm")
@@ -152,6 +154,22 @@ async def capture_transcribe(
     return templates.TemplateResponse("capture/preview_partial.html", ctx)
 
 
+def _parse_edited_intents(raw: str | None) -> list[dict[str, Any]] | None:
+    """Decodificar el `edited_intents_json` del preview, tolerante a basura.
+
+    El campo viaja siempre (Alpine lo serializa en cada submit, editado o no), pero
+    nada impide un POST manual o un cliente roto — igual que `query_date`, un valor
+    que no se puede leer se trata como "no vino", no como un error.
+    """
+    if not raw:
+        return None
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return decoded if isinstance(decoded, list) else None
+
+
 @router.post("/confirm/{event_id}")
 def capture_confirm(
     request: Request,
@@ -159,12 +177,14 @@ def capture_confirm(
     current_user: CurrentUser,
     db: DB,
     override_date: Annotated[str | None, Form()] = None,
+    edited_intents_json: Annotated[str | None, Form()] = None,
 ) -> Response:
     svc = NLPService(db)
     result = svc.confirm_event(
         event_id=event_id,
         user_id=current_user.id,
         household_id=current_user.household_id,
+        edited_intents=_parse_edited_intents(edited_intents_json),
         override_date=query_date(override_date),
     )
 

@@ -25,7 +25,19 @@
      real, no un imprevisto — tiene su propio texto.
 
   Se elimina también el `x-data="{ editing: false }"` de cada tarjeta: nada lo leía
-  nunca — la edición inline de los intents queda explícitamente fuera de v3.
+  nunca — la edición inline de los intents quedó explícitamente fuera en esa vuelta.
+
+  Fase 7.8 la trae de vuelta, acotada a lo que pide el plan: cantidad y nombre de
+  alimento, no la frase entera. `intents` pasa a ser estado de Alpine
+  (`x-data="{ intents: ... }"` en `#nlp-preview`, sembrado con el mismo JSON que ya
+  viaja al cliente) en vez de solo marcado; cada input de comida o de stock hace
+  `x-model` contra su lugar en esa lista, y un campo oculto (`edited_intents_json`)
+  serializa `intents` completo en cada submit. `NLPService.confirm_event` ya sabía
+  recibir un `edited_intents` — lo tenía desde el rediseño de fase3, sin ningún
+  llamador real: el contrato de backend no cambia acá, solo se conecta. El servicio
+  compara contra `event.parsed_intent_json` antes de marcar `edited_and_confirmed`,
+  así que confirmar sin tocar nada sigue guardando `confirmed` — el campo oculto
+  viaja siempre, editado o no.
 #}
 
 {#- `targets` es `{clave del intent: [personas]}`, ya resuelto en Python. Una lista
@@ -56,11 +68,34 @@
 {%- endmacro -%}
 
 
+{#- Una fila editable de `add_stock`/`consume_stock`: mismo campo oculto, dos
+    llamadores (los dos intents tienen la misma forma de item, `food_name` +
+    `quantity`). -#}
+{%- macro stock_item_editor(intent_index, item, item_index) -%}
+  <div class="flex items-center gap-1.5">
+    <input type="text"
+           x-model="intents[{{ intent_index }}].items[{{ item_index }}].food_name"
+           value="{{ item.get('food_name', item.get('name', '')) }}"
+           class="{{ ui.INPUT_CLASS }} py-1 px-2 text-sm flex-1 min-w-0" />
+    <input type="number" step="any"
+           x-model.number="intents[{{ intent_index }}].items[{{ item_index }}].quantity"
+           value="{{ item.get('quantity', '') }}"
+           class="{{ ui.INPUT_CLASS }} py-1 px-2 text-sm w-16" />
+    {%- if item.get('unit') %}<span class="text-xs text-ink-subtle">{{ item.unit }}</span>{% endif -%}
+  </div>
+{%- endmacro -%}
+
+
 {% if error %}
 {{ ui.notice(error, tone='danger', title=_('Could not read that')) }}
 
 {% elif nlp_event and intents %}
-<div class="space-y-4" id="nlp-preview">
+{#- `tojson` escapa `<`, `>`, `&` y `'`, pero no `"` — a propósito, según su propia
+    documentación, porque un `"` sin escapar es exactamente lo que separa las claves
+    de un JSON. Por eso este atributo va con comillas simples: con comillas dobles,
+    la primera clave del JSON (`"confidence"`, la que sea) cierra el atributo ahí
+    mismo y el resto de la tarjeta se cuelga como texto suelto fuera de la etiqueta. -#}
+<div class="space-y-4" id="nlp-preview" x-data='{ intents: {{ intents | tojson }} }'>
 
   {#- Cabecera: qué tan bien entendió, cómo lo entendió, y la leyenda que aclara de
       qué habla el porcentaje. La leyenda no es decorativa: es lo que evita que el
@@ -90,6 +125,9 @@
   {% set all_targets = intent_targets or [] %}
   {% for intent in intents %}
   {% set type = intent.intent_type %}
+  {#- Índice de este intent en `intents`: es el mismo estado de Alpine, así que los
+      inputs editables de acá abajo lo necesitan para escribir en el lugar correcto. -#}
+  {% set i = loop.index0 %}
   {#- Las personas de *este* intent, alineadas por posición con `intents`. -#}
   {% set targets = all_targets[loop.index0] if all_targets | length > loop.index0 else {} %}
   {% call ui.card(padding='p-4') %}
@@ -98,21 +136,12 @@
       <div class="flex-1 min-w-0 space-y-1.5">
         {{ dm.intent_badge(type) }}
 
-        {% if type == 'add_stock' %}
-          <p class="text-sm text-ink">
+        {% if type in ('add_stock', 'consume_stock') %}
+          <div class="space-y-1.5">
             {% for item in intent.get('items', []) %}
-            <strong class="font-semibold">{{ item.get('food_name', item.get('name', '?')) }}</strong>
-            <span class="text-ink-muted">{{ dm.quantity(item.get('quantity'), item.get('unit')) }}</span>{% if not loop.last %}<span class="text-ink-subtle"> · </span>{% endif %}
+            {{ stock_item_editor(i, item, loop.index0) }}
             {% endfor %}
-          </p>
-
-        {% elif type == 'consume_stock' %}
-          <p class="text-sm text-ink">
-            {% for item in intent.get('items', []) %}
-            <strong class="font-semibold">{{ item.get('food_name', item.get('name', '?')) }}</strong>
-            <span class="text-ink-muted">{{ dm.quantity(item.get('quantity'), item.get('unit')) }}</span>{% if not loop.last %}<span class="text-ink-subtle"> · </span>{% endif %}
-            {% endfor %}
-          </p>
+          </div>
 
         {% elif type == 'log_meal' %}
           <p class="text-sm text-ink-muted">{{ dm.meal_type_label(intent.get('meal_type')) }}{% if intent.get('context') %} · {{ dm.meal_context_label(intent.get('context')) }}{% endif %}</p>
@@ -122,13 +151,29 @@
               clave que no encontrara, incluido un nombre ajeno al hogar). -#}
           {% for user_key, items in intent.get('items_per_user', {}).items() %}
           {% set eaters = targets.get(user_key, []) %}
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <div class="flex flex-wrap items-start gap-x-2 gap-y-1 text-sm">
             {% if eaters %}
               {% for eater in eaters %}{{ ui.attribution(eater, size='xs') }}{% endfor %}
             {% else %}
               <span class="font-semibold text-warn-ink">{{ user_key }}</span>
             {% endif %}
-            <span class="text-ink">{% for item in items %}{{ item.get('food_name', '?') }}{% if item.get('qty') %} <span class="text-ink-muted">({{ dm.quantity(item.qty, item.get('unit')) }})</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+            <div class="flex-1 min-w-[10rem] space-y-1">
+              {% for item in items %}
+              {#- `user_key | tojson` también va entre comillas simples, por la misma
+                  razón que el `x-data` de arriba: es un `"diego"` literal. -#}
+              <div class="flex items-center gap-1.5">
+                <input type="text"
+                       x-model='intents[{{ i }}].items_per_user[{{ user_key | tojson }}][{{ loop.index0 }}].food_name'
+                       value="{{ item.get('food_name', '') }}"
+                       class="{{ ui.INPUT_CLASS }} py-1 px-2 text-sm flex-1 min-w-0" />
+                <input type="number" step="any"
+                       x-model.number='intents[{{ i }}].items_per_user[{{ user_key | tojson }}][{{ loop.index0 }}].qty'
+                       value="{{ item.get('qty', '') }}"
+                       class="{{ ui.INPUT_CLASS }} py-1 px-2 text-sm w-16" />
+                {%- if item.get('unit') %}<span class="text-xs text-ink-subtle">{{ item.unit }}</span>{% endif -%}
+              </div>
+              {% endfor %}
+            </div>
           </div>
           {% endfor %}
 
@@ -202,6 +247,11 @@
   </div>
   {% endif %}
 
+  {#- Serializa `intents` completo en cada submit, editado o no — es más simple que
+      rastrear qué cambió del lado del cliente, y `NLPService.confirm_event` ya
+      compara contra lo que había antes de decidir si esto cuenta como edición. -#}
+  <input type="hidden" id="nlp-edited-intents" name="edited_intents_json" :value="JSON.stringify(intents)" />
+
   <div class="flex flex-col-reverse sm:flex-row gap-2 pt-1">
     {#- El Discard no tenía `hx-target` ni `hx-swap`: caía en el default de HTMX
         (`innerHTML` sobre el botón mismo), así que el fragmento de descarte se
@@ -210,9 +260,9 @@
     {{ ui.btn(_('Discard'), tone='subtle', icon='x',
               attrs='hx-post="/capture/discard/' ~ nlp_event.id ~ '" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
     {#- Sin `<form>` alrededor, HTMX no manda nada más que el elemento que dispara el
-        request — `hx-include` es lo que suma el campo de fecha al POST. -#}
+        request — `hx-include` es lo que suma el campo de fecha y el de ediciones. -#}
     {{ ui.btn(_('Confirm & Save'), tone='primary', icon='check', block=true, class='sm:flex-1',
-              attrs='hx-post="/capture/confirm/' ~ nlp_event.id ~ '" hx-include="#nlp-override-date" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
+              attrs='hx-post="/capture/confirm/' ~ nlp_event.id ~ '" hx-include="#nlp-override-date, #nlp-edited-intents" hx-target="#nlp-preview" hx-swap="outerHTML"') }}
   </div>
 
   <p class="text-xs text-ink-subtle">{{ _('You said:') }} “{{ nlp_event.original_input }}”</p>

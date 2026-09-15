@@ -47,6 +47,95 @@ _SPEAKER_KEY = ""
 _YESTERDAY_REFS = frozenset({"yesterday", "ayer"})
 
 
+#: Los únicos campos que la edición inline (Fase 7.8) puede tocar. Todo lo demás —a quién
+#: se le atribuye, qué tipo de intent es, cuántos hay— viene siempre del parseo original:
+#: `edited_intents` es JSON que manda el cliente, y nunca se usa para decidir *a quién* se
+#: le escribe algo, solo para pisar el *valor* de un campo que ya existía en esa posición.
+#: Sin este whitelist, alguien podía mandar un `edited_intents_json` armado a mano con un
+#: `items_per_user`/`participants`/`user_key` distinto del que parseó la frase, y anotarle
+#: un pesaje, una comida o una preferencia inventada a otro integrante del hogar.
+_EDITABLE_ITEM_FIELDS = ("food_name", "quantity", "qty")
+
+
+def _merge_edited_item(original: dict[str, Any], edited: Any) -> dict[str, Any]:
+    item = dict(original)
+    if isinstance(edited, dict):
+        for field in _EDITABLE_ITEM_FIELDS:
+            if field in edited:
+                item[field] = edited[field]
+    return item
+
+
+def _merge_edited_items(original_items: Any, edited_items: Any) -> Any:
+    """Fusiona una lista de ítems posición a posición, sin aceptar ítems nuevos.
+
+    Una edición que cambia cuántos ítems hay no es "corregir un campo discreto" — es
+    reescribir el intent entero, que es justo lo que esta fase no cubre — así que un largo
+    distinto descarta la edición completa de esta lista y deja los ítems originales.
+    """
+    if not isinstance(original_items, list):
+        return original_items
+    if not isinstance(edited_items, list) or len(edited_items) != len(original_items):
+        return original_items
+    return [
+        _merge_edited_item(orig, edited)
+        for orig, edited in zip(original_items, edited_items, strict=True)
+    ]
+
+
+def _merge_edited_intent(original: dict[str, Any], edited: Any) -> dict[str, Any]:
+    """Un intent con los valores editados, sin dejar que la edición cambie su forma.
+
+    `edited` viaja como JSON de cliente, así que puede ser cualquier cosa. Si no es del
+    mismo `intent_type` que el original se descarta entero — es la señal más barata de que
+    algo no corresponde a esta captura. Fuera de `add_stock`/`consume_stock`/`log_meal`
+    (el alcance de esta fase) la edición no toca nada.
+    """
+    if not isinstance(edited, dict) or edited.get("intent_type") != original.get("intent_type"):
+        return original
+
+    intent_type = original.get("intent_type")
+    if intent_type in ("add_stock", "consume_stock"):
+        merged = dict(original)
+        merged["items"] = _merge_edited_items(original.get("items"), edited.get("items"))
+        return merged
+
+    if intent_type == "log_meal":
+        original_ipu = original.get("items_per_user")
+        if not isinstance(original_ipu, dict):
+            return original
+        edited_ipu = edited.get("items_per_user")
+        edited_ipu = edited_ipu if isinstance(edited_ipu, dict) else {}
+        #: Se itera sobre las claves **originales**, nunca sobre las del JSON editado: una
+        #: clave nueva en `edited_ipu` (otra persona, o alguien fuera del hogar) no tiene
+        #: por dónde entrar, porque este loop nunca la visita.
+        merged_ipu = {
+            user_key: _merge_edited_items(items, edited_ipu.get(user_key))
+            for user_key, items in original_ipu.items()
+        }
+        merged = dict(original)
+        merged["items_per_user"] = merged_ipu
+        return merged
+
+    return original
+
+
+def _apply_edited_intents(
+    original: list[dict[str, Any]], edited: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Los intents a ejecutar: los originales, con los campos editables pisados.
+
+    Un largo distinto al original también descarta la edición completa — mismo motivo que
+    `_merge_edited_items`, a nivel de la captura entera en vez de un solo intent.
+    """
+    if edited is None or len(edited) != len(original):
+        return original
+    return [
+        _merge_edited_intent(orig, edited_intent)
+        for orig, edited_intent in zip(original, edited, strict=True)
+    ]
+
+
 def _resolve_timestamp(intent: dict[str, Any], override_date: date | None) -> datetime:
     """El instante que se guarda para una comida, un entrenamiento o un pesaje.
 
@@ -235,7 +324,11 @@ class NLPService:
         if not event or event.user_id != user_id or event.status != "pending_confirmation":
             return {"error": "Event not found or access denied", "results": []}
 
-        intents = edited_intents or event.parsed_intent_json or []
+        original_intents = event.parsed_intent_json or []
+        #: `edited_intents` es JSON de cliente: `_apply_edited_intents` solo deja pisar
+        #: cantidad/nombre de alimento sobre la misma forma que ya parseó la frase, nunca
+        #: la atribución (ver el comentario de `_EDITABLE_ITEM_FIELDS`).
+        intents = _apply_edited_intents(original_intents, edited_intents)
 
         if not intents:
             event.status = "discarded"
@@ -279,7 +372,12 @@ class NLPService:
                     }
                 )
 
-        event.status = "confirmed" if not edited_intents else "edited_and_confirmed"
+        #: El preview manda `edited_intents_json` en **todo** submit, tocado o no — es
+        #: más simple para Alpine que rastrear si algo cambió. Comparar contra `intents`
+        #: (ya fusionado) en vez de contra el `edited_intents` crudo es lo que hace que
+        #: una edición sin efecto real (rechazada por forma, o idéntica al original)
+        #: quede marcada `confirmed` en vez de `edited_and_confirmed`.
+        event.status = "edited_and_confirmed" if intents != original_intents else "confirmed"
         event.responded_at = datetime.now(timezone.utc)
         self.db.commit()
 
