@@ -219,10 +219,6 @@ justamente lo que había que arreglar.
 **Build step de Tailwind.** Prohibido por la restricción de no introducir build de
 frontend. Arrastra consigo la CSP y el peso del CDN.
 
-**Edición inline de los intents del NLP.** Hoy se confirma o se descarta; corregir "media
-palta" a "una palta" requiere volver a escribir la frase. Está afuera porque cambia el
-contrato del backend, no solo la pantalla.
-
 **Mezclar temas en una sola frase.** Es el hueco más visible que dejó la Fase 6, y salió de
 escribir la guía: `cené fideos y corrí 30 minutos` no registra **ninguna** de las dos cosas
 —vuelve `mixed` al 0.10— aunque cada mitad por separado funcione perfecto. No es una compuerta

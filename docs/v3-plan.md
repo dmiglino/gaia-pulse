@@ -2992,11 +2992,64 @@ punto se cierra **documentando la decisión como definitiva**, no agregando cód
       tendencia nueva, porque ningún consumidor actual la pedía y el plan no la especifica;
       hacerlo hubiera sido especulativo.
 
-**7.8 — Edición inline de los intents del NLP**
+**7.8 — Edición inline de los intents del NLP** — cerrada:
 
-- [ ] Después de la 7.3, para no cambiar dos contratos de confirmación a la vez. Editar un
-      campo discreto del intent (cantidad, nombre de alimento, fecha) sin tener que
-      reescribir la frase entera.
+- [x] Alcance recortado a cantidad y nombre de alimento —la fecha ya la cubre el
+      `override_date` global de la 7.3, y no tiene sentido duplicar ese contrato—, y solo en
+      los intents donde el dato es discreto y por ítem: `log_meal` (por persona, dentro de
+      `items_per_user`) y `add_stock`/`consume_stock`. `log_workout`, `log_body_metric` y
+      `update_preference` quedan de solo lectura en el preview: no tienen una lista de ítems
+      con cantidad y nombre en la misma forma, así que editarlos ahí exigiría un diseño
+      distinto que esta fase no cubre.
+      `app/templates/capture/preview_partial.html`: `x-data='{ intents: {{ intents | tojson }} }'`
+      siembra el estado de Alpine con el mismo JSON que ya viajaba al cliente; cada input
+      editable usa `x-model`/`x-model.number` apuntando a su posición (`intents[i].items[j]`
+      o `intents[i].items_per_user[clave][j]`), y un campo oculto
+      (`id="nlp-edited-intents"`, `:value="JSON.stringify(intents)"`) serializa el estado
+      completo en cada submit. `hx-include` pasa de `"#nlp-override-date"` a
+      `"#nlp-override-date, #nlp-edited-intents"` para que el POST de Confirm lo arrastre.
+      Bug encontrado y corregido en el camino: `tojson` escapa `<`, `>`, `&` y `'`, pero no
+      `"` —a propósito, según su propia documentación, porque un `"` sin escapar es
+      exactamente lo que separa las claves de un JSON—. Embeber `{{ valor | tojson }}` dentro
+      de un atributo HTML con comillas dobles corta el atributo en la primera clave del JSON
+      y deja el resto como texto suelto fuera de la etiqueta; el `x-data` de arriba y los
+      `x-model` que embeben `user_key | tojson` van con comillas simples por eso.
+      `app/web/capture.py`: `_parse_edited_intents()`, tolerante a basura igual que
+      `query_date()` —`None` si no vino, si no es JSON válido o si no decodifica a una
+      lista—, y el nuevo form param `edited_intents_json` en `/capture/confirm/{event_id}`.
+      `app/services/nlp_service.py`: como el campo oculto viaja en **todo** submit —editado
+      o no, porque es más simple para Alpine que rastrear qué cambió del lado del cliente—,
+      `confirm_event()` compara `edited_intents` contra `event.parsed_intent_json` antes de
+      decidir el status: sin esa comparación, confirmar sin tocar nada quedaba marcado
+      `edited_and_confirmed` igual.
+      `tests/test_web_capture.py` (3 tests nuevos + 1 aserción actualizada): que el preview
+      siembra los inputs con el valor que trajo el parser real (incluida la fracción de
+      "media palta" → `0.5`, vía el mapa de `rules.py`); que editar un ítem de stock antes de
+      confirmar guarda el valor editado y marca `edited_and_confirmed`; que confirmar sin
+      editar nada —el campo oculto viaja igual— sigue guardando como `confirmed` liso.
+      **Hallazgo de la revisión `security-privacy` (BLOCK, corregido antes de cerrar la fase):**
+      la primera versión de `confirm_event()` usaba `edited_intents or event.parsed_intent_json`
+      tal cual —solo validaba que el evento fuera del usuario, nunca la forma de lo editado—,
+      así que un `edited_intents_json` armado a mano (sin pasar por los `x-model` del preview)
+      podía traer un `intent_type` distinto o una clave de atribución distinta
+      (`items_per_user`/`user_key`) apuntando a otro integrante del hogar, y `confirm_event`
+      lo ejecutaba igual: cualquiera podía anotarle un pesaje, una comida o una preferencia
+      inventada a otra persona de su propio hogar. `app/services/nlp_service.py` agrega una
+      fusión por *whitelist* (`_merge_edited_item`, `_merge_edited_items`,
+      `_merge_edited_intent`, `_apply_edited_intents`): solo `food_name`/`quantity`/`qty`
+      pueden venir del JSON editado, y siempre pisando una posición o clave que ya existía en
+      el intent original —el tipo de intent, las claves de `items_per_user` y el largo de las
+      listas de ítems vienen siempre del `parsed_intent_json` guardado en el evento, nunca del
+      POST—. La implementación itera sobre las claves/índices del **original**, nunca sobre
+      los del editado, así que una clave nueva (otra persona, o algo fuera del hogar) no tiene
+      por dónde entrar; un `intent_type` que no coincide, o un largo de lista que no coincide,
+      descarta esa edición entera y ejecuta lo que el parser realmente entendió.
+      `tests/test_web_capture.py` suma 2 tests adversariales:
+      `test_editing_cannot_move_a_meal_item_to_a_different_household_member` (un
+      `items_per_user` falsificado con la clave de otra persona del hogar no crea ni un
+      `MealParticipant` ni un `MealItemConsumed` a su nombre) y
+      `test_editing_cannot_change_the_intent_type_to_write_something_else` (un `intent_type`
+      falsificado sobre un `add_stock` real no crea ningún `BodyMetricLog`).
 
 **7.9 — Mezclar temas en una sola frase (segmentar oraciones)**
 
@@ -3128,13 +3181,13 @@ python3 scripts/agents/sync_agent_assets.py --check
 que ya estaban rotos antes de v3 no se tocan dentro de un rediseño visual, y cada
 checkpoint reporta el número, no una impresión:
 
-| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 | Después de la 7.6 | Después de la 7.7 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** | **843 passed** | 843 (sin cambio) |
-| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) | 222 (sin cambio: los 5 `UP007` de la migración `0005` son el mismo patrón ya aceptado de `0004`; los 3 restantes de `app/models/user.py` —imports sin ordenar, un import sin usar, una línea larga— son deuda de línea de base, aislada vía `git stash` contra el árbol previo a la 7.6) | 231 (aislado vía `git archive` del commit previo a la 7.7 para no dejar la migración nueva sin trackear en la comparación: esa base limpia mide 227, no los 222 de la fila anterior — una deriva previa a esta fase que no se investigó más porque no la introdujo. Sobre esos 227: +5 son `UP035`/`I001`/`UP007` de la migración `0006`, patrón ya aceptado de `0003`-`0005`; −1 es un `I001` viejo de `app/models/blood_analysis.py` que la reescritura del archivo corrigió de paso al reordenar sus imports) |
-| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) | 37 (sin cambio: `app/models/user.py` ya estaba fuera de formato en la línea de base, aislado vía `git stash` contra el árbol previo a la 7.6) | 37 (sin cambio: `app/services/blood_analysis_service.py` y `app/web/health.py` ya estaban fuera de formato en la línea de base —falta una línea en blanco después del docstring del módulo, ninguna de las dos tocada por la 7.7—, aislado vía `git stash` contra el árbol previo a la 7.7) |
-| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.6) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.7) |
-| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
+| Comando | Antes de v3 | Después de la Fase 2 | Después de la 4.4.7 | Después de la 4.4.8 | Después de la 4.4.9 | Después de la 4.4.10 | Después de la 7.1 | Después de la 7.2 | Después de la 7.3 | Después de la 7.4 | Después de la 7.5 | Después de la 7.6 | Después de la 7.7 | Después de la 7.8 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `pytest tests/` | 117 passed | **163 passed** | **498 passed** | **531 passed** | **545 passed** | **569 passed** | **804 passed** | **811 passed** | **820 passed** | **829 passed** | **834 passed** | **843 passed** | 843 (sin cambio) | **848 passed** (+5: los tres tests de edición inline más los dos adversariales que agregó la corrección de seguridad) |
+| `ruff check .` | 292 findings | **288** | **256** | **260** | **257** | **261** | **221** | 221 (sin cambio) | **219** | 219 (sin cambio: medido contra el árbol previo a la 7.4 vía `git stash` para aislarlo — la primera pasada de `tests/test_blood_analysis_parser.py` dio 220 por una línea propia de más de 100 columnas, corregida antes de commitear) | 222 (+3: los 5 de siempre de una migración nueva —`typing.Union`/`typing.Sequence` en vez de `X \| Y`/`collections.abc.Sequence`, idéntico al patrón ya aceptado de `0003`— menos 3 líneas largas de `seed.py` que `black` acortó al envolver las tuplas nuevas; aislado línea por línea contra el árbol previo a la 7.5 vía `git stash`, cero hallazgos nuevos fuera de ese patrón) | 222 (sin cambio: los 5 `UP007` de la migración `0005` son el mismo patrón ya aceptado de `0004`; los 3 restantes de `app/models/user.py` —imports sin ordenar, un import sin usar, una línea larga— son deuda de línea de base, aislada vía `git stash` contra el árbol previo a la 7.6) | 231 (aislado vía `git archive` del commit previo a la 7.7 para no dejar la migración nueva sin trackear en la comparación: esa base limpia mide 227, no los 222 de la fila anterior — una deriva previa a esta fase que no se investigó más porque no la introdujo. Sobre esos 227: +5 son `UP035`/`I001`/`UP007` de la migración `0006`, patrón ya aceptado de `0003`-`0005`; −1 es un `I001` viejo de `app/models/blood_analysis.py` que la reescritura del archivo corrigió de paso al reordenar sus imports) | 231 (sin cambio: los 3 `UP017` de `nlp_service.py` que reporta esta corrida son deuda de línea de base —verificado vía `git diff` que están en líneas que esta fase no tocó, solo la línea inmediatamente anterior cambió—, y `capture.py`/`test_web_capture.py` no suman ninguno nuevo; la primera versión de la corrección de seguridad sí sumó 2 `B905` por dos `zip()` nuevos sin `strict=`, corregidos antes de commitear) |
+| `black --check .` | 66 would reformat | 66 (sin cambio: reformatear 66 archivos adentro de un rediseño visual esconde el diff que importa) | **50** | **48** | **47** | **47** | 38 (sin cambio, deuda vieja fuera de los archivos que tocó la 7.1) | 38 (sin cambio) | 38 (sin cambio: la única línea que `black --diff` marca en `app/web/capture.py` es un import ya existente de `capture_transcribe`, función que la 7.3 no toca) | 38 (sin cambio) | **37** (baja, no sube: `seed.py` ya estaba fuera de formato en la línea de base y correr `black seed.py` para las tuplas nuevas de la 7.5 de paso reformateó el resto del archivo; aislado contra el árbol previo a la 7.5 vía `git stash`, la única diferencia entre las dos listas es esa línea) | 37 (sin cambio: `app/models/user.py` ya estaba fuera de formato en la línea de base, aislado vía `git stash` contra el árbol previo a la 7.6) | 37 (sin cambio: `app/services/blood_analysis_service.py` y `app/web/health.py` ya estaban fuera de formato en la línea de base —falta una línea en blanco después del docstring del módulo, ninguna de las dos tocada por la 7.7—, aislado vía `git stash` contra el árbol previo a la 7.7) | **36** (baja, no sube: `app/web/capture.py` y `tests/test_web_capture.py` ya estaban fuera de formato en la línea de base y correr `black` sobre los dos para las líneas nuevas de la 7.8 de paso reformateó el resto de cada archivo; verificado de nuevo tras la corrección de seguridad —`app/services/nlp_service.py` y `tests/test_web_capture.py` solos dan "left unchanged"— así que el número final sigue siendo 36) |
+| `mypy app` | 47 errors / 8 files | 47 (sin cambio) | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **46 / 8 files** | **41 / 6 files** (sin cambio, ya medido en la Fase 6) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: los 13 de `nlp_service.py` son el mismo patrón de siempre —mypy no angosta el tipo de `svc` entre `elif` hermanos que lo reasignan a otro `*Service`—, verificado contra el árbol previo a la 7.3 antes de commitear) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.6) | 41 / 6 files (sin cambio: ninguno de los 6 archivos con error es de los que tocó la 7.7) | 41 / 6 files (sin cambio: aislado vía `git stash` contra el árbol previo a la 7.8 — los 14 errores de `nlp_service.py` son exactamente los mismos, corridos 4 líneas por el `edited` de más que agregó `confirm_event()`; `capture.py` no suma ninguno. La corrección de seguridad sumó un `no-any-return` nuevo en `_merge_edited_items` —su `return original_items` en la rama "no es lista" no angosta desde `Any`—, corregido devolviendo `Any` en vez de `list[Any]`, que es lo que la función realmente puede devolver en esa rama; con eso el total vuelve a 41/6) |
+| `sync_agent_assets.py --check` | ok | ok | ok | ok | ok | ok | ok | ok | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) | n/a (ningún archivo de `.agents/` cambió) |
 
 La deuda de `ruff`/`black`/`mypy` baja sola a medida que el código viejo se reescribe, y
 ninguna de esas bajas es un barrido: el barrido repo-wide sigue siendo un commit aparte y
@@ -3200,8 +3253,6 @@ Explícito, para que no se cuele por la ventana:
   fondo, y hay muchísimo dato ya recolectado sin explotar antes de necesitarlo.
 - **Superficie conversacional** ("preguntale a tus datos"): no existe ninguna ruta hoy; es
   una feature nueva, no un upgrade.
-- **Edición inline completa de los intents del NLP**: requiere cambiar el contrato del
-  backend.
 - **Build step de Tailwind** (está en el roadmap del README): prohibido por la restricción de
   no introducir build de frontend.
 - **Remember-me y recuperación de contraseña**: tocan sesión y auth; en v3 se quitan las
