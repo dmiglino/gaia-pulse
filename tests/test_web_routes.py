@@ -160,6 +160,8 @@ def test_no_template_target_relies_on_a_redirect() -> None:
 SMOKE_EXCLUSIONS = {
     "/login": "test_web_auth.py — no autenticada, y con POST propio",
     "/logout": "test_web_auth.py — redirige a propósito",
+    "/forgot-password": "test_web_auth.py — no autenticada, y con POST propio",
+    "/reset-password/{token}": "test_web_auth.py — necesita un token propio",
     "/onboarding/": "test_web_onboarding.py — redirige según el gate",
     "/notifications/badge": "test_web_fragments.py — es un fragmento, no una página",
     "/health/{analysis_id}": "test_web_pages.py — necesita una fila propia",

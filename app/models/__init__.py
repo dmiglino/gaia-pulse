@@ -6,6 +6,7 @@ from app.models.meal import MealEvent, MealItemConsumed, MealParticipant
 from app.models.nlp import NLPIngestionEvent
 from app.models.notification import Notification
 from app.models.pantry import PantryMovement, PantryStock
+from app.models.password_reset_token import PasswordResetToken
 from app.models.recipe import Recipe
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import RecommendationPreference, Suggestion
@@ -34,4 +35,5 @@ __all__ = [
     "NLPIngestionEvent",
     "Notification",
     "BehaviorSignal",
+    "PasswordResetToken",
 ]

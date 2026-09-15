@@ -94,6 +94,72 @@ msgstr "GaiaPulse — Un compañero de bienestar privado para el hogar de Diego 
 msgid "Invalid email or password."
 msgstr "Email o contraseña inválidos."
 
+msgid "Remember me"
+msgstr "Recordarme"
+
+msgid "Forgot password?"
+msgstr "¿Olvidaste tu contraseña?"
+
+msgid "Password updated. Sign in with your new password."
+msgstr "Contraseña actualizada. Iniciá sesión con tu nueva contraseña."
+
+msgid "If that email is registered, we've sent a link to reset your password."
+msgstr "Si ese email está registrado, te enviamos un link para restablecer tu contraseña."
+
+msgid "Back to sign in"
+msgstr "Volver a iniciar sesión"
+
+msgid "Enter your email and we'll send you a link to reset your password."
+msgstr "Ingresá tu email y te enviamos un link para restablecer tu contraseña."
+
+msgid "Sending…"
+msgstr "Enviando…"
+
+msgid "Send reset link"
+msgstr "Enviar link de recuperación"
+
+msgid "Reset password"
+msgstr "Restablecer contraseña"
+
+msgid "This reset link is invalid or has expired."
+msgstr "Este link de recuperación es inválido o venció."
+
+msgid "Request a new link"
+msgstr "Pedir un link nuevo"
+
+msgid "New password"
+msgstr "Contraseña nueva"
+
+msgid "Confirm new password"
+msgstr "Confirmar contraseña nueva"
+
+msgid "Saving…"
+msgstr "Guardando…"
+
+msgid "Save new password"
+msgstr "Guardar contraseña nueva"
+
+msgid "Passwords don't match."
+msgstr "Las contraseñas no coinciden."
+
+msgid "Reset your GaiaPulse password"
+msgstr "Restablecé tu contraseña de GaiaPulse"
+
+msgid ""
+"Someone asked to reset your GaiaPulse password. Open this link within an "
+"hour to choose a new one:\n"
+"\n"
+"%(link)s\n"
+"\n"
+"If this wasn't you, ignore this email — your password stays the same."
+msgstr ""
+"Alguien pidió restablecer tu contraseña de GaiaPulse. Abrí este link "
+"dentro de la próxima hora para elegir una nueva:\n"
+"\n"
+"%(link)s\n"
+"\n"
+"Si no fuiste vos, ignorá este email — tu contraseña sigue igual."
+
 # ─── Página de inicio ─────────────────────────────────────────────────────────
 
 msgid "%(num)d pantry item running low"

@@ -57,6 +57,21 @@ class Settings(BaseSettings):
     timezone: str = "America/Argentina/Buenos_Aires"
     default_locale: str = "es_AR"
 
+    # URL pública de la app (fase 7.10): con esto se arman los links que salen del
+    # servidor (el mail de recuperación de contraseña). Nunca se arma con
+    # `request.base_url` — ese viene del header `Host`, que controla quien manda el
+    # request, no quien despliega la app, y confiar en él deja mandar un link de
+    # reset válido a un dominio ajeno.
+    public_base_url: str = "http://localhost:8000"
+
+    # Email (password recovery, fase 7.10)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = "noreply@gaiapulse.local"
+    smtp_use_tls: bool = True
+
     @field_validator("app_secret_key")
     @classmethod
     def validate_secret_key(cls, v: str, info: object) -> str:
@@ -73,9 +88,11 @@ class Settings(BaseSettings):
 
     @property
     def stt_enabled(self) -> bool:
-        return self.stt_provider != "none" and bool(
-            self.stt_api_key or self.openai_api_key
-        )
+        return self.stt_provider != "none" and bool(self.stt_api_key or self.openai_api_key)
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host)
 
     @property
     def effective_stt_key(self) -> str:
