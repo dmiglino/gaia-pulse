@@ -14,4 +14,6 @@ node_modules/
 *.sqlite
 *.db
 uploads/
+.claude/
+.idea/
 .DS_Store

@@ -42,6 +42,7 @@
       `setTheme()` en `app.js` la reescriben leyendo `--surface`, de modo que el color
       sale del token y no de un hex copiado a mano. -#}
   <meta name="theme-color" content="#f8fafc" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/images/icon-192.png" />
   <link rel="manifest" href="/static/manifest.json" />
   <title>{% block title %}GaiaPulse{% endblock %} — GaiaPulse</title>
 
@@ -67,16 +68,12 @@
   {#
     Tailwind (Play CDN — no hay build step, y no debe introducirse).
 
-    Versión fija + `integrity`: este `<head>` es también el de `/login`, así que
-    todo script que entre acá corre en el documento que contiene el campo de
-    contraseña. Sin SRI, quien controle el CDN —o se meta en el medio— ejecuta
-    JS ahí. Los cuatro digests son sha384 del archivo pinneado; si alguna vez se
-    sube una versión, hay que recalcularlos:
-      curl -sSL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+    Versión fija: `cdn.tailwindcss.com` no devuelve cabeceras CORS
+    (`Access-Control-Allow-Origin`), por lo que los navegadores bloquean la carga
+    si se especifica `crossorigin` o `integrity` (SRI requiere CORS). Se carga
+    como script directo estándar sin crossorigin.
   #}
-  <script src="https://cdn.tailwindcss.com/3.4.16"
-          integrity="sha384-mS5Uq7sE90lgbBDN8xgf34ibEgbZo4gB3tfLY40ZRle+M188BQw8onzNHg6GUZaA"
-          crossorigin="anonymous"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
   <script>
     // Los colores no son valores fijos: son los tokens de `app.css` leídos como
     // tripletes RGB, de modo que `bg-card`, `text-ink/70` y `border-line`

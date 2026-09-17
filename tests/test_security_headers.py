@@ -31,8 +31,13 @@ def test_csp_allowlists_exactly_the_cdns_the_shell_loads(client: TestClient) -> 
     assert directives["default-src"] == "'self'"
     # Tailwind Play CDN, HTMX (unpkg) and Alpine/Chart.js (jsdelivr) — the
     # exact three hosts `layouts/shell.html` loads a <script src> from.
+    # 'unsafe-inline' and 'unsafe-eval' are accepted gaps: inline scripts
+    # configure Tailwind and initialize the theme, Alpine compiles directive
+    # expressions via AsyncFunction/eval, and Tailwind's Play CDN compiles JIT
+    # classes at runtime.
     assert directives["script-src"] == (
-        "'self' https://cdn.tailwindcss.com https://unpkg.com " "https://cdn.jsdelivr.net"
+        "'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com "
+        "https://cdn.jsdelivr.net"
     )
     # 'unsafe-inline' is the accepted gap: Tailwind's Play CDN injects a
     # <style> tag at runtime, and there is no build step to avoid that with.

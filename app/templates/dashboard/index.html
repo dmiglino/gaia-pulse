@@ -66,7 +66,9 @@
     {% call ui.card() %}
       {{ ui.section_title(_('Weight trend'), subtitle=_('Last 30 days'), icon='chart-bar', tone='body') }}
       {% if chart_data.weight_trend.labels %}
-      <canvas id="weightChart" height="200"></canvas>
+      <div class="relative h-56 w-full">
+        <canvas id="weightChart"></canvas>
+      </div>
       {% else %}
       {{ ui.empty_state(_('No weigh-ins yet.'),
           text=_('Log your weight a few times and the trend line shows up here.'),
@@ -78,7 +80,9 @@
     {% call ui.card() %}
       {{ ui.section_title(_('Workouts per week'), subtitle=_('Last 4 weeks'), icon='bolt', tone='move') }}
       {% if chart_data.workout_frequency.labels %}
-      <canvas id="workoutFreqChart" height="200"></canvas>
+      <div class="relative h-56 w-full">
+        <canvas id="workoutFreqChart"></canvas>
+      </div>
       {% else %}
       {{ ui.empty_state(_('No workouts yet.'),
           text=_('Every session you log adds a bar here.'),
@@ -93,7 +97,9 @@
     {% call ui.card() %}
       {{ ui.section_title(_('Muscle groups trained'), subtitle=_('Last 30 days'), icon='chart-box', tone='move') }}
       {% if chart_data.muscle_groups.labels %}
-      <canvas id="muscleChart" height="220"></canvas>
+      <div class="relative h-60 w-full">
+        <canvas id="muscleChart"></canvas>
+      </div>
       {% else %}
       {{ ui.empty_state(_('No exercises yet.'),
           text=_('Name the exercises inside a workout and this shows which groups you cover.'),
@@ -105,7 +111,9 @@
     {% call ui.card() %}
       {{ ui.section_title(_('Meals by type'), subtitle=_('Last 7 days'), icon='meal', tone='food') }}
       {% if chart_data.meal_types.labels %}
-      <canvas id="mealTypesChart" height="220"></canvas>
+      <div class="relative h-60 w-full">
+        <canvas id="mealTypesChart"></canvas>
+      </div>
       {% else %}
       {{ ui.empty_state(_('No meals yet.'),
           text=_('Breakfast, lunch, dinner and snacks split up here once you log them.'),

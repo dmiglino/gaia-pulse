@@ -19,8 +19,12 @@ CDN — see `app/templates/layouts/shell.html`), so `script-src`/`style-src`
 must allowlist those exact hosts instead of `'self'` alone. `style-src`
 additionally needs `'unsafe-inline'` because the Tailwind Play CDN script
 generates utility classes at runtime by injecting a `<style>` tag — there is
-no build step to pre-generate a stylesheet instead, so this is an accepted
-gap tied to that constraint, not a default we forgot to tighten.
+no build step to pre-generate a stylesheet instead. `script-src` needs
+`'unsafe-inline'` for inline scripts (theme initializer, tailwind.config,
+Chart.js setup) and `'unsafe-eval'` because Alpine.js parses directives
+dynamically with `AsyncFunction`/`eval` and Tailwind Play CDN compiles
+classes at runtime. Both are accepted gaps tied to having no frontend build
+pipeline, not defaults we forgot to tighten.
 """
 
 from typing import Any
@@ -29,7 +33,8 @@ from fastapi import Request
 
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
-    "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+    "https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     "font-src 'self' https://fonts.gstatic.com; "
     "img-src 'self' data:; "

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
@@ -53,6 +53,10 @@ def create_app() -> FastAPI:
 
     # Static files
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> FileResponse:
+        return FileResponse("app/static/images/icon-192.png", media_type="image/png")
 
     # Starlette wraps middlewares in registration order, and the *last*
     # registered ends up *outermost* (it wraps everything added before it) —

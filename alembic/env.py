@@ -10,8 +10,12 @@ import app.models  # noqa: F401 — registers all models with Base.metadata
 
 config = context.config
 
-# Override sqlalchemy.url from environment if set
+# Override sqlalchemy.url from environment or .env if set
 db_url = os.environ.get("DATABASE_URL")
+if not db_url:
+    from app.core.config import get_settings
+    db_url = get_settings().database_url
+
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 
