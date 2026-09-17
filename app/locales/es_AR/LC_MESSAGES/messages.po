@@ -1945,3 +1945,54 @@ msgstr "Olvidar no es una prohibición: si la conducta se repite, se vuelve a ap
 
 msgid "Name a food or an activity and GaiaPulse learns about that, instead of about the wording of this card."
 msgstr "Nombrá un alimento o una actividad y GaiaPulse aprende sobre eso, en lugar de sobre cómo está redactada esta tarjeta."
+
+# ─── Repetir comida y lista de compras ──────────────────────────────────────
+
+msgid "Repeat meal today"
+msgstr "Repetir comida hoy"
+
+msgid "Meal repeated for today."
+msgstr "Comida repetida para hoy."
+
+msgid "Shopping list"
+msgstr "Lista de compras"
+
+msgid "Items running low or out of stock in your household"
+msgstr "Artículos con stock bajo o agotados en el hogar"
+
+msgid "to buy"
+msgstr "por comprar"
+
+msgid "Out of stock"
+msgstr "Agotado"
+
+msgid "Low stock"
+msgstr "Stock bajo"
+
+msgid "Current"
+msgstr "Actual"
+
+msgid "Minimum threshold"
+msgstr "Umbral mínimo"
+
+msgid "Mark as bought"
+msgstr "Marcar como comprado"
+
+msgid "Pantry is well stocked!"
+msgstr "¡La despensa está bien surtida!"
+
+msgid "Nothing is currently running low or out of stock."
+msgstr "No hay artículos con stock bajo o agotados en este momento."
+
+msgid "View full pantry"
+msgstr "Ver despensa completa"
+
+msgid "Restocked!"
+msgstr "¡Repuesto!"
+
+msgid "New stock"
+msgstr "Nuevo stock"
+
+msgid "Item restocked."
+msgstr "Artículo repuesto."
+

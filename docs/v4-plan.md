@@ -156,6 +156,23 @@ la misma vara: solo entran si resuelven algo que hoy falta, no porque "estaría 
   marcador a través de varios paneles (colesterol en el tiempo, por ejemplo) es la
   consecuencia natural de un cambio que v3 ya pagó; no pedir esto en v4 dejaría a la 7.7
   como una migración de datos sin usuario.
+- **Plantillas de entrenamiento habituales ("Rutinas guardadas").** Poder guardar una
+  sesión frecuente ("Día de Piernas", "Torso Fuerza", etc.) o marcar un entrenamiento
+  previo como plantilla para instanciarlo en 1 click con sus ejercicios pre-cargados y
+  solo actualizar series/pesos. Elimina fricción repetitiva en el gimnasio.
+- **Ingestión de análisis de sangre por foto/OCR (Visión multimodal).** Permitir subir
+  una foto o PDF del informe del laboratorio y que un extractor multimodal parsee los
+  marcadores directamente hacia `NLPIngestionEvent` en estado `pending_confirmation`,
+  respetando estrictamente la compuerta humana obligatoria de `AGENTS.md` §3 antes de
+  escribir en `blood_markers`.
+- **Insights y correlaciones cruzadas entre dominios.** Un módulo analítico que cruce
+  datos entre dominios (p. ej. gramos de proteína consumidos vs progresión de peso en
+  fuerza, o tendencias de glucemia/colesterol en sangre vs tipos de alimentos frecuentes
+  en despensa) para generar sugerencias con evidencia cruzada.
+- **Resumen semanal del hogar por notificación / email.** Un job periódico programado
+  que consolide el balance semanal del hogar (sesiones de entrenamiento completadas,
+  variedad de alimentos frescos en despensa, evolución conjunta) y lo entregue a los
+  miembros para reforzar el hábito compartido.
 - **Redacción del `rationale` con más naturalidad** (ver 1.1): la parte de "usar un LLM"
   que no compromete el determinismo del scoring, separada de la superficie conversacional
   porque no necesita ruta nueva ni cambia qué se sugiere, solo cómo se lo redacta.

@@ -232,15 +232,15 @@ una feature nueva, no un upgrade.
 |---|---|
 | Tablas | 22 |
 | Migraciones de Alembic | 7 (`0001` a `0007`) — v3 agregó seis |
-| Rutas expuestas | 76 (32 bajo `/api/`, 44 web) |
-| Páginas web (GET) | 21 |
-| Plantillas Jinja | 45 |
+| Rutas expuestas | 79 (32 bajo `/api/`, 47 web) |
+| Páginas web (GET) | 22 |
+| Plantillas Jinja | 47 |
 | Macros de componentes | 59 (38 de dominio, 19 de UI, 2 de iconos) |
 | Iconos con nombre | 49 |
 | Generadores de sugerencias | 4 (actividad, sangre, comida, despensa) |
 | Jobs programados | 8, todos `CronTrigger` en hora local |
-| Entradas del catálogo `es_AR` | 575, ninguna sin traducir |
-| Tests | 867 en 35 módulos |
+| Entradas del catálogo `es_AR` | 590, ninguna sin traducir |
+| Tests | 878 en 35 módulos |
 | Líneas de Python en `app/` | 17 990 |
 | Líneas de plantillas | 5 656 |
 | Líneas de tests | 14 950 |

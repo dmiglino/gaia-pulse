@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -128,3 +128,73 @@ class MealService:
         self.meal_repo.delete(meal)
         self.db.commit()
         return True
+
+    def repeat_meal(self, meal_id: int, for_user_id: int | None = None) -> MealEvent:
+        """Duplicate a past meal event with the current timestamp."""
+        orig = self.meal_repo.get_with_participants(meal_id)
+        if not orig:
+            raise ValueError(f"Meal {meal_id} not found")
+
+        event = MealEvent(
+            household_id=orig.household_id,
+            timestamp=as_utc(datetime.now(UTC)),
+            meal_type=orig.meal_type,
+            context=orig.context,
+            notes=orig.notes,
+        )
+        self.db.add(event)
+        self.db.flush()
+
+        # If for_user_id is specified and was in participants, we only repeat for that user
+        # otherwise repeat for all original participants
+        participants_to_copy = orig.participants
+        if for_user_id is not None:
+            user_participants = [p for p in orig.participants if p.user_id == for_user_id]
+            if user_participants:
+                participants_to_copy = user_participants
+
+        for orig_p in participants_to_copy:
+            participant = MealParticipant(
+                meal_event_id=event.id,
+                user_id=orig_p.user_id,
+                portion_label=orig_p.portion_label,
+                estimated_total_grams=orig_p.estimated_total_grams,
+                hunger_before=orig_p.hunger_before,
+                satiety_after=orig_p.satiety_after,
+                notes=orig_p.notes,
+            )
+            self.db.add(participant)
+            self.db.flush()
+
+            for item in orig_p.items_consumed:
+                new_item = MealItemConsumed(
+                    meal_event_id=event.id,
+                    meal_participant_id=participant.id,
+                    food_item_id=item.food_item_id,
+                    normalized_free_text_name=item.normalized_free_text_name,
+                    quantity=item.quantity,
+                    unit=item.unit,
+                    estimated_grams=item.estimated_grams,
+                    preparation=item.preparation,
+                    affects_stock=item.affects_stock,
+                    notes=item.notes,
+                )
+                self.db.add(new_item)
+
+                learning.record_signal(
+                    self.db,
+                    user_id=orig_p.user_id,
+                    signal_type="repeated_meal_choice",
+                    subject_type="food",
+                    subject_name=item.normalized_free_text_name,
+                    value=1.0,
+                    source_type="implicit",
+                    source_entity_type="meal_event",
+                    source_entity_id=event.id,
+                    context={"meal_type": orig.meal_type} if orig.meal_type else None,
+                )
+
+        self.db.flush()
+        self.db.commit()
+        self.db.refresh(event)
+        return event

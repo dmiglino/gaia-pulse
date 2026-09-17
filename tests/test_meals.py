@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
@@ -119,3 +120,59 @@ class TestMealLogging:
         event = svc.log_meal(household.id, data)
         assert svc.delete_meal(event.id) is True
         assert svc.get_meal(event.id) is None
+
+    def test_repeat_meal_duplicates_event_and_items(
+        self, db: Session, household: Household, diego: User
+    ) -> None:
+        svc = MealService(db)
+        past_time = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+        data = MealEventCreate(
+            timestamp=past_time,
+            meal_type="lunch",
+            context="home",
+            participants=[
+                MealParticipantCreate(
+                    user_id=diego.id,
+                    items=[
+                        MealItemCreate(food_name="steak", quantity=200, unit="g"),
+                        MealItemCreate(food_name="salad", quantity=1, unit="serving"),
+                    ],
+                )
+            ],
+        )
+        original = svc.log_meal(household.id, data)
+        repeated = svc.repeat_meal(original.id, diego.id)
+
+        assert repeated is not None
+        assert repeated.id != original.id
+        assert repeated.meal_type == "lunch"
+        assert repeated.context == "home"
+        assert repeated.timestamp.replace(tzinfo=None) > datetime(2026, 1, 1, 12, 0)
+
+        # Check participants and items copied
+        assert len(repeated.participants) == 1
+        assert repeated.participants[0].user_id == diego.id
+        item_names = {i.normalized_free_text_name for i in repeated.participants[0].items_consumed}
+        assert item_names == {"steak", "salad"}
+
+
+def test_web_repeat_meal_redirects_and_sets_flash(
+    authenticated_client: TestClient, db: Session, household: Household, diego: User
+) -> None:
+    svc = MealService(db)
+    event = svc.log_meal(
+        household.id,
+        MealEventCreate(
+            timestamp=now(),
+            meal_type="dinner",
+            context="home",
+            participants=[
+                MealParticipantCreate(user_id=diego.id, items=[MealItemCreate(food_name="soup")])
+            ],
+        ),
+    )
+
+    resp = authenticated_client.post(f"/meals/{event.id}/repeat", follow_redirects=False)
+    assert resp.status_code == 302
+    assert resp.headers["location"].startswith("/meals/")
+    assert resp.headers["location"] != f"/meals/{event.id}"

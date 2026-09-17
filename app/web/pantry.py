@@ -182,3 +182,57 @@ def pantry_movements(
     ctx = get_template_context(request, db, current_user)
     ctx["movements"] = svc.get_movements(current_user.household_id, limit=50)
     return templates.TemplateResponse("pantry/movements.html", ctx)
+
+
+@router.get("/shopping", response_class=HTMLResponse)
+def pantry_shopping(
+    request: Request,
+    current_user: CurrentUser,
+    db: DB,
+) -> HTMLResponse:
+    """Checklist de compras para el hogar con los productos en stock bajo o agotados."""
+    svc = PantryService(db)
+    ctx = get_template_context(request, db, current_user)
+    ctx["low_stock_items"] = svc.get_low_stock(current_user.household_id)
+    return templates.TemplateResponse("pantry/shopping.html", ctx)
+
+
+@router.post("/shopping/{stock_id}/buy")
+def pantry_shopping_buy(
+    request: Request,
+    stock_id: int,
+    current_user: CurrentUser,
+    db: DB,
+) -> Response:
+    """Marca un ítem de la lista de compras como comprado y repone stock."""
+    is_htmx = bool(request.headers.get("HX-Request"))
+    svc = PantryService(db)
+    stock = svc.stock_repo.get_for_household(current_user.household_id, stock_id)
+    if not stock:
+        if is_htmx:
+            return HTMLResponse(_("Pantry item not found."), status_code=404)
+        return _back_to_pantry(_("Pantry item not found."), "error")
+
+    quantity_to_add = 1.0
+    if stock.low_stock_threshold and float(stock.current_quantity) < float(
+        stock.low_stock_threshold
+    ):
+        quantity_to_add = max(1.0, float(stock.low_stock_threshold) - float(stock.current_quantity))
+
+    item = svc.adjust_stock_by_id(
+        household_id=current_user.household_id,
+        user_id=current_user.id,
+        stock_id=stock_id,
+        quantity=quantity_to_add,
+        movement_type="purchase",
+        notes="Comprado desde lista de compras",
+    )
+
+    if not is_htmx:
+        response = RedirectResponse(url="/pantry/shopping", status_code=302)
+        set_flash(response, _("Item restocked."), "success")
+        return response
+
+    ctx = get_template_context(request, db, current_user)
+    ctx["item"] = item
+    return templates.TemplateResponse("pantry/partials/shopping_item_bought.html", ctx)

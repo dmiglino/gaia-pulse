@@ -42,6 +42,9 @@
       `setTheme()` en `app.js` la reescriben leyendo `--surface`, de modo que el color
       sale del token y no de un hex copiado a mano. -#}
   <meta name="theme-color" content="#f8fafc" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <link rel="apple-touch-icon" href="/static/images/icon-192.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="/static/images/icon-192.png" />
   <link rel="manifest" href="/static/manifest.json" />
   <title>{% block title %}GaiaPulse{% endblock %} — GaiaPulse</title>
@@ -171,5 +174,14 @@
 
   <script src="/static/js/app.js" defer></script>
   {% block extra_scripts %}{% endblock %}
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/static/sw.js').catch(function (err) {
+          console.debug('ServiceWorker registration skipped or failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

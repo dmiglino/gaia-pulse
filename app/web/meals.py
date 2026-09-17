@@ -103,3 +103,23 @@ def meal_delete(
     response = RedirectResponse(url="/meals", status_code=302)
     set_flash(response, _("Meal deleted."), "success")
     return response
+
+
+@router.post("/{meal_id}/repeat")
+def meal_repeat(
+    meal_id: int,
+    current_user: CurrentUser,
+    db: DB,
+) -> RedirectResponse:
+    """Repite una comida para hoy duplicando sus alimentos e items consumidos."""
+    svc = MealService(db)
+    meal = svc.get_meal(meal_id)
+    if not meal or meal.household_id != current_user.household_id:
+        response = RedirectResponse(url="/meals", status_code=302)
+        set_flash(response, _("That meal is not available."), "error")
+        return response
+
+    new_meal = svc.repeat_meal(meal_id, for_user_id=current_user.id)
+    response = RedirectResponse(url=f"/meals/{new_meal.id}", status_code=302)
+    set_flash(response, _("Meal repeated for today."), "success")
+    return response

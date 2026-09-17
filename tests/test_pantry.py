@@ -1,5 +1,6 @@
 """Tests for pantry stock management."""
 
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.food import FoodItem
@@ -216,3 +217,48 @@ class TestLowStock:
         svc = PantryService(db)
         low = svc.get_low_stock(household.id)
         assert not any(s.food_item.canonical_name == "banana" for s in low)
+
+
+class TestShoppingList:
+    def test_shopping_page_shows_low_and_out_of_stock(
+        self, authenticated_client: TestClient, db: Session, household: Household, diego: User
+    ) -> None:
+        from app.models.pantry import PantryStock
+
+        food = make_food(db, "olive_oil")
+        stock = PantryStock(
+            household_id=household.id,
+            food_item_id=food.id,
+            current_quantity=0,
+            unit="unit",
+            low_stock_threshold=2,
+        )
+        db.add(stock)
+        db.flush()
+
+        resp = authenticated_client.get("/pantry/shopping")
+        assert resp.status_code == 200
+        assert "shopping-list" in resp.text
+        assert "Olive_oil" in resp.text
+
+    def test_buy_item_restores_stock(
+        self, authenticated_client: TestClient, db: Session, household: Household, diego: User
+    ) -> None:
+        from app.models.pantry import PantryStock
+
+        food = make_food(db, "eggs")
+        stock = PantryStock(
+            household_id=household.id,
+            food_item_id=food.id,
+            current_quantity=0,
+            unit="unit",
+            low_stock_threshold=6,
+        )
+        db.add(stock)
+        db.flush()
+
+        resp = authenticated_client.post(f"/pantry/shopping/{stock.id}/buy")
+        assert resp.status_code == 200
+
+        db.refresh(stock)
+        assert float(stock.current_quantity) >= 6

@@ -24,6 +24,7 @@
 
   {% call ui.page_header(_('Pantry'), subtitle=_('What the house has right now'),
                          icon='pantry', tone='stock') %}
+    {{ ui.btn(_('Shopping list'), href='/pantry/shopping', tone='secondary', icon='cart') }}
     {{ ui.btn(_('History'), href='/pantry/movements', tone='secondary', icon='clock') }}
     {{ ui.btn(_('Add purchase'), href='/capture?prefill=pantry', tone='primary', icon='plus') }}
   {% endcall %}

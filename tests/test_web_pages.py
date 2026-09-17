@@ -22,6 +22,7 @@ PAGES = [
     "/",
     "/pantry/",
     "/pantry/movements",
+    "/pantry/shopping",
     "/meals/",
     "/workouts/",
     "/body-metrics/",

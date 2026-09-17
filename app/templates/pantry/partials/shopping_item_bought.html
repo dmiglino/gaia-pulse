@@ -1,0 +1,9 @@
+<div id="shopping-item-{{ item.id }}" class="bg-card border border-ok-solid/30 rounded-card shadow-sm p-4 flex items-center justify-between gap-4 text-ok-ink bg-ok-soft/30 transition-all">
+  <div class="flex items-center gap-2 min-w-0">
+    <span class="w-6 h-6 rounded-pill bg-ok-solid text-white flex items-center justify-center text-xs flex-shrink-0">
+      {{ ic.icon('check', 'w-4 h-4') }}
+    </span>
+    <span class="font-medium text-sm text-ink truncate">{{ item.food_item.canonical_name | title }} — {{ _('Restocked!') }}</span>
+  </div>
+  <span class="text-xs text-ink-muted tabular-nums flex-shrink-0">{{ _('New stock') }}: {{ dm.quantity(item.current_quantity, item.unit) }}</span>
+</div>

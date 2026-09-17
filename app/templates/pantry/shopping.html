@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _('Shopping list') }}{% endblock %}
+
+{% block content %}
+<div class="px-4 py-6 md:px-8 max-w-3xl mx-auto space-y-6">
+
+  {% call ui.page_header(_('Shopping list'), subtitle=_('Items running low or out of stock in your household'),
+                         icon='cart', tone='stock', back='/pantry', back_label=_('Pantry')) %}
+    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-warn-soft text-warn-ink text-xs font-semibold">
+      {{ low_stock_items | length }} {{ _('to buy') }}
+    </span>
+  {% endcall %}
+
+  {% if low_stock_items %}
+  <div id="shopping-list" class="space-y-3">
+    {% for item in low_stock_items %}
+    <div id="shopping-item-{{ item.id }}" class="bg-card border border-line rounded-card shadow-sm p-4 flex items-center justify-between gap-4 transition-all">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2">
+          <h3 class="font-semibold text-ink text-base truncate">{{ item.food_item.canonical_name | title }}</h3>
+          {% if item.current_quantity == 0 %}
+          <span class="px-2 py-0.5 rounded-pill bg-danger-soft text-danger-ink text-xs font-bold">{{ _('Out of stock') }}</span>
+          {% else %}
+          <span class="px-2 py-0.5 rounded-pill bg-warn-soft text-warn-ink text-xs font-medium">{{ _('Low stock') }}</span>
+          {% endif %}
+        </div>
+        <p class="text-xs text-ink-muted mt-1">
+          {{ _('Current') }}: <span class="font-medium text-ink tabular-nums">{{ dm.quantity(item.current_quantity, item.unit) }}</span>
+          {% if item.low_stock_threshold %}
+          <span class="text-ink-subtle">· {{ _('Minimum threshold') }}: {{ dm.quantity(item.low_stock_threshold, item.unit) }}</span>
+          {% endif %}
+        </p>
+      </div>
+
+      <form method="post" action="/pantry/shopping/{{ item.id }}/buy"
+            hx-post="/pantry/shopping/{{ item.id }}/buy"
+            hx-target="#shopping-item-{{ item.id }}"
+            hx-swap="outerHTML"
+            class="flex-shrink-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}" />
+        <button type="submit"
+                class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-control text-sm font-medium bg-brand-500 hover:bg-brand-600 text-white shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          {{ ic.icon('check', 'w-4 h-4') }}
+          <span>{{ _('Mark as bought') }}</span>
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {% call ui.card(padding='') %}
+    {{ ui.empty_state(_('Pantry is well stocked!'),
+        text=_('Nothing is currently running low or out of stock.'),
+        icon='check-circle', tone='ok',
+        action_label=_('View full pantry'), action_href='/pantry') }}
+  {% endcall %}
+  {% endif %}
+
+</div>
+{% endblock %}
