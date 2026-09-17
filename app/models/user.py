@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -35,7 +35,9 @@ class User(Base):
 
     # Physical profile
     birth_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    sex: Mapped[str | None] = mapped_column(String(30), nullable=True)  # male/female/other/prefer_not_to_say
+    sex: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )  # male/female/other/prefer_not_to_say
     height_cm: Mapped[float | None] = mapped_column(Numeric(5, 1), nullable=True)
     target_weight_kg: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
 

@@ -230,20 +230,20 @@ una feature nueva, no un upgrade.
 
 | Qué | Cuánto |
 |---|---|
-| Tablas | 20 |
-| Migraciones de Alembic | 3 (`0001`, `0002`, `0003`) — v3 agregó una |
-| Rutas expuestas | 69 (32 bajo `/api/`, 37 web) |
-| Páginas web (GET) | 19 |
-| Plantillas Jinja | 43 |
+| Tablas | 22 |
+| Migraciones de Alembic | 7 (`0001` a `0007`) — v3 agregó seis |
+| Rutas expuestas | 76 (32 bajo `/api/`, 44 web) |
+| Páginas web (GET) | 21 |
+| Plantillas Jinja | 45 |
 | Macros de componentes | 59 (38 de dominio, 19 de UI, 2 de iconos) |
 | Iconos con nombre | 49 |
 | Generadores de sugerencias | 4 (actividad, sangre, comida, despensa) |
 | Jobs programados | 8, todos `CronTrigger` en hora local |
-| Entradas del catálogo `es_AR` | 528, ninguna sin traducir |
-| Tests | 783 en 31 módulos |
-| Líneas de Python en `app/` | 16 494 |
-| Líneas de plantillas | 5 307 |
-| Líneas de tests | 13 389 |
+| Entradas del catálogo `es_AR` | 575, ninguna sin traducir |
+| Tests | 867 en 35 módulos |
+| Líneas de Python en `app/` | 17 990 |
+| Líneas de plantillas | 5 656 |
+| Líneas de tests | 14 950 |
 
 Para contexto: la v2 tenía **117 tests en 9 módulos** y cero pruebas de la capa web.
 

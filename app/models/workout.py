@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -119,7 +119,9 @@ class WorkoutExercise(Base):
     exercise_type_id: Mapped[int | None] = mapped_column(
         ForeignKey("exercise_types.id", ondelete="SET NULL"), nullable=True
     )
-    exercise_name: Mapped[str] = mapped_column(String(120), nullable=False)  # denormalized for display
+    exercise_name: Mapped[str] = mapped_column(
+        String(120), nullable=False
+    )  # denormalized for display
     sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     load_kg: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)

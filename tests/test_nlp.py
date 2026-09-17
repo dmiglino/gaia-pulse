@@ -1,4 +1,5 @@
 """Tests for the NLP rule-based parser (Layer 1)."""
+
 import pytest
 
 from app.nlp import rules as nlp_rules
@@ -22,9 +23,7 @@ class TestStockAdd:
         result = parser.parse("We bought 6 bananas and 4 bell peppers", speaking_user="diego")
         assert result.overall_confidence > 0.5
         assert len(result.intents) >= 1
-        stock_intent = next(
-            (i for i in result.intents if i.intent_type == "add_stock"), None
-        )
+        stock_intent = next((i for i in result.intents if i.intent_type == "add_stock"), None)
         assert stock_intent is not None
         assert len(stock_intent.items) == 2
         names = [i.food_name.lower() for i in stock_intent.items]
@@ -36,7 +35,9 @@ class TestStockAdd:
         # que se cumple hasta cuando el parser no entiende nada: la frase salía como `mixed`
         # con confianza 0.10 —o sea, sin nada que confirmar— y el test pasaba igual. Ahora
         # pide lo que la frase promete.
-        result = parser.parse("Compramos 2 kilos de arroz y 500 gramos de pasta", speaking_user="diego")
+        result = parser.parse(
+            "Compramos 2 kilos de arroz y 500 gramos de pasta", speaking_user="diego"
+        )
         stock = next((i for i in result.intents if i.intent_type == "add_stock"), None)
         assert stock is not None
         by_name = {i.food_name.lower(): i for i in stock.items}
@@ -47,9 +48,7 @@ class TestStockAdd:
     def test_consume_stock(self, parser: _ParserProxy) -> None:
         result = parser.parse("We used 4 tomatoes for lunch", speaking_user="diego")
         assert result is not None
-        consume = next(
-            (i for i in result.intents if i.intent_type == "consume_stock"), None
-        )
+        consume = next((i for i in result.intents if i.intent_type == "consume_stock"), None)
         assert consume is not None
 
 
@@ -73,8 +72,9 @@ class TestMealLogging:
         # Should have per-user items
         assert meal.items_per_user
         assert "diego" in {k.lower() for k in meal.items_per_user}
-        assert "rocío" in {k.lower() for k in meal.items_per_user} or \
-               "rocio" in {k.lower() for k in meal.items_per_user}
+        assert "rocío" in {k.lower() for k in meal.items_per_user} or "rocio" in {
+            k.lower() for k in meal.items_per_user
+        }
 
     def test_meal_with_quantity(self, parser: _ParserProxy) -> None:
         result = parser.parse(
@@ -90,8 +90,9 @@ class TestMealLogging:
         assert meal is not None
         # "I" should resolve to rocio
         participants = list(meal.items_per_user.keys()) if meal.items_per_user else []
-        assert any("rocio" in p.lower() or "rocío" in p.lower() for p in participants) or \
-               any("both" in p.lower() for p in participants)
+        assert any("rocio" in p.lower() or "rocío" in p.lower() for p in participants) or any(
+            "both" in p.lower() for p in participants
+        )
 
 
 class TestWorkoutLogging:
@@ -199,9 +200,7 @@ class TestCastellano:
         assert meal is not None
         assert meal.meal_type == meal_type
 
-    def test_first_person_plural_means_both_without_a_pronoun(
-        self, parser: _ParserProxy
-    ) -> None:
+    def test_first_person_plural_means_both_without_a_pronoun(self, parser: _ParserProxy) -> None:
         # "cenamos fideos" es de los dos. El plural vive en el verbo y no se escribe el
         # pronombre, así que sin la lista de verbos esto se atribuía solo a quien escribió:
         # una cena compartida entrando como comida de uno.
@@ -212,9 +211,7 @@ class TestCastellano:
         assert list(meal.items_per_user) == ["both"]
 
     def test_who_ate_what_in_spanish(self, parser: _ParserProxy) -> None:
-        result = parser.parse(
-            "Diego cenó fideos, Rocío cenó ensalada", speaking_user="diego"
-        )
+        result = parser.parse("Diego cenó fideos, Rocío cenó ensalada", speaking_user="diego")
         meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
         assert meal is not None
         assert {k: [i.food_name for i in v] for k, v in meal.items_per_user.items()} == {
@@ -353,9 +350,7 @@ class TestCastellano:
         assert pref.preference_signal == signal
         assert pref.participants == participants
 
-    def test_a_spanish_activity_is_a_preference_about_exercise(
-        self, parser: _ParserProxy
-    ) -> None:
+    def test_a_spanish_activity_is_a_preference_about_exercise(self, parser: _ParserProxy) -> None:
         # El nombre puede no coincidir con el catálogo (eso necesita la columna de alias),
         # pero el **tipo** tiene que ser el correcto: guardado como preferencia de comida,
         # "correr" ensucia el filtro de alimentos con una palabra que no es comida y nadie
@@ -438,9 +433,7 @@ class TestListasQueTienenQueCoincidir:
     otra falla acá.
     """
 
-    def test_every_meal_verb_is_stripped_from_the_food_name(
-        self, parser: _ParserProxy
-    ) -> None:
+    def test_every_meal_verb_is_stripped_from_the_food_name(self, parser: _ParserProxy) -> None:
         for verb in nlp_rules._MEAL_VERBS.split("|"):
             result = parser.parse(f"{verb} milanesa", speaking_user="diego")
             meal = next((i for i in result.intents if i.intent_type == "log_meal"), None)
@@ -463,9 +456,7 @@ class TestListasQueTienenQueCoincidir:
     ) -> None:
         for verb in nlp_rules._STOCK_CONSUME_VERBS.split("|"):
             result = parser.parse(f"{verb} 2 bananas", speaking_user="diego")
-            consume = next(
-                (i for i in result.intents if i.intent_type == "consume_stock"), None
-            )
+            consume = next((i for i in result.intents if i.intent_type == "consume_stock"), None)
             assert consume is not None, f"{verb!r} no abre la compuerta de consumo"
             names = [i.food_name.lower() for i in consume.items]
             assert names == ["banana"], f"{verb!r} quedó adentro del ítem: {names}"
@@ -600,9 +591,9 @@ class TestElPlaceholderNoPromete:
         with CATALOG.open(encoding="utf-8") as f:
             catalog = read_po(f)
         message = catalog.get(self._MSGID)
-        assert message is not None and message.string, (
-            "el placeholder de captura ya no está en el catálogo con este msgid"
-        )
+        assert (
+            message is not None and message.string
+        ), "el placeholder de captura ya no está en el catálogo con este msgid"
         examples = self._examples(str(message.string))
         assert examples, "el placeholder traducido no ofrece ningún ejemplo"
         for example in examples:

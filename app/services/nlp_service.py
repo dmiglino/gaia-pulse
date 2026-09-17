@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -332,7 +332,7 @@ class NLPService:
 
         if not intents:
             event.status = "discarded"
-            event.responded_at = datetime.now(timezone.utc)
+            event.responded_at = datetime.now(UTC)
             self.db.commit()
             return {
                 "results": [],
@@ -378,7 +378,7 @@ class NLPService:
         #: una edición sin efecto real (rechazada por forma, o idéntica al original)
         #: quede marcada `confirmed` en vez de `edited_and_confirmed`.
         event.status = "edited_and_confirmed" if intents != original_intents else "confirmed"
-        event.responded_at = datetime.now(timezone.utc)
+        event.responded_at = datetime.now(UTC)
         self.db.commit()
 
         had_errors = any(r["status"] == "error" for r in results)
@@ -405,7 +405,7 @@ class NLPService:
         if not event or event.user_id != user_id or event.status != "pending_confirmation":
             return False
         event.status = "discarded"
-        event.responded_at = datetime.now(timezone.utc)
+        event.responded_at = datetime.now(UTC)
         self.db.commit()
         return True
 

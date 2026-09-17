@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from datetime import datetime, timedelta, timezone
-from random import choice, randint, uniform
+from datetime import UTC, datetime, timedelta
+from random import randint, uniform
 
 from sqlalchemy import text
 
@@ -29,7 +29,7 @@ from app.models.workout import ExerciseType, WorkoutExercise, WorkoutParticipant
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def days_ago(n: int) -> datetime:
@@ -454,7 +454,7 @@ def seed() -> None:
                     item = MealItemConsumed(
                         meal_event_id=meal.id,
                         meal_participant_id=participant.id,
-                        food_item_id=foods.get(food_name, None) and foods[food_name].id,
+                        food_item_id=foods.get(food_name) and foods[food_name].id,
                         normalized_free_text_name=food_name,
                         quantity=1,
                         unit="serving",
@@ -590,8 +590,14 @@ def seed() -> None:
             scope_user_id=diego.id,
             category="meal",
             title="Try pasta with tomato sauce tonight",
-            text="You have pasta and tomato sauce in your pantry. A simple, satisfying dinner option.",
-            rationale="Pantry stock analysis: both pasta and tomato sauce are available. You've enjoyed this combination before.",
+            text=(
+                "You have pasta and tomato sauce in your pantry. "
+                "A simple, satisfying dinner option."
+            ),
+            rationale=(
+                "Pantry stock analysis: both pasta and tomato sauce are available. "
+                "You've enjoyed this combination before."
+            ),
             evidence_summary="pasta: 500g, tomato sauce: 200g in stock",
             priority=7,
             confidence=0.82,
@@ -604,8 +610,14 @@ def seed() -> None:
             scope_user_id=rocio.id,
             category="activity",
             title="Yoga session today",
-            text="A 30-45 minute yoga session would complement your recent gym workouts and aid recovery.",
-            rationale="You've done strength training 3 times this week. Yoga is in your preferred activities list.",
+            text=(
+                "A 30-45 minute yoga session would complement your recent gym workouts "
+                "and aid recovery."
+            ),
+            rationale=(
+                "You've done strength training 3 times this week. "
+                "Yoga is in your preferred activities list."
+            ),
             evidence_summary="Recent workouts: 3 gym sessions; yoga listed as preferred",
             priority=6,
             confidence=0.78,
@@ -632,7 +644,10 @@ def seed() -> None:
             scope_user_id=diego.id,
             category="activity",
             title="Bike ride this weekend",
-            text="You haven't had an outdoor biking session recently. A 30-40 min ride would be great.",
+            text=(
+                "You haven't had an outdoor biking session recently. "
+                "A 30-40 min ride would be great."
+            ),
             rationale="Biking is in your preferred activities. Last outdoor ride was 9 days ago.",
             priority=5,
             confidence=0.72,
@@ -668,7 +683,10 @@ def seed() -> None:
             household_id=household.id,
             category="metric_reminder",
             title="Time to log your weight",
-            body="Rocío, you haven't logged your weight in a while. Tracking trends helps us give you better suggestions.",
+            body=(
+                "Rocío, you haven't logged your weight in a while. "
+                "Tracking trends helps us give you better suggestions."
+            ),
             priority=4,
             source_type="job",
         ),
@@ -679,13 +697,13 @@ def seed() -> None:
     print("\n✓ Seed complete!")
     print(f"  Household: {household.name}")
     print(
-        f"  Users: Diego (diego@gaiapulse.app / diego123) · Rocío (rocio@gaiapulse.app / rocio123)"
+        "  Users: Diego (diego@gaiapulse.app / diego123) · Rocío (rocio@gaiapulse.app / rocio123)"
     )
     print(f"  Food items: {len(foods)}")
     print(f"  Pantry items: {len(pantry_items)}")
     print(f"  Recipes: {len(recipes)}")
-    print(f"  Meal events: 14 days × 3 meals = 42")
-    print(f"  Workout sessions: ~9 sessions")
+    print("  Meal events: 14 days × 3 meals = 42")
+    print("  Workout sessions: ~9 sessions")
     print(f"  Suggestions: {len(suggestions)}")
     print(f"  Notifications: {len(notifications)}")
 

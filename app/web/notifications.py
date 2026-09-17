@@ -29,9 +29,7 @@ def notifications_index(
         category=category,
     )
     ctx["unread_count"] = svc.get_unread_count(current_user.id, current_user.household_id)
-    ctx["category_counts"] = svc.get_category_counts(
-        current_user.id, current_user.household_id
-    )
+    ctx["category_counts"] = svc.get_category_counts(current_user.id, current_user.household_id)
     ctx["filter_category"] = category
     return templates.TemplateResponse("notifications/index.html", ctx)
 
@@ -115,9 +113,7 @@ def act(notification_id: int, current_user: CurrentUser, db: DB) -> Response:
 
 
 @router.post("/{notification_id}/dismiss", response_class=HTMLResponse)
-def dismiss(
-    notification_id: int, request: Request, current_user: CurrentUser, db: DB
-) -> Response:
+def dismiss(notification_id: int, request: Request, current_user: CurrentUser, db: DB) -> Response:
     """Dismiss one notification; the card is replaced by nothing."""
     svc = NotificationService(db)
     if not svc.dismiss(notification_id, current_user.id, current_user.household_id):

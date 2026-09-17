@@ -1,6 +1,6 @@
 """Tests for the recommendation engine."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -209,7 +209,7 @@ def _signal(
     """
     from app.models.signal import BehaviorSignal
 
-    created_at = None if age_days is None else datetime.now(timezone.utc) - timedelta(days=age_days)
+    created_at = None if age_days is None else datetime.now(UTC) - timedelta(days=age_days)
     return BehaviorSignal(
         user_id=user.id,
         signal_type=signal_type,
@@ -1277,7 +1277,7 @@ class TestSignalConstraints:
 
     def test_diversity_penalty_applied_to_recent_duplicate(self, db: Session, diego: User) -> None:
         """Recently shown suggestions should score lower than fresh ones."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from app.models.suggestion import Suggestion
 
@@ -1298,7 +1298,7 @@ class TestSignalConstraints:
             priority=8,
             source_type="rule",
             status="pending",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         candidates = [
             _candidate("Go biking", "exercise", "biking", confidence=0.8),
@@ -1377,7 +1377,7 @@ class TestNotNowMeansNotNow:
         #: En Postgres la columna es `timestamptz` y vuelve aware. Es una diferencia de la
         #: base de prueba, no del código, y `as_utc` existe justamente para no repetir el
         #: `.replace(tzinfo=...)` que en Postgres *corre* el instante en vez de convertirlo.
-        remaining = clock.as_utc(card.snoozed_until) - datetime.now(timezone.utc)
+        remaining = clock.as_utc(card.snoozed_until) - datetime.now(UTC)
         assert remaining > timedelta(days=SuggestionService._SNOOZE_DAYS - 0.01)
 
     def test_the_window_outlasts_a_job_cycle_and_stays_under_the_diversity_step(
@@ -1432,7 +1432,7 @@ class TestNotNowMeansNotNow:
         """
         card = self._card(db, diego)
         self._respond(db, diego, card, "snoozed")
-        card.snoozed_until = datetime.now(timezone.utc) - timedelta(minutes=1)
+        card.snoozed_until = datetime.now(UTC) - timedelta(minutes=1)
         db.flush()
 
         engine = self._engine()
@@ -1527,7 +1527,7 @@ class TestMealWindow:
     def test_meal_type_follows_the_configured_timezone(
         self, monkeypatch: pytest.MonkeyPatch, local_hour: int, expected: str
     ) -> None:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
 
         from app.core import clock
@@ -1589,7 +1589,7 @@ class TestEveryCandidateDeclaresItsSubject:
         self, db: Session, household: Household, banana: FoodItem
     ) -> dict[str, FoodItem]:
         """Despensa con un ítem agotado, uno bajo y uno normal, más historial de compras."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from app.models.pantry import PantryMovement
 
@@ -1627,7 +1627,7 @@ class TestEveryCandidateDeclaresItsSubject:
         )
 
         # Compras del mismo día, dos veces: co-ocurrencia leche+arroz, y arroz frecuente.
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         for days_ago in (2, 9):
             for food in (milk, rice):
                 db.add(
@@ -1683,7 +1683,7 @@ class TestEveryCandidateDeclaresItsSubject:
 
     def test_activity_generator_after_training_today(self, db: Session, diego: User) -> None:
         """La rama del descanso: la única que solo aparece si entrenó hoy."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from app.models.workout import WorkoutParticipant, WorkoutSession
         from app.recommendations.generators import activity_generator
@@ -1691,7 +1691,7 @@ class TestEveryCandidateDeclaresItsSubject:
         session = WorkoutSession(
             household_id=diego.household_id,
             workout_type="gym",
-            timestamp_start=datetime.now(tz=timezone.utc),
+            timestamp_start=datetime.now(tz=UTC),
         )
         db.add(session)
         db.flush()
@@ -1786,7 +1786,7 @@ class TestPantryCardsCiteWhatTheyMeasured:
                     movement_type="purchase",
                     quantity=1,
                     unit="g",
-                    timestamp=datetime.now(tz=timezone.utc) - timedelta(days=offset),
+                    timestamp=datetime.now(tz=UTC) - timedelta(days=offset),
                 )
             )
         db.flush()

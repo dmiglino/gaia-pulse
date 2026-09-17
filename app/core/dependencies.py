@@ -1,4 +1,5 @@
 """FastAPI dependency injection: session auth, DB, current user."""
+
 from typing import Annotated
 
 from fastapi import Cookie, Depends, HTTPException, Request, status
@@ -29,9 +30,7 @@ def require_auth(
     user_id: int | None = Depends(get_current_user_id),
 ) -> User:
     if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     user = UserRepository(db).get(user_id)
     if not user or not user.is_active:
         raise HTTPException(

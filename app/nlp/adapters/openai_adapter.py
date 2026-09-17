@@ -20,8 +20,8 @@ from app.nlp.intents import (
     ExerciseRef,
     FoodItemRef,
     MealIntent,
-    ParseResult,
     ParsedIntent,
+    ParseResult,
     PreferenceIntent,
     StockAddIntent,
     StockConsumeIntent,
@@ -50,7 +50,9 @@ _PARSE_FUNCTION_SCHEMA: dict[str, Any] = {
                 "type": "number",
                 "minimum": 0,
                 "maximum": 1,
-                "description": "How confident the parser is that all intents were correctly extracted.",
+                "description": (
+                    "How confident the parser is that all intents were correctly extracted."
+                ),
             },
             "intents": {
                 "type": "array",
@@ -183,6 +185,7 @@ def _build_context_from_layer1(layer1: ParseResult) -> str:
 # ---------------------------------------------------------------------------
 # Deserialisation helpers
 # ---------------------------------------------------------------------------
+
 
 def _deserialise_intents(raw_intents: list[dict[str, Any]]) -> list[Any]:
     result: list[Any] = []

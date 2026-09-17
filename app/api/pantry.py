@@ -31,18 +31,14 @@ def get_low_stock(current_user: CurrentUser, db: DB) -> list[PantryStockRead]:
 
 
 @router.post("/purchase")
-def register_purchase(
-    data: PurchaseRequest, current_user: CurrentUser, db: DB
-) -> dict:
+def register_purchase(data: PurchaseRequest, current_user: CurrentUser, db: DB) -> dict:
     svc = PantryService(db)
     movements = svc.process_purchase(current_user.household_id, current_user.id, data)
     return {"registered": len(movements), "items": [m.food_item.canonical_name for m in movements]}
 
 
 @router.post("/adjust")
-def adjust_stock(
-    data: StockAdjustRequest, current_user: CurrentUser, db: DB
-) -> dict:
+def adjust_stock(data: StockAdjustRequest, current_user: CurrentUser, db: DB) -> dict:
     svc = PantryService(db)
     svc.adjust_stock(current_user.household_id, current_user.id, data)
     return {"status": "ok"}

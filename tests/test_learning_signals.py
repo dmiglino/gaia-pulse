@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,10 +28,10 @@ from sqlalchemy.orm import Session
 from app.jobs import suggestion_jobs
 from app.models.food import FoodItem
 from app.models.household import Household
-from app.models.workout import ExerciseType
 from app.models.signal import BehaviorSignal
 from app.models.suggestion import Suggestion
 from app.models.user import User
+from app.models.workout import ExerciseType
 from app.recommendations import learning
 from app.recommendations.scorer import score_candidates
 from app.schemas.meal import MealEventCreate, MealItemCreate, MealParticipantCreate
@@ -75,7 +75,7 @@ def _log_meal(
     return MealService(db).log_meal(
         household.id,
         MealEventCreate(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             meal_type=meal_type,
             participants=participants,
         ),
@@ -171,7 +171,7 @@ class TestWhatAWorkoutTeaches:
         return WorkoutService(db).log_workout(
             household.id,
             WorkoutSessionCreate(
-                timestamp_start=datetime.now(timezone.utc),
+                timestamp_start=datetime.now(UTC),
                 workout_type=workout_type,
                 participants=[WorkoutParticipantCreate(user_id=user.id, exercises=exercises)],
             ),
@@ -265,7 +265,7 @@ class TestWhatAWorkoutTeaches:
         WorkoutService(db).log_workout(
             household.id,
             WorkoutSessionCreate(
-                timestamp_start=datetime.now(timezone.utc),
+                timestamp_start=datetime.now(UTC),
                 participants=[
                     WorkoutParticipantCreate(
                         user_id=diego.id,
@@ -355,7 +355,7 @@ def _backdate(db: Session, signals: list[BehaviorSignal], *, days: float) -> Non
     que estar donde está siempre en la vida real: en el pasado. La sugerencia se calcula
     cuando corre el job, no en la transacción que registra la cena.
     """
-    when = datetime.now(timezone.utc) - timedelta(days=days)
+    when = datetime.now(UTC) - timedelta(days=days)
     for signal in signals:
         signal.created_at = when
     db.flush()
@@ -391,7 +391,7 @@ def _card(db: Session, user: User, *, days_old: float = 0.0, **overrides: Any) -
     db.add(card)
     db.flush()
     if days_old:
-        card.created_at = datetime.now(timezone.utc) - timedelta(days=days_old)
+        card.created_at = datetime.now(UTC) - timedelta(days=days_old)
         db.flush()
     return card
 
@@ -489,7 +489,7 @@ class TestWhatIsLearnedChangesWhatIsSuggested:
         #: "Reciente" es una semana, no este segundo: lo que se compara acá son dos edades,
         #: y una comida de hace un rato traería además su propia saciedad.
         _backdate(db, signals, days=7)
-        old.created_at = datetime.now(timezone.utc) - timedelta(days=200)
+        old.created_at = datetime.now(UTC) - timedelta(days=200)
         db.flush()
 
         candidates = [
@@ -1098,7 +1098,7 @@ class TestAbsenceSweep:
         #: El día siguiente sin mover el reloj: envejecer la tarjeta un intervalo de job es
         #: lo mismo que correr el barrido un día después, y es lo que la saca de la ventana.
         (card,) = db.query(Suggestion).all()
-        card.created_at = datetime.now(timezone.utc) - timedelta(
+        card.created_at = datetime.now(UTC) - timedelta(
             days=self._SWEPT_AGE + suggestion_jobs._SWEEP_WINDOW_DAYS
         )
         db.flush()
@@ -1304,7 +1304,7 @@ class TestAbsenceSweep:
         prometer que lo aprendido sin apretar nada no filtra nada.
         """
         spacing = learning.ABSENCE_GRACE_DAYS + SuggestionService._SNOOZE_DAYS
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         #: Ocho es holgado a propósito: la saturación pasa en la tercera, y las cinco de más
         #: son para que el test no dependa de que la cuenta sea exactamente esa.
         for index in range(8):
@@ -1345,7 +1345,7 @@ class TestAbsenceSweep:
         nada más lo dijera — este test es el que se da cuenta.
         """
         half_life = learning._HALF_LIFE_DAYS["explicit"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         signal = learning.record_signal(
             db,
             user_id=diego.id,

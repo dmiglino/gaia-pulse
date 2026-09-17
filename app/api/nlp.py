@@ -50,7 +50,7 @@ async def transcribe_and_parse(
         # variables de entorno y el status del upstream, así que va al log y no al
         # cuerpo de la respuesta.
         logger.warning("Speech-to-text failed for user %s: %s", current_user.id, e)
-        raise HTTPException(status_code=502, detail="Transcription failed.")
+        raise HTTPException(status_code=502, detail="Transcription failed.") from e
 
     # Parse transcription
     svc = NLPService(db)

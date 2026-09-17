@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.core.config import get_settings
 from app.core.dependencies import DB, CurrentUser

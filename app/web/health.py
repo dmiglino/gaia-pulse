@@ -1,4 +1,5 @@
 """Health section — blood analysis upload and history."""
+
 from __future__ import annotations
 
 import logging

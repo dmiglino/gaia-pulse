@@ -9,7 +9,7 @@ un bloqueo declarado de una persona alcanza para toda la casa, un rechazo aprend
 persona no. Si alguien unifica las dos reglas en una, la mitad de este archivo se cae.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -36,7 +36,7 @@ def _rejection(user: User, subject_name: str, *, subject_type: str = "food") -> 
         entity_name=subject_name,
         value=-1.0,
         source_type="explicit",
-        created_at=datetime.now(timezone.utc) - timedelta(days=1),
+        created_at=datetime.now(UTC) - timedelta(days=1),
     )
 
 

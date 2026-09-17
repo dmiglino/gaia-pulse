@@ -18,9 +18,7 @@ class BodyMetricLog(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     weight_kg: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
     body_fat_pct: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
     muscle_mass_kg: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)

@@ -21,7 +21,7 @@ Dos decisiones que le dan forma a todo el archivo:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -178,7 +178,7 @@ class LearningService:
         return Forgotten(deleted=deleted, subject_name=name)
 
     def _recent_signals(self, user_id: int) -> list[BehaviorSignal]:
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=learning.SIGNAL_HORIZON_DAYS)
+        cutoff = datetime.now(tz=UTC) - timedelta(days=learning.SIGNAL_HORIZON_DAYS)
         return self.signals.get_user_signals(user_id, limit=None, since=cutoff)
 
     def _categories(self, signals: list[BehaviorSignal]) -> list[LearnedCategory]:

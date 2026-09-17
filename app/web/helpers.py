@@ -1,4 +1,5 @@
 """Shared helpers for web route handlers: template rendering with auth context."""
+
 import logging
 from datetime import date, datetime
 from functools import lru_cache
@@ -189,9 +190,7 @@ def get_template_context(request: Request, db: Session, current_user: User) -> d
         raise OnboardingRequiredError
 
     users = UserRepository(db).get_household_users(current_user.household_id)
-    unread = NotificationService(db).get_unread_count(
-        current_user.id, current_user.household_id
-    )
+    unread = NotificationService(db).get_unread_count(current_user.id, current_user.household_id)
     return {
         "request": request,
         "current_user": current_user,

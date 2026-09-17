@@ -9,6 +9,7 @@ Future implementations:
 Each adapter produces standardized DeviceActivity / DeviceBodyMetric objects
 that are then processed through the same service layer.
 """
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -37,9 +38,9 @@ class DeviceAdapter(ABC):
     """Abstract base for wearable / health device integrations."""
 
     @abstractmethod
-    async def get_recent_activities(self, user_id: int, days: int = 7) -> list[DeviceActivity]:
-        ...
+    async def get_recent_activities(self, user_id: int, days: int = 7) -> list[DeviceActivity]: ...
 
     @abstractmethod
-    async def get_recent_body_metrics(self, user_id: int, days: int = 7) -> list[DeviceBodyMetric]:
-        ...
+    async def get_recent_body_metrics(
+        self, user_id: int, days: int = 7
+    ) -> list[DeviceBodyMetric]: ...

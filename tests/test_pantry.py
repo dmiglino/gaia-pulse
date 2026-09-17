@@ -1,5 +1,5 @@
 """Tests for pantry stock management."""
-import pytest
+
 from sqlalchemy.orm import Session
 
 from app.models.food import FoodItem
@@ -17,9 +17,7 @@ def make_food(db: Session, name: str) -> FoodItem:
 
 
 class TestPantryPurchase:
-    def test_purchase_creates_stock(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_purchase_creates_stock(self, db: Session, household: Household, diego: User) -> None:
         make_food(db, "apple")
         svc = PantryService(db)
         req = PurchaseRequest(items=[PurchaseItem(food_name="apple", quantity=5, unit="unit")])
@@ -30,16 +28,16 @@ class TestPantryPurchase:
         assert apple_stock is not None
         assert float(apple_stock.current_quantity) == 5
 
-    def test_purchase_multiple_items(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_purchase_multiple_items(self, db: Session, household: Household, diego: User) -> None:
         make_food(db, "bread")
         make_food(db, "milk")
         svc = PantryService(db)
-        req = PurchaseRequest(items=[
-            PurchaseItem(food_name="bread", quantity=2, unit="unit"),
-            PurchaseItem(food_name="milk", quantity=1000, unit="ml"),
-        ])
+        req = PurchaseRequest(
+            items=[
+                PurchaseItem(food_name="bread", quantity=2, unit="unit"),
+                PurchaseItem(food_name="milk", quantity=1000, unit="ml"),
+            ]
+        )
         movements = svc.process_purchase(household.id, diego.id, req)
         assert len(movements) == 2
 
@@ -69,8 +67,11 @@ class TestStockAdjustment:
 
         # Then consume
         svc.adjust_stock(
-            household.id, diego.id,
-            StockAdjustRequest(food_name="banana", quantity=2, unit="unit", movement_type="consumption")
+            household.id,
+            diego.id,
+            StockAdjustRequest(
+                food_name="banana", quantity=2, unit="unit", movement_type="consumption"
+            ),
         )
         stock = svc.get_stock(household.id)
         b = next(s for s in stock if s.food_item.canonical_name == "banana")
@@ -85,8 +86,11 @@ class TestStockAdjustment:
         svc.process_purchase(household.id, diego.id, req)
         # Consume 10 — should clamp to 0
         svc.adjust_stock(
-            household.id, diego.id,
-            StockAdjustRequest(food_name="banana", quantity=10, unit="unit", movement_type="consumption")
+            household.id,
+            diego.id,
+            StockAdjustRequest(
+                food_name="banana", quantity=10, unit="unit", movement_type="consumption"
+            ),
         )
         stock = svc.get_stock(household.id)
         b = next(s for s in stock if s.food_item.canonical_name == "banana")
@@ -178,6 +182,7 @@ class TestLowStock:
         self, db: Session, household: Household, diego: User, banana: FoodItem
     ) -> None:
         from app.models.pantry import PantryStock
+
         stock = PantryStock(
             household_id=household.id,
             food_item_id=banana.id,
@@ -197,6 +202,7 @@ class TestLowStock:
         self, db: Session, household: Household, diego: User, banana: FoodItem
     ) -> None:
         from app.models.pantry import PantryStock
+
         stock = PantryStock(
             household_id=household.id,
             food_item_id=banana.id,

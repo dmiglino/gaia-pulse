@@ -57,9 +57,7 @@ def _low_item(db: Session, household: Household, name: str, quantity: float) -> 
     return stock
 
 
-def _workout(
-    db: Session, household: Household, user: User, *, days_ago: int
-) -> WorkoutSession:
+def _workout(db: Session, household: Household, user: User, *, days_ago: int) -> WorkoutSession:
     """Una sesión de entrenamiento con *user* como participante."""
     session = WorkoutSession(
         household_id=household.id,
@@ -490,9 +488,7 @@ class TestSubjectRetirement:
         assert len(_notifications(db, "metric_reminder")) == 1
 
         #: Se pesó. El sujeto salió del conjunto.
-        db.add(
-            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
-        )
+        db.add(BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70))
         db.flush()
         notification_jobs.run_metric_reminder_notifications()
 
@@ -558,9 +554,7 @@ class TestSubjectRetirement:
         told.dismissed_at = datetime.now(UTC)
         db.flush()
 
-        db.add(
-            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
-        )
+        db.add(BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70))
         db.flush()
         notification_jobs.run_metric_reminder_notifications()
 
@@ -578,9 +572,7 @@ class TestSubjectRetirement:
         verde y el borrado se va con el `close()` del `finally`.
         """
         notification_jobs.run_metric_reminder_notifications()
-        db.add(
-            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
-        )
+        db.add(BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70))
         db.flush()
 
         commits: list[None] = []
@@ -612,9 +604,7 @@ class TestSubjectRetirement:
                 related_entity_id=diego.id,
             )
         )
-        db.add(
-            BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70)
-        )
+        db.add(BodyMetricLog(user_id=diego.id, timestamp=datetime.now(UTC), weight_kg=70))
         db.flush()
 
         notification_jobs.run_metric_reminder_notifications()

@@ -1,17 +1,21 @@
 """Tests for workout logging."""
-from datetime import datetime, timezone
 
-import pytest
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
 from app.models.user import User
-from app.schemas.workout import WorkoutExerciseCreate, WorkoutParticipantCreate, WorkoutSessionCreate
+from app.schemas.workout import (
+    WorkoutExerciseCreate,
+    WorkoutParticipantCreate,
+    WorkoutSessionCreate,
+)
 from app.services.workout_service import WorkoutService
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TestWorkoutLogging:
@@ -31,9 +35,9 @@ class TestWorkoutLogging:
                             duration_minutes=40,
                             distance_km=12.5,
                         )
-                    ]
+                    ],
                 )
-            ]
+            ],
         )
         session = svc.log_workout(household.id, data)
         assert session.id is not None
@@ -56,17 +60,21 @@ class TestWorkoutLogging:
                 WorkoutParticipantCreate(
                     user_id=diego.id,
                     exercises=[
-                        WorkoutExerciseCreate(exercise_name="Bench Press", muscle_group="chest", sets=3, reps=10),
-                        WorkoutExerciseCreate(exercise_name="Tricep Pushdown", muscle_group="arms", sets=3, reps=12),
-                    ]
+                        WorkoutExerciseCreate(
+                            exercise_name="Bench Press", muscle_group="chest", sets=3, reps=10
+                        ),
+                        WorkoutExerciseCreate(
+                            exercise_name="Tricep Pushdown", muscle_group="arms", sets=3, reps=12
+                        ),
+                    ],
                 ),
                 WorkoutParticipantCreate(
                     user_id=rocio.id,
                     exercises=[
                         WorkoutExerciseCreate(exercise_name="Yoga", muscle_group="full_body"),
-                    ]
+                    ],
                 ),
-            ]
+            ],
         )
         session = svc.log_workout(household.id, data)
         loaded = svc.get_session(session.id)
@@ -90,9 +98,7 @@ class TestWorkoutLogging:
             timestamp_start=now(),
             duration_minutes=40,
             workout_type="cycling",
-            participants=[
-                WorkoutParticipantCreate(user_id=diego.id, exercises=[])
-            ]
+            participants=[WorkoutParticipantCreate(user_id=diego.id, exercises=[])],
         )
         session = svc.log_workout(household.id, data)
         loaded = svc.get_session(session.id)

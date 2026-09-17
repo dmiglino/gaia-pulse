@@ -26,8 +26,8 @@ from app.nlp.intents import (
     ExerciseRef,
     FoodItemRef,
     MealIntent,
-    ParseResult,
     ParsedIntent,
+    ParseResult,
     PreferenceIntent,
     PreferenceSignal,
     StockAddIntent,
@@ -151,7 +151,9 @@ _QTY_UNIT_ITEM = re.compile(
     r"""
     (?P<qty>
         \d+(?:[.,]\d+)?       # plain number
-        |(?:""" + _NUMBER_WORD_ALT + r""")\b   # "half", "two", "dos", "media"…
+        |(?:"""
+    + _NUMBER_WORD_ALT
+    + r""")\b   # "half", "two", "dos", "media"…
     )?
     \s*
     (?P<unit>
@@ -280,8 +282,19 @@ _LEADING_DETERMINERS = re.compile(
 #: Un pronombre suelto no es un alimento. Estaba escrito dos veces en `_extract_items`, una
 #: por rama, y solo la rama del regex lo chequeaba con el largo mínimo.
 _ITEM_STOPWORDS = {
-    "we", "i", "you", "they", "he", "she",
-    "nosotros", "yo", "él", "ella", "vos", "tu", "tú",
+    "we",
+    "i",
+    "you",
+    "they",
+    "he",
+    "she",
+    "nosotros",
+    "yo",
+    "él",
+    "ella",
+    "vos",
+    "tu",
+    "tú",
 }
 
 
@@ -304,7 +317,8 @@ def _extract_items(text: str) -> list[FoodItemRef]:
             if raw_unit and raw_unit.lower() in _DOZEN_UNITS:
                 qty = (qty if qty is not None else 1) * _DOZEN_MULTIPLIER
             raw_name = m.group("name").strip() if m.group("name") else seg
-            # Attempt basic depluralization: only strip trailing 's' if word ends in 's' but not 'ss'
+            # Attempt basic depluralization: only strip trailing 's'
+            # if word ends in 's' but not 'ss'
             if raw_name.endswith("s") and not raw_name.endswith("ss") and len(raw_name) > 3:
                 name = raw_name[:-1]
             else:
@@ -631,12 +645,42 @@ _MEAL_TRIGGERS = re.compile(
 #: nombre que el catálogo no reconoce queda como texto libre y **se ve** en pantalla, que es
 #: el modo de falla barato de los dos.
 _ACTIVITY_NAMES = {
-    "gym", "biking", "bike", "cycling", "yoga", "running", "swimming", "swim",
-    "pilates", "crossfit", "hiit", "zumba", "spinning", "hiking", "walking",
-    "weightlifting", "weights", "boxing", "dancing", "rowing",
-    "correr", "caminar", "nadar", "natación", "natacion", "pesas", "bicicleta",
-    "gimnasio", "trotar", "andar", "remo", "boxeo", "baile", "bailar",
-    "entrenar", "ejercicio",
+    "gym",
+    "biking",
+    "bike",
+    "cycling",
+    "yoga",
+    "running",
+    "swimming",
+    "swim",
+    "pilates",
+    "crossfit",
+    "hiit",
+    "zumba",
+    "spinning",
+    "hiking",
+    "walking",
+    "weightlifting",
+    "weights",
+    "boxing",
+    "dancing",
+    "rowing",
+    "correr",
+    "caminar",
+    "nadar",
+    "natación",
+    "natacion",
+    "pesas",
+    "bicicleta",
+    "gimnasio",
+    "trotar",
+    "andar",
+    "remo",
+    "boxeo",
+    "baile",
+    "bailar",
+    "entrenar",
+    "ejercicio",
 }
 
 _ACTIVITY_ALT = "|".join(re.escape(w) for w in sorted(_ACTIVITY_NAMES, key=len, reverse=True))
@@ -725,6 +769,7 @@ _SUGGEST_WORD = re.compile(r"\b(suggest|recommend|sugerir)\b", re.IGNORECASE)
 # Per-user food extraction (split by user mention)
 # ---------------------------------------------------------------------------
 
+
 def _split_by_user(text: str) -> dict[str, str]:
     """Split a sentence like 'Rocío ate X, Diego ate Y' into per-user segments."""
     # Patterns: "<name> ate/had/…" OR "Diego: …"
@@ -788,6 +833,7 @@ def _build_items_per_user(
 # ---------------------------------------------------------------------------
 # Preference intent parsing
 # ---------------------------------------------------------------------------
+
 
 def _classify_item_type(item_name: str) -> str:
     if item_name.lower() in _ACTIVITY_NAMES:

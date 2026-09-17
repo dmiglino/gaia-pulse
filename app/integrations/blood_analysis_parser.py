@@ -6,6 +6,7 @@ Supports:
   - Structured biomarker extraction via LLM (preferred) or regex fallback
   - Both English and Spanish lab terminology (common in Argentina)
 """
+
 from __future__ import annotations
 
 import base64
@@ -25,37 +26,223 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _REFERENCE_RANGES: dict[str, dict[str, Any]] = {
-    "hemoglobin":          {"ref_min": 12.0, "ref_max": 17.5, "unit": "g/dL",    "display_name": "Hemoglobin",            "category": "blood_count"},
-    "hematocrit":          {"ref_min": 36.0, "ref_max": 53.0, "unit": "%",        "display_name": "Hematocrit",            "category": "blood_count"},
-    "wbc":                 {"ref_min": 4.5,  "ref_max": 11.0, "unit": "10³/μL",   "display_name": "White Blood Cells",     "category": "blood_count"},
-    "rbc":                 {"ref_min": 3.8,  "ref_max": 5.9,  "unit": "10⁶/μL",   "display_name": "Red Blood Cells",       "category": "blood_count"},
-    "platelets":           {"ref_min": 150,  "ref_max": 400,  "unit": "10³/μL",   "display_name": "Platelets",             "category": "blood_count"},
-    "mcv":                 {"ref_min": 80,   "ref_max": 100,  "unit": "fL",        "display_name": "MCV",                   "category": "blood_count"},
-    "iron":                {"ref_min": 60,   "ref_max": 170,  "unit": "μg/dL",    "display_name": "Serum Iron",            "category": "iron"},
-    "ferritin":            {"ref_min": 10,   "ref_max": 322,  "unit": "ng/mL",    "display_name": "Ferritin",              "category": "iron"},
-    "transferrin_sat":     {"ref_min": 20,   "ref_max": 50,   "unit": "%",         "display_name": "Transferrin Saturation","category": "iron"},
-    "glucose":             {"ref_min": 70,   "ref_max": 100,  "unit": "mg/dL",    "display_name": "Glucose (fasting)",     "category": "metabolic"},
-    "creatinine":          {"ref_min": 0.5,  "ref_max": 1.3,  "unit": "mg/dL",    "display_name": "Creatinine",            "category": "metabolic"},
-    "urea":                {"ref_min": 15,   "ref_max": 45,   "unit": "mg/dL",    "display_name": "Urea (BUN)",            "category": "metabolic"},
-    "sodium":              {"ref_min": 136,  "ref_max": 145,  "unit": "mEq/L",    "display_name": "Sodium",                "category": "electrolytes"},
-    "potassium":           {"ref_min": 3.5,  "ref_max": 5.0,  "unit": "mEq/L",    "display_name": "Potassium",             "category": "electrolytes"},
-    "cholesterol_total":   {"ref_min": None, "ref_max": 200,  "unit": "mg/dL",    "display_name": "Total Cholesterol",     "category": "lipids"},
-    "ldl":                 {"ref_min": None, "ref_max": 130,  "unit": "mg/dL",    "display_name": "LDL Cholesterol",       "category": "lipids"},
-    "hdl":                 {"ref_min": 40,   "ref_max": None, "unit": "mg/dL",    "display_name": "HDL Cholesterol",       "category": "lipids"},
-    "triglycerides":       {"ref_min": None, "ref_max": 150,  "unit": "mg/dL",    "display_name": "Triglycerides",         "category": "lipids"},
-    "ast":                 {"ref_min": None, "ref_max": 40,   "unit": "U/L",       "display_name": "AST (TGO)",             "category": "liver"},
-    "alt":                 {"ref_min": None, "ref_max": 56,   "unit": "U/L",       "display_name": "ALT (TGP)",             "category": "liver"},
-    "ggt":                 {"ref_min": None, "ref_max": 60,   "unit": "U/L",       "display_name": "GGT",                   "category": "liver"},
-    "bilirubin_total":     {"ref_min": None, "ref_max": 1.2,  "unit": "mg/dL",    "display_name": "Total Bilirubin",       "category": "liver"},
-    "tsh":                 {"ref_min": 0.4,  "ref_max": 4.0,  "unit": "μIU/mL",   "display_name": "TSH",                   "category": "thyroid"},
-    "t4_free":             {"ref_min": 0.8,  "ref_max": 1.8,  "unit": "ng/dL",    "display_name": "Free T4",               "category": "thyroid"},
-    "vitamin_d":           {"ref_min": 30,   "ref_max": 100,  "unit": "ng/mL",    "display_name": "Vitamin D (25-OH)",     "category": "vitamins"},
-    "vitamin_b12":         {"ref_min": 200,  "ref_max": 900,  "unit": "pg/mL",    "display_name": "Vitamin B12",           "category": "vitamins"},
-    "folate":              {"ref_min": 5.4,  "ref_max": None, "unit": "ng/mL",    "display_name": "Folate / Folic Acid",   "category": "vitamins"},
-    "zinc":                {"ref_min": 70,   "ref_max": 120,  "unit": "μg/dL",    "display_name": "Zinc",                  "category": "minerals"},
-    "magnesium":           {"ref_min": 1.7,  "ref_max": 2.5,  "unit": "mg/dL",    "display_name": "Magnesium",             "category": "minerals"},
-    "calcium":             {"ref_min": 8.5,  "ref_max": 10.5, "unit": "mg/dL",    "display_name": "Calcium",               "category": "minerals"},
-    "insulin":             {"ref_min": 2,    "ref_max": 25,   "unit": "μIU/mL",   "display_name": "Insulin (fasting)",     "category": "hormones"},
+    "hemoglobin": {
+        "ref_min": 12.0,
+        "ref_max": 17.5,
+        "unit": "g/dL",
+        "display_name": "Hemoglobin",
+        "category": "blood_count",
+    },
+    "hematocrit": {
+        "ref_min": 36.0,
+        "ref_max": 53.0,
+        "unit": "%",
+        "display_name": "Hematocrit",
+        "category": "blood_count",
+    },
+    "wbc": {
+        "ref_min": 4.5,
+        "ref_max": 11.0,
+        "unit": "10³/μL",
+        "display_name": "White Blood Cells",
+        "category": "blood_count",
+    },
+    "rbc": {
+        "ref_min": 3.8,
+        "ref_max": 5.9,
+        "unit": "10⁶/μL",
+        "display_name": "Red Blood Cells",
+        "category": "blood_count",
+    },
+    "platelets": {
+        "ref_min": 150,
+        "ref_max": 400,
+        "unit": "10³/μL",
+        "display_name": "Platelets",
+        "category": "blood_count",
+    },
+    "mcv": {
+        "ref_min": 80,
+        "ref_max": 100,
+        "unit": "fL",
+        "display_name": "MCV",
+        "category": "blood_count",
+    },
+    "iron": {
+        "ref_min": 60,
+        "ref_max": 170,
+        "unit": "μg/dL",
+        "display_name": "Serum Iron",
+        "category": "iron",
+    },
+    "ferritin": {
+        "ref_min": 10,
+        "ref_max": 322,
+        "unit": "ng/mL",
+        "display_name": "Ferritin",
+        "category": "iron",
+    },
+    "transferrin_sat": {
+        "ref_min": 20,
+        "ref_max": 50,
+        "unit": "%",
+        "display_name": "Transferrin Saturation",
+        "category": "iron",
+    },
+    "glucose": {
+        "ref_min": 70,
+        "ref_max": 100,
+        "unit": "mg/dL",
+        "display_name": "Glucose (fasting)",
+        "category": "metabolic",
+    },
+    "creatinine": {
+        "ref_min": 0.5,
+        "ref_max": 1.3,
+        "unit": "mg/dL",
+        "display_name": "Creatinine",
+        "category": "metabolic",
+    },
+    "urea": {
+        "ref_min": 15,
+        "ref_max": 45,
+        "unit": "mg/dL",
+        "display_name": "Urea (BUN)",
+        "category": "metabolic",
+    },
+    "sodium": {
+        "ref_min": 136,
+        "ref_max": 145,
+        "unit": "mEq/L",
+        "display_name": "Sodium",
+        "category": "electrolytes",
+    },
+    "potassium": {
+        "ref_min": 3.5,
+        "ref_max": 5.0,
+        "unit": "mEq/L",
+        "display_name": "Potassium",
+        "category": "electrolytes",
+    },
+    "cholesterol_total": {
+        "ref_min": None,
+        "ref_max": 200,
+        "unit": "mg/dL",
+        "display_name": "Total Cholesterol",
+        "category": "lipids",
+    },
+    "ldl": {
+        "ref_min": None,
+        "ref_max": 130,
+        "unit": "mg/dL",
+        "display_name": "LDL Cholesterol",
+        "category": "lipids",
+    },
+    "hdl": {
+        "ref_min": 40,
+        "ref_max": None,
+        "unit": "mg/dL",
+        "display_name": "HDL Cholesterol",
+        "category": "lipids",
+    },
+    "triglycerides": {
+        "ref_min": None,
+        "ref_max": 150,
+        "unit": "mg/dL",
+        "display_name": "Triglycerides",
+        "category": "lipids",
+    },
+    "ast": {
+        "ref_min": None,
+        "ref_max": 40,
+        "unit": "U/L",
+        "display_name": "AST (TGO)",
+        "category": "liver",
+    },
+    "alt": {
+        "ref_min": None,
+        "ref_max": 56,
+        "unit": "U/L",
+        "display_name": "ALT (TGP)",
+        "category": "liver",
+    },
+    "ggt": {
+        "ref_min": None,
+        "ref_max": 60,
+        "unit": "U/L",
+        "display_name": "GGT",
+        "category": "liver",
+    },
+    "bilirubin_total": {
+        "ref_min": None,
+        "ref_max": 1.2,
+        "unit": "mg/dL",
+        "display_name": "Total Bilirubin",
+        "category": "liver",
+    },
+    "tsh": {
+        "ref_min": 0.4,
+        "ref_max": 4.0,
+        "unit": "μIU/mL",
+        "display_name": "TSH",
+        "category": "thyroid",
+    },
+    "t4_free": {
+        "ref_min": 0.8,
+        "ref_max": 1.8,
+        "unit": "ng/dL",
+        "display_name": "Free T4",
+        "category": "thyroid",
+    },
+    "vitamin_d": {
+        "ref_min": 30,
+        "ref_max": 100,
+        "unit": "ng/mL",
+        "display_name": "Vitamin D (25-OH)",
+        "category": "vitamins",
+    },
+    "vitamin_b12": {
+        "ref_min": 200,
+        "ref_max": 900,
+        "unit": "pg/mL",
+        "display_name": "Vitamin B12",
+        "category": "vitamins",
+    },
+    "folate": {
+        "ref_min": 5.4,
+        "ref_max": None,
+        "unit": "ng/mL",
+        "display_name": "Folate / Folic Acid",
+        "category": "vitamins",
+    },
+    "zinc": {
+        "ref_min": 70,
+        "ref_max": 120,
+        "unit": "μg/dL",
+        "display_name": "Zinc",
+        "category": "minerals",
+    },
+    "magnesium": {
+        "ref_min": 1.7,
+        "ref_max": 2.5,
+        "unit": "mg/dL",
+        "display_name": "Magnesium",
+        "category": "minerals",
+    },
+    "calcium": {
+        "ref_min": 8.5,
+        "ref_max": 10.5,
+        "unit": "mg/dL",
+        "display_name": "Calcium",
+        "category": "minerals",
+    },
+    "insulin": {
+        "ref_min": 2,
+        "ref_max": 25,
+        "unit": "μIU/mL",
+        "display_name": "Insulin (fasting)",
+        "category": "hormones",
+    },
 }
 
 
@@ -64,37 +251,54 @@ _REFERENCE_RANGES: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 _REGEX_PATTERNS: dict[str, list[str]] = {
-    "hemoglobin":       [r"h[ae]moglobin[a-z\s]*[:\s]+([\d.,]+)", r"hgb\s*[:\s]+([\d.,]+)"],
-    "hematocrit":       [r"hematocrit[a-z\s]*[:\s]+([\d.,]+)", r"hematocrito[a-z\s]*[:\s]+([\d.,]+)", r"hto\s*[:\s]+([\d.,]+)"],
-    "wbc":              [r"(?:white\s+blood\s+cells?|wbc|leucocit[oa]s?)[a-z\s]*[:\s]+([\d.,]+)"],
-    "rbc":              [r"(?:red\s+blood\s+cells?|rbc|eritrocit[oa]s?|glóbulos\s+rojos)[a-z\s]*[:\s]+([\d.,]+)"],
-    "platelets":        [r"(?:platelets?|plaquetas?)[a-z\s]*[:\s]+([\d.,]+)"],
-    "mcv":              [r"\bvcm\b[a-z\s]*[:\s]+([\d.,]+)", r"\bmcv\b[a-z\s]*[:\s]+([\d.,]+)"],
-    "iron":             [r"(?:serum\s+)?(?:iron|hierro\s+s[eé]rico|hierro)[a-z\s]*[:\s]+([\d.,]+)", r"\bfe\b[a-z\s]*[:\s]+([\d.,]+)"],
-    "ferritin":         [r"ferritin[ae]?[a-z\s]*[:\s]+([\d.,]+)"],
-    "transferrin_sat":  [r"(?:transferrin\s+saturation|saturaci[oó]n\s+de\s+transferrina)[a-z\s]*[:\s]+([\d.,]+)"],
-    "glucose":          [r"(?:glucose|glucemia|gluc[oó]sa)\s*(?:en\s+ayunas)?[a-z\s]*[:\s]+([\d.,]+)"],
-    "creatinine":       [r"creatinin[ae]?[a-z\s]*[:\s]+([\d.,]+)"],
-    "urea":             [r"\burea\b[a-z\s]*[:\s]+([\d.,]+)", r"\bbun\b[a-z\s]*[:\s]+([\d.,]+)"],
-    "sodium":           [r"(?:sodium|sodio|na\+?)\s*[:\s]+([\d.,]+)"],
-    "potassium":        [r"(?:potassium|potasio|k\+?)\s*[:\s]+([\d.,]+)"],
-    "cholesterol_total":[r"(?:total\s+cholesterol|colesterol\s+total|colesterol\s+t)[a-z\s]*[:\s]+([\d.,]+)"],
-    "ldl":              [r"(?:ldl[\s\-]?c(?:holesterol)?|ldl)[a-z\s]*[:\s]+([\d.,]+)"],
-    "hdl":              [r"(?:hdl[\s\-]?c(?:holesterol)?|hdl)[a-z\s]*[:\s]+([\d.,]+)"],
-    "triglycerides":    [r"(?:triglycerides?|triglic[eé]ridos?|tg)\s*[:\s]+([\d.,]+)"],
-    "ast":              [r"(?:ast|tgo|aspartato\s+aminotransferasa)[a-z\s]*[:\s]+([\d.,]+)"],
-    "alt":              [r"(?:alt|tgp|alanina\s+aminotransferasa)[a-z\s]*[:\s]+([\d.,]+)"],
-    "ggt":              [r"\bggt\b[a-z\s]*[:\s]+([\d.,]+)", r"gamma[\s\-]?gt[a-z\s]*[:\s]+([\d.,]+)"],
-    "bilirubin_total":  [r"(?:bilirubin\s+total|bilirrubina\s+total)[a-z\s]*[:\s]+([\d.,]+)"],
-    "tsh":              [r"\btsh\b[a-z\s]*[:\s]+([\d.,]+)"],
-    "t4_free":          [r"(?:t4\s+free|t4\s+libre|free\s+t4)[a-z\s]*[:\s]+([\d.,]+)"],
-    "vitamin_d":        [r"(?:vitamin\s+d[\s\-]?(?:25[\s\-]?oh)?|vitamina\s+d|25[\s\-]?oh[\s\-]?d)[a-z\s]*[:\s]+([\d.,]+)"],
-    "vitamin_b12":      [r"(?:vitamin\s+b[\s\-]?12|vitamina\s+b[\s\-]?12|cobalamina|b12)[a-z\s]*[:\s]+([\d.,]+)"],
-    "folate":           [r"(?:folic\s+acid|folate|[aá]cido\s+f[oó]lico|folatos?)[a-z\s]*[:\s]+([\d.,]+)"],
-    "zinc":             [r"\bzinc\b[a-z\s]*[:\s]+([\d.,]+)"],
-    "magnesium":        [r"(?:magnesium|magnesio|mg\+?)\s*[:\s]+([\d.,]+)"],
-    "calcium":          [r"(?:calcium|calcio|ca\+?)\s*[:\s]+([\d.,]+)"],
-    "insulin":          [r"(?:insulin[ae]?|insulina?)[a-z\s]*[:\s]+([\d.,]+)"],
+    "hemoglobin": [r"h[ae]moglobin[a-z\s]*[:\s]+([\d.,]+)", r"hgb\s*[:\s]+([\d.,]+)"],
+    "hematocrit": [
+        r"hematocrit[a-z\s]*[:\s]+([\d.,]+)",
+        r"hematocrito[a-z\s]*[:\s]+([\d.,]+)",
+        r"hto\s*[:\s]+([\d.,]+)",
+    ],
+    "wbc": [r"(?:white\s+blood\s+cells?|wbc|leucocit[oa]s?)[a-z\s]*[:\s]+([\d.,]+)"],
+    "rbc": [
+        r"(?:red\s+blood\s+cells?|rbc|eritrocit[oa]s?|glóbulos\s+rojos)[a-z\s]*[:\s]+([\d.,]+)"
+    ],
+    "platelets": [r"(?:platelets?|plaquetas?)[a-z\s]*[:\s]+([\d.,]+)"],
+    "mcv": [r"\bvcm\b[a-z\s]*[:\s]+([\d.,]+)", r"\bmcv\b[a-z\s]*[:\s]+([\d.,]+)"],
+    "iron": [
+        r"(?:serum\s+)?(?:iron|hierro\s+s[eé]rico|hierro)[a-z\s]*[:\s]+([\d.,]+)",
+        r"\bfe\b[a-z\s]*[:\s]+([\d.,]+)",
+    ],
+    "ferritin": [r"ferritin[ae]?[a-z\s]*[:\s]+([\d.,]+)"],
+    "transferrin_sat": [
+        r"(?:transferrin\s+saturation|saturaci[oó]n\s+de\s+transferrina)[a-z\s]*[:\s]+([\d.,]+)"
+    ],
+    "glucose": [r"(?:glucose|glucemia|gluc[oó]sa)\s*(?:en\s+ayunas)?[a-z\s]*[:\s]+([\d.,]+)"],
+    "creatinine": [r"creatinin[ae]?[a-z\s]*[:\s]+([\d.,]+)"],
+    "urea": [r"\burea\b[a-z\s]*[:\s]+([\d.,]+)", r"\bbun\b[a-z\s]*[:\s]+([\d.,]+)"],
+    "sodium": [r"(?:sodium|sodio|na\+?)\s*[:\s]+([\d.,]+)"],
+    "potassium": [r"(?:potassium|potasio|k\+?)\s*[:\s]+([\d.,]+)"],
+    "cholesterol_total": [
+        r"(?:total\s+cholesterol|colesterol\s+total|colesterol\s+t)[a-z\s]*[:\s]+([\d.,]+)"
+    ],
+    "ldl": [r"(?:ldl[\s\-]?c(?:holesterol)?|ldl)[a-z\s]*[:\s]+([\d.,]+)"],
+    "hdl": [r"(?:hdl[\s\-]?c(?:holesterol)?|hdl)[a-z\s]*[:\s]+([\d.,]+)"],
+    "triglycerides": [r"(?:triglycerides?|triglic[eé]ridos?|tg)\s*[:\s]+([\d.,]+)"],
+    "ast": [r"(?:ast|tgo|aspartato\s+aminotransferasa)[a-z\s]*[:\s]+([\d.,]+)"],
+    "alt": [r"(?:alt|tgp|alanina\s+aminotransferasa)[a-z\s]*[:\s]+([\d.,]+)"],
+    "ggt": [r"\bggt\b[a-z\s]*[:\s]+([\d.,]+)", r"gamma[\s\-]?gt[a-z\s]*[:\s]+([\d.,]+)"],
+    "bilirubin_total": [r"(?:bilirubin\s+total|bilirrubina\s+total)[a-z\s]*[:\s]+([\d.,]+)"],
+    "tsh": [r"\btsh\b[a-z\s]*[:\s]+([\d.,]+)"],
+    "t4_free": [r"(?:t4\s+free|t4\s+libre|free\s+t4)[a-z\s]*[:\s]+([\d.,]+)"],
+    "vitamin_d": [
+        r"(?:vitamin\s+d[\s\-]?(?:25[\s\-]?oh)?|vitamina\s+d|25[\s\-]?oh[\s\-]?d)[a-z\s]*[:\s]+([\d.,]+)"
+    ],
+    "vitamin_b12": [
+        r"(?:vitamin\s+b[\s\-]?12|vitamina\s+b[\s\-]?12|cobalamina|b12)[a-z\s]*[:\s]+([\d.,]+)"
+    ],
+    "folate": [r"(?:folic\s+acid|folate|[aá]cido\s+f[oó]lico|folatos?)[a-z\s]*[:\s]+([\d.,]+)"],
+    "zinc": [r"\bzinc\b[a-z\s]*[:\s]+([\d.,]+)"],
+    "magnesium": [r"(?:magnesium|magnesio|mg\+?)\s*[:\s]+([\d.,]+)"],
+    "calcium": [r"(?:calcium|calcio|ca\+?)\s*[:\s]+([\d.,]+)"],
+    "insulin": [r"(?:insulin[ae]?|insulina?)[a-z\s]*[:\s]+([\d.,]+)"],
 }
 
 
@@ -141,9 +345,11 @@ def _make_marker(key: str, value: float, unit: str | None = None) -> dict[str, A
 # Text extraction
 # ---------------------------------------------------------------------------
 
+
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     try:
         from pypdf import PdfReader
+
         reader = PdfReader(io.BytesIO(file_bytes))
         pages = [page.extract_text() or "" for page in reader.pages]
         return "\n".join(pages).strip()
@@ -157,8 +363,9 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 _LLM_SYSTEM = """You are a medical lab report parser. Extract blood test values from the text.
-Return ONLY a valid JSON object. Keys are snake_case biomarker names (e.g. "hemoglobin", "ldl", "vitamin_d").
-Each value is an object with: value (number), unit (string), ref_min (number|null), ref_max (number|null), display_name (string).
+Return ONLY a valid JSON object. Keys are snake_case biomarker names (e.g. "hemoglobin", "ldl",
+"vitamin_d"). Each value is an object with: value (number), unit (string), ref_min (number|null),
+ref_max (number|null), display_name (string).
 Include analysis_date (YYYY-MM-DD string or null) and lab_name (string or null) at the top level.
 Only include markers explicitly present in the text. No markdown, no explanation, just JSON."""
 
@@ -166,11 +373,13 @@ Only include markers explicitly present in the text. No markdown, no explanation
 async def _parse_with_llm(text: str) -> dict[str, Any] | None:
     try:
         from app.core.config import get_settings
+
         settings = get_settings()
         if not settings.nlp_enabled or not settings.openai_api_key:
             return None
 
         from openai import AsyncOpenAI
+
         client = AsyncOpenAI(api_key=settings.openai_api_key)
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
@@ -195,22 +404,35 @@ async def _parse_with_llm(text: str) -> dict[str, Any] | None:
 async def _parse_image_with_llm(file_bytes: bytes, mime_type: str) -> dict[str, Any] | None:
     try:
         from app.core.config import get_settings
+
         settings = get_settings()
         if not settings.nlp_enabled or not settings.openai_api_key:
             return None
 
         b64 = base64.b64encode(file_bytes).decode()
         from openai import AsyncOpenAI
+
         client = AsyncOpenAI(api_key=settings.openai_api_key)
         response = await client.chat.completions.create(
             model="gpt-4o",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": _LLM_SYSTEM + "\n\nExtract from this lab report image:"},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}", "detail": "high"}},
-                ],
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": _LLM_SYSTEM + "\n\nExtract from this lab report image:",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{b64}",
+                                "detail": "high",
+                            },
+                        },
+                    ],
+                }
+            ],
             temperature=0,
             max_tokens=2000,
         )
@@ -227,6 +449,7 @@ async def _parse_image_with_llm(file_bytes: bytes, mime_type: str) -> dict[str, 
 # ---------------------------------------------------------------------------
 # Regex parsing fallback
 # ---------------------------------------------------------------------------
+
 
 def _parse_with_regex(text: str) -> dict[str, Any]:
     text_lower = text.lower()
@@ -309,6 +532,7 @@ def _extract_lab_name(text: str) -> str | None:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ParsedBloodAnalysis:
     values: dict[str, Any] = field(default_factory=dict)
@@ -319,7 +543,9 @@ class ParsedBloodAnalysis:
     ai_summary: str | None = None
 
 
-def _normalize_llm_output(llm_data: dict[str, Any]) -> tuple[dict[str, Any], date | None, str | None]:
+def _normalize_llm_output(
+    llm_data: dict[str, Any],
+) -> tuple[dict[str, Any], date | None, str | None]:
     """Convert LLM JSON output into our canonical marker format."""
     values: dict[str, Any] = {}
     analysis_date: date | None = None
@@ -329,6 +555,7 @@ def _normalize_llm_output(llm_data: dict[str, Any]) -> tuple[dict[str, Any], dat
     if raw_date:
         try:
             from datetime import date as _date
+
             parts = raw_date.split("-")
             analysis_date = _date(int(parts[0]), int(parts[1]), int(parts[2]))
         except Exception:
@@ -351,7 +578,9 @@ def _normalize_llm_output(llm_data: dict[str, Any]) -> tuple[dict[str, Any], dat
         raw_min, raw_max = raw.get("ref_min"), raw.get("ref_max")
         ref_min = raw_min if raw_min is not None else ref.get("ref_min")
         ref_max = raw_max if raw_max is not None else ref.get("ref_max")
-        display_name = raw.get("display_name") or ref.get("display_name") or key.replace("_", " ").title()
+        display_name = (
+            raw.get("display_name") or ref.get("display_name") or key.replace("_", " ").title()
+        )
         category = ref.get("category", "other")
         values[key] = {
             "value": round(val, 3),
@@ -383,7 +612,9 @@ async def analyze_file(file_bytes: bytes, mime_type: str, filename: str) -> Pars
             result.parsing_method = "llm"
             result.raw_text = "[Extracted from image via LLM]"
             return result
-        result.raw_text = "[Image upload — LLM not configured. Please use PDF or enter values manually.]"
+        result.raw_text = (
+            "[Image upload — LLM not configured. Please use PDF or enter values manually.]"
+        )
         return result
 
     if is_pdf:

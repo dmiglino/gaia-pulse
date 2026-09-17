@@ -165,8 +165,8 @@ def banana(db: Session) -> FoodItem:
 @pytest.fixture
 def authenticated_client(client: TestClient, diego: User, db: Session) -> TestClient:
     """Return a test client with Diego's session cookie set."""
-    from app.core.security import create_session_token
     from app.core.config import get_settings
+    from app.core.security import create_session_token
 
     settings = get_settings()
     token = create_session_token(diego.id)

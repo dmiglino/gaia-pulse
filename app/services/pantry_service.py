@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -56,7 +55,7 @@ class PantryService:
     ) -> list[PantryMovement]:
         """Register a purchase: creates movements and updates stock for each item."""
         movements = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         for item in request.items:
             food = self.food_repo.get_or_create(item.food_name)
             self.stock_repo.upsert_stock(
@@ -232,18 +231,14 @@ class PantryService:
         self.db.flush()
         return movement
 
-    def get_movements(
-        self, household_id: int, limit: int = 50, offset: int = 0
-    ) -> list:
+    def get_movements(self, household_id: int, limit: int = 50, offset: int = 0) -> list:
         return self.movement_repo.get_household_movements(household_id, limit=limit, offset=offset)
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _apply_delta(
-        self, household_id: int, food_item_id: int, delta: float, unit: str
-    ) -> float:
+    def _apply_delta(self, household_id: int, food_item_id: int, delta: float, unit: str) -> float:
         """Apply *delta* to the stock row and return the change that actually landed.
 
         The repository clamps stock at zero, so asking to consume 5 of an item
@@ -282,7 +277,7 @@ class PantryService:
             movement_type=movement_type,
             quantity=quantity,
             unit=unit,
-            timestamp=timestamp or datetime.now(timezone.utc),
+            timestamp=timestamp or datetime.now(UTC),
             notes=notes,
             related_entity_type=related_entity_type,
             related_entity_id=related_entity_id,

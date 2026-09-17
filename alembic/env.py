@@ -1,12 +1,13 @@
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
+
+import app.models  # noqa: F401 — registers all models with Base.metadata
+from alembic import context
 
 # Load all models so Alembic can detect them
 from app.db.base import Base
-import app.models  # noqa: F401 — registers all models with Base.metadata
 
 config = context.config
 
@@ -14,6 +15,7 @@ config = context.config
 db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     from app.core.config import get_settings
+
     db_url = get_settings().database_url
 
 if db_url:

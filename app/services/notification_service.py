@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -89,7 +89,7 @@ class NotificationService:
         n = self._get_owned(notification_id, user_id, household_id)
         if not n:
             return None
-        n.read_at = datetime.now(timezone.utc)
+        n.read_at = datetime.now(UTC)
         self.db.commit()
         return n
 
@@ -102,7 +102,7 @@ class NotificationService:
         n = self._get_owned(notification_id, user_id, household_id)
         if not n:
             return False
-        n.dismissed_at = datetime.now(timezone.utc)
+        n.dismissed_at = datetime.now(UTC)
         self.db.commit()
         return True
 

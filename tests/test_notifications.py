@@ -1,7 +1,7 @@
 """Tests for notification creation and management."""
+
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
@@ -13,56 +13,62 @@ from app.services.notification_service import NotificationService
 
 
 class TestNotificationService:
-    def test_create_household_notification(
-        self, db: Session, household: Household
-    ) -> None:
+    def test_create_household_notification(self, db: Session, household: Household) -> None:
         svc = NotificationService(db)
-        n = svc.create(NotificationCreate(
-            household_id=household.id,
-            category="low_stock",
-            title="Low stock alert",
-            body="You're running low on eggs.",
-            priority=7,
-        ))
+        n = svc.create(
+            NotificationCreate(
+                household_id=household.id,
+                category="low_stock",
+                title="Low stock alert",
+                body="You're running low on eggs.",
+                priority=7,
+            )
+        )
         assert n.id is not None
         assert n.category == "low_stock"
         assert not n.is_read
         assert not n.is_dismissed
 
-    def test_create_user_notification(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_create_user_notification(self, db: Session, household: Household, diego: User) -> None:
         svc = NotificationService(db)
-        n = svc.create(NotificationCreate(
-            user_id=diego.id,
-            household_id=household.id,
-            category="inactivity",
-            title="No workouts in 4 days",
-            body="Hey Diego, time to move!",
-        ))
+        n = svc.create(
+            NotificationCreate(
+                user_id=diego.id,
+                household_id=household.id,
+                category="inactivity",
+                title="No workouts in 4 days",
+                body="Hey Diego, time to move!",
+            )
+        )
         assert n.user_id == diego.id
 
-    def test_mark_read(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_mark_read(self, db: Session, household: Household, diego: User) -> None:
         svc = NotificationService(db)
-        n = svc.create(NotificationCreate(
-            user_id=diego.id, household_id=household.id,
-            category="info", title="Test", body="Body",
-        ))
+        n = svc.create(
+            NotificationCreate(
+                user_id=diego.id,
+                household_id=household.id,
+                category="info",
+                title="Test",
+                body="Body",
+            )
+        )
         assert not n.is_read
         svc.mark_read(n.id, diego.id, household.id)
         db.refresh(n)
         assert n.is_read
 
-    def test_dismiss(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_dismiss(self, db: Session, household: Household, diego: User) -> None:
         svc = NotificationService(db)
-        n = svc.create(NotificationCreate(
-            user_id=diego.id, household_id=household.id,
-            category="info", title="Test", body="Body",
-        ))
+        n = svc.create(
+            NotificationCreate(
+                user_id=diego.id,
+                household_id=household.id,
+                category="info",
+                title="Test",
+                body="Body",
+            )
+        )
         svc.dismiss(n.id, diego.id, household.id)
         db.refresh(n)
         assert n.is_dismissed
@@ -72,23 +78,38 @@ class TestNotificationService:
     ) -> None:
         svc = NotificationService(db)
         # Create 2 for diego
-        svc.create(NotificationCreate(user_id=diego.id, household_id=household.id, category="info", title="A", body="B"))
-        svc.create(NotificationCreate(user_id=diego.id, household_id=household.id, category="info", title="C", body="D"))
+        svc.create(
+            NotificationCreate(
+                user_id=diego.id, household_id=household.id, category="info", title="A", body="B"
+            )
+        )
+        svc.create(
+            NotificationCreate(
+                user_id=diego.id, household_id=household.id, category="info", title="C", body="D"
+            )
+        )
         # Household-level (should be visible to both)
-        svc.create(NotificationCreate(household_id=household.id, category="low_stock", title="Low", body="Low on eggs"))
+        svc.create(
+            NotificationCreate(
+                household_id=household.id, category="low_stock", title="Low", body="Low on eggs"
+            )
+        )
 
         count = svc.get_unread_count(diego.id, household.id)
         assert count >= 2
 
-    def test_mark_all_read(
-        self, db: Session, household: Household, diego: User
-    ) -> None:
+    def test_mark_all_read(self, db: Session, household: Household, diego: User) -> None:
         svc = NotificationService(db)
         for i in range(3):
-            svc.create(NotificationCreate(
-                user_id=diego.id, household_id=household.id,
-                category="info", title=f"Notif {i}", body="body",
-            ))
+            svc.create(
+                NotificationCreate(
+                    user_id=diego.id,
+                    household_id=household.id,
+                    category="info",
+                    title=f"Notif {i}",
+                    body="body",
+                )
+            )
         marked = svc.mark_all_read(diego.id, household.id)
         assert marked >= 3
         assert svc.get_unread_count(diego.id, household.id) == 0
@@ -98,12 +119,14 @@ class TestNotificationService:
     ) -> None:
         """Household-level notifications should appear for all household members."""
         svc = NotificationService(db)
-        svc.create(NotificationCreate(
-            household_id=household.id,
-            category="low_stock",
-            title="Shared alert",
-            body="Pantry needs attention",
-        ))
+        svc.create(
+            NotificationCreate(
+                household_id=household.id,
+                category="low_stock",
+                title="Shared alert",
+                body="Pantry needs attention",
+            )
+        )
         # Should appear for Diego (member of household)
         notifs = svc.get_for_user(diego.id, household.id)
         assert any(n.title == "Shared alert" for n in notifs)
@@ -119,13 +142,15 @@ class TestVisibility:
     """
 
     def _for(self, db: Session, household: Household, user: User, title: str) -> None:
-        NotificationService(db).create(NotificationCreate(
-            user_id=user.id,
-            household_id=household.id,
-            category="metric_reminder",
-            title=title,
-            body="body",
-        ))
+        NotificationService(db).create(
+            NotificationCreate(
+                user_id=user.id,
+                household_id=household.id,
+                category="metric_reminder",
+                title=title,
+                body="body",
+            )
+        )
 
     def test_a_notification_for_one_member_is_invisible_to_the_other(
         self, db: Session, household: Household, diego: User, rocio: User
@@ -157,12 +182,14 @@ class TestVisibility:
         Sin esto, filtrar solo por `user_id` pasaría los dos tests de arriba y dejaría el
         aviso de la despensa — que no es de nadie en particular — sin llegar a nadie.
         """
-        NotificationService(db).create(NotificationCreate(
-            household_id=household.id,
-            category="low_stock",
-            title="Out of milk",
-            body="body",
-        ))
+        NotificationService(db).create(
+            NotificationCreate(
+                household_id=household.id,
+                category="low_stock",
+                title="Out of milk",
+                body="body",
+            )
+        )
         svc = NotificationService(db)
 
         assert svc.get_unread_count(diego.id, household.id) == 1
@@ -187,16 +214,18 @@ class TestSubjectDedup:
         priority: int = 7,
         user_id: int | None = None,
     ) -> None:
-        NotificationService(db).create(NotificationCreate(
-            user_id=user_id,
-            household_id=household.id,
-            category=category,
-            title="title",
-            body="body",
-            priority=priority,
-            related_entity_type=entity_type,
-            related_entity_id=entity_id,
-        ))
+        NotificationService(db).create(
+            NotificationCreate(
+                user_id=user_id,
+                household_id=household.id,
+                category=category,
+                title="title",
+                body="body",
+                priority=priority,
+                related_entity_type=entity_type,
+                related_entity_id=entity_id,
+            )
+        )
 
     def _asked(
         self,
@@ -289,16 +318,31 @@ class TestSubjectDedup:
         otra.
         """
         self._notify(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, priority=5, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            priority=5,
+            user_id=diego.id,
         )
         assert self._asked(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, severity=5, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            severity=5,
+            user_id=diego.id,
         )
         assert not self._asked(
-            db, household, category="metric_reminder", entity_type="user",
-            entity_id=diego.id, severity=4, user_id=diego.id,
+            db,
+            household,
+            category="metric_reminder",
+            entity_type="user",
+            entity_id=diego.id,
+            severity=4,
+            user_id=diego.id,
         )
 
     def test_one_members_notification_does_not_suppress_the_other(
@@ -310,16 +354,31 @@ class TestSubjectDedup:
         household clause made Diego's reminder count as Rocío's.
         """
         self._notify(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, priority=5, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            priority=5,
+            user_id=diego.id,
         )
         assert self._asked(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, severity=5, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            severity=5,
+            user_id=diego.id,
         )
         assert not self._asked(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=rocio.id, severity=5, user_id=rocio.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=rocio.id,
+            severity=5,
+            user_id=rocio.id,
         )
 
     def test_a_household_check_ignores_per_user_rows(
@@ -349,17 +408,19 @@ class TestRetiringASubject:
         user_id: int | None = None,
         source_type: str = "job",
     ) -> int:
-        NotificationService(db).create(NotificationCreate(
-            user_id=user_id,
-            household_id=household.id,
-            category=category,
-            title="title",
-            body="body",
-            priority=7,
-            source_type=source_type,
-            related_entity_type=entity_type,
-            related_entity_id=entity_id,
-        ))
+        NotificationService(db).create(
+            NotificationCreate(
+                user_id=user_id,
+                household_id=household.id,
+                category=category,
+                title="title",
+                body="body",
+                priority=7,
+                source_type=source_type,
+                related_entity_type=entity_type,
+                related_entity_id=entity_id,
+            )
+        )
         return db.query(Notification).count()
 
     def _surviving(self, db: Session) -> set[tuple[str, int | None]]:
@@ -372,21 +433,38 @@ class TestRetiringASubject:
         que el sujeto vuelva a estar mal, el aviso vuelva a salir desde el escalón base."""
         repo = NotificationRepository(db)
         self._notify(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            user_id=diego.id,
         )
         assert repo.has_recent_for_subject(
-            "inactivity", "user", diego.id,
-            household_id=household.id, user_id=diego.id, days=7, severity=5,
+            "inactivity",
+            "user",
+            diego.id,
+            household_id=household.id,
+            user_id=diego.id,
+            days=7,
+            severity=5,
         )
 
-        assert repo.retire_subject(
-            "inactivity", "user", diego.id, household_id=household.id, user_id=diego.id
-        ) == 1
+        assert (
+            repo.retire_subject(
+                "inactivity", "user", diego.id, household_id=household.id, user_id=diego.id
+            )
+            == 1
+        )
 
         assert not repo.has_recent_for_subject(
-            "inactivity", "user", diego.id,
-            household_id=household.id, user_id=diego.id, days=7, severity=5,
+            "inactivity",
+            "user",
+            diego.id,
+            household_id=household.id,
+            user_id=diego.id,
+            days=7,
+            severity=5,
         )
 
     def test_it_only_takes_the_subject_it_was_given(
@@ -395,9 +473,12 @@ class TestRetiringASubject:
         self._notify(db, household, entity_id=1)
         self._notify(db, household, entity_id=2)
 
-        assert NotificationRepository(db).retire_subject(
-            "low_stock", "pantry_stock", 1, household_id=household.id
-        ) == 1
+        assert (
+            NotificationRepository(db).retire_subject(
+                "low_stock", "pantry_stock", 1, household_id=household.id
+            )
+            == 1
+        )
         assert self._surviving(db) == {("low_stock", 2)}
 
     def test_retiring_someone_elses_subject_is_not_retiring_theirs(
@@ -411,13 +492,20 @@ class TestRetiringASubject:
         """
         for user in (diego, rocio):
             self._notify(
-                db, household, category="metric_reminder", entity_type="user",
-                entity_id=user.id, user_id=user.id,
+                db,
+                household,
+                category="metric_reminder",
+                entity_type="user",
+                entity_id=user.id,
+                user_id=user.id,
             )
 
-        assert NotificationRepository(db).retire_subject(
-            "metric_reminder", "user", diego.id, household_id=household.id, user_id=diego.id
-        ) == 1
+        assert (
+            NotificationRepository(db).retire_subject(
+                "metric_reminder", "user", diego.id, household_id=household.id, user_id=diego.id
+            )
+            == 1
+        )
         assert self._surviving(db) == {("metric_reminder", rocio.id)}
 
     def test_a_household_retirement_does_not_reach_a_per_user_row(
@@ -427,9 +515,12 @@ class TestRetiringASubject:
         NULL`), y un `DELETE` de hogar no tiene por qué llevarse una fila dirigida."""
         self._notify(db, household, user_id=diego.id)
 
-        assert NotificationRepository(db).retire_subject(
-            "low_stock", "pantry_stock", 1, household_id=household.id
-        ) == 0
+        assert (
+            NotificationRepository(db).retire_subject(
+                "low_stock", "pantry_stock", 1, household_id=household.id
+            )
+            == 0
+        )
         assert db.query(Notification).count() == 1
 
     def test_it_leaves_alone_what_a_job_did_not_write(
@@ -437,9 +528,12 @@ class TestRetiringASubject:
     ) -> None:
         self._notify(db, household, source_type="manual")
 
-        assert NotificationRepository(db).retire_subject(
-            "low_stock", "pantry_stock", 1, household_id=household.id
-        ) == 0
+        assert (
+            NotificationRepository(db).retire_subject(
+                "low_stock", "pantry_stock", 1, household_id=household.id
+            )
+            == 0
+        )
         assert db.query(Notification).count() == 1
 
     def test_the_complement_keeps_what_is_still_missing(
@@ -449,23 +543,27 @@ class TestRetiringASubject:
         for entity_id in (1, 2, 3):
             self._notify(db, household, entity_id=entity_id)
 
-        assert NotificationRepository(db).retire_subjects_other_than(
-            "low_stock", "pantry_stock", [2, 3], household_id=household.id
-        ) == 1
+        assert (
+            NotificationRepository(db).retire_subjects_other_than(
+                "low_stock", "pantry_stock", [2, 3], household_id=household.id
+            )
+            == 1
+        )
         assert self._surviving(db) == {("low_stock", 2), ("low_stock", 3)}
 
-    def test_an_empty_set_retires_everything(
-        self, db: Session, household: Household
-    ) -> None:
+    def test_an_empty_set_retires_everything(self, db: Session, household: Household) -> None:
         """Despensa entera repuesta. Sin este caso, un `if keep_ids:` de más arriba —o un
         `notin_([])`, que en SQL no matchea nada— dejaría los avisos puestos justo cuando
         ya no falta nada."""
         for entity_id in (1, 2):
             self._notify(db, household, entity_id=entity_id)
 
-        assert NotificationRepository(db).retire_subjects_other_than(
-            "low_stock", "pantry_stock", [], household_id=household.id
-        ) == 2
+        assert (
+            NotificationRepository(db).retire_subjects_other_than(
+                "low_stock", "pantry_stock", [], household_id=household.id
+            )
+            == 2
+        )
         assert db.query(Notification).count() == 0
 
     def test_the_complement_does_not_touch_a_row_without_a_subject(
@@ -475,9 +573,12 @@ class TestRetiringASubject:
         saber de qué ítem hablaban: no se puede decidir que se repuso. Se van con la poda."""
         self._notify(db, household, entity_type=None, entity_id=None)
 
-        assert NotificationRepository(db).retire_subjects_other_than(
-            "low_stock", "pantry_stock", [], household_id=household.id
-        ) == 0
+        assert (
+            NotificationRepository(db).retire_subjects_other_than(
+                "low_stock", "pantry_stock", [], household_id=household.id
+            )
+            == 0
+        )
         assert db.query(Notification).count() == 1
 
     def test_the_complement_does_not_cross_categories(
@@ -485,25 +586,31 @@ class TestRetiringASubject:
     ) -> None:
         self._notify(db, household, entity_id=1)
         self._notify(
-            db, household, category="inactivity", entity_type="user",
-            entity_id=diego.id, user_id=diego.id,
+            db,
+            household,
+            category="inactivity",
+            entity_type="user",
+            entity_id=diego.id,
+            user_id=diego.id,
         )
 
-        assert NotificationRepository(db).retire_subjects_other_than(
-            "low_stock", "pantry_stock", [], household_id=household.id
-        ) == 1
+        assert (
+            NotificationRepository(db).retire_subjects_other_than(
+                "low_stock", "pantry_stock", [], household_id=household.id
+            )
+            == 1
+        )
         assert self._surviving(db) == {("inactivity", diego.id)}
 
-    def test_retiring_nothing_is_not_an_error(
-        self, db: Session, household: Household
-    ) -> None:
+    def test_retiring_nothing_is_not_an_error(self, db: Session, household: Household) -> None:
         repo = NotificationRepository(db)
-        assert repo.retire_subject(
-            "low_stock", "pantry_stock", 99, household_id=household.id
-        ) == 0
-        assert repo.retire_subjects_other_than(
-            "low_stock", "pantry_stock", [], household_id=household.id
-        ) == 0
+        assert repo.retire_subject("low_stock", "pantry_stock", 99, household_id=household.id) == 0
+        assert (
+            repo.retire_subjects_other_than(
+                "low_stock", "pantry_stock", [], household_id=household.id
+            )
+            == 0
+        )
 
 
 class TestPruning:
@@ -514,10 +621,15 @@ class TestPruning:
         corren en cada carga de página."""
         svc = NotificationService(db)
         for i in range(3):
-            svc.create(NotificationCreate(
-                user_id=diego.id, household_id=household.id,
-                category="info", title=f"Notif {i}", body="body",
-            ))
+            svc.create(
+                NotificationCreate(
+                    user_id=diego.id,
+                    household_id=household.id,
+                    category="info",
+                    title=f"Notif {i}",
+                    body="body",
+                )
+            )
         stale, fresh = db.query(Notification).order_by(Notification.id).all()[:2]
         stale.created_at = datetime.now(UTC) - timedelta(days=120)
         db.flush()
@@ -534,9 +646,14 @@ class TestPruning:
     def test_pruning_an_empty_window_removes_nothing(
         self, db: Session, household: Household, diego: User
     ) -> None:
-        NotificationService(db).create(NotificationCreate(
-            user_id=diego.id, household_id=household.id,
-            category="info", title="Recent", body="body",
-        ))
+        NotificationService(db).create(
+            NotificationCreate(
+                user_id=diego.id,
+                household_id=household.id,
+                category="info",
+                title="Recent",
+                body="body",
+            )
+        )
         assert NotificationRepository(db).prune_older_than(90) == 0
         assert db.query(Notification).count() == 1

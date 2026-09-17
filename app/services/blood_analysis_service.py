@@ -1,4 +1,5 @@
 """Service for blood analysis CRUD and AI-powered parsing."""
+
 from __future__ import annotations
 
 import logging

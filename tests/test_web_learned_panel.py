@@ -19,7 +19,7 @@ tienen los mismos gustos, y olvidar el brócoli de uno no puede tocar el del otr
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -68,7 +68,7 @@ def _record(
         source_type=source_type,
         source_entity_type=source_entity_type,
     )
-    signal.created_at = datetime.now(tz=timezone.utc) - timedelta(days=days_ago)
+    signal.created_at = datetime.now(tz=UTC) - timedelta(days=days_ago)
     db.flush()
     return signal
 
@@ -448,15 +448,13 @@ def test_the_recency_the_panel_prints_is_measured_against_the_same_instant(
     _record(db, diego, "pollo", days_ago=10)
     signals = BehaviorSignalRepository(db).get_user_signals(diego.id, limit=None)
 
-    reference = datetime.now(tz=timezone.utc) + timedelta(days=5)
+    reference = datetime.now(tz=UTC) + timedelta(days=5)
     rows = learning.learned_subjects(signals, now=reference)
     assert [row.days_since for row in rows] == [15]
 
     # Y una señal grabada en el mismo request que la lectura redondea a "hoy" en vez de
     # decir "hace -1 días".
-    rows = learning.learned_subjects(
-        signals, now=datetime.now(tz=timezone.utc) - timedelta(days=20)
-    )
+    rows = learning.learned_subjects(signals, now=datetime.now(tz=UTC) - timedelta(days=20))
     assert [row.days_since for row in rows] == [0]
 
 

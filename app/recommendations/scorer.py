@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.clock import as_utc
@@ -125,8 +125,8 @@ def score_candidates(
     if not candidates:
         return []
 
-    cutoff_signals = datetime.now(tz=timezone.utc) - timedelta(days=_RECENT_SIGNAL_DAYS)
-    cutoff_suggestions = datetime.now(tz=timezone.utc) - timedelta(days=_RECENT_SUGGESTION_DAYS)
+    cutoff_signals = datetime.now(tz=UTC) - timedelta(days=_RECENT_SIGNAL_DAYS)
+    cutoff_suggestions = datetime.now(tz=UTC) - timedelta(days=_RECENT_SUGGESTION_DAYS)
 
     # Filter signals to recent window
     relevant_signals = [

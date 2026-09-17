@@ -8,7 +8,7 @@ generador declare sujetos válidos; estos miden que la app elija bien.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
@@ -35,8 +35,8 @@ def _context(**overrides: object) -> UserContext:
     """
     base: dict[str, object] = {
         "user_id": 1,
-        "now": datetime.now(tz=timezone.utc),
-        "today": datetime.now(tz=timezone.utc).date(),
+        "now": datetime.now(tz=UTC),
+        "today": datetime.now(tz=UTC).date(),
     }
     base.update(overrides)
     return UserContext(**base)  # type: ignore[arg-type]
@@ -249,7 +249,7 @@ class TestAliasesCollapseIntoOneGroup:
         session = WorkoutSession(
             household_id=diego.household_id,
             workout_type="gym",
-            timestamp_start=datetime.now(tz=timezone.utc),
+            timestamp_start=datetime.now(tz=UTC),
         )
         db.add(session)
         db.flush()
@@ -273,7 +273,7 @@ class TestAliasesCollapseIntoOneGroup:
 
     def test_the_more_recent_of_two_aliases_wins(self, db: Session, diego: User) -> None:
         """`arms` de hoy y `biceps` de hace una semana son un grupo entrenado hoy."""
-        now = datetime.now(tz=timezone.utc)
+        now = datetime.now(tz=UTC)
         for name, group, when in (
             ("curl", "biceps", now - timedelta(days=7)),
             ("pushdown", "arms", now),

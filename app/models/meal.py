@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -22,9 +22,7 @@ class MealEvent(Base):
     household_id: Mapped[int] = mapped_column(
         ForeignKey("households.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     meal_type: Mapped[str] = mapped_column(
         String(30), nullable=False, default="other"
     )  # breakfast/lunch/snack/dinner/other

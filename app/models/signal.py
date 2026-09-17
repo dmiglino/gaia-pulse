@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -26,9 +26,7 @@ class BehaviorSignal(Base):
     )
 
     # What kind of signal
-    signal_type: Mapped[str] = mapped_column(
-        String(60), nullable=False, index=True
-    )
+    signal_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     # El vocabulario vive en `app/recommendations/learning.py`
     # (`POSITIVE_SIGNAL_TYPES` / `NEGATIVE_SIGNAL_TYPES`), que es lo que el scorer lee y
     # el único módulo que escribe acá. Esta lista era de ejemplos aspiracionales

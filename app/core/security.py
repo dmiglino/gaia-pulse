@@ -1,6 +1,3 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any
-
 import bcrypt
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.core.dependencies import DB, CurrentUser
 from app.repositories.user_repo import UserRepository
@@ -14,7 +14,6 @@ def get_me(current_user: CurrentUser) -> UserRead:
 
 @router.patch("/me", response_model=UserRead)
 def update_me(data: UserUpdate, current_user: CurrentUser, db: DB) -> UserRead:
-    repo = UserRepository(db)
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(current_user, field, value)
     db.flush()

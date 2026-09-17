@@ -59,6 +59,7 @@ def save_preference(
 def trigger_generation(current_user: CurrentUser, db: DB) -> dict:
     """Manually trigger suggestion generation for the current user."""
     from app.recommendations.engine import RecommendationEngine
+
     engine = RecommendationEngine()
     new_suggestions = engine.generate_for_user(db, current_user, limit=10)
     return {"generated": len(new_suggestions)}

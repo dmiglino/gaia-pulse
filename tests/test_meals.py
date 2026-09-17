@@ -1,7 +1,7 @@
 """Tests for meal logging."""
-from datetime import datetime, timezone
 
-import pytest
+from datetime import UTC, datetime
+
 from sqlalchemy.orm import Session
 
 from app.models.household import Household
@@ -11,7 +11,7 @@ from app.services.meal_service import MealService
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TestMealLogging:
@@ -27,9 +27,9 @@ class TestMealLogging:
                     items=[
                         MealItemCreate(food_name="milanesa", quantity=1, unit="serving"),
                         MealItemCreate(food_name="mashed potatoes", quantity=300, unit="g"),
-                    ]
+                    ],
                 )
-            ]
+            ],
         )
         event = svc.log_meal(household.id, data)
         assert event.id is not None
@@ -53,13 +53,19 @@ class TestMealLogging:
             participants=[
                 MealParticipantCreate(
                     user_id=diego.id,
-                    items=[MealItemCreate(food_name="ravioli"), MealItemCreate(food_name="ice cream")]
+                    items=[
+                        MealItemCreate(food_name="ravioli"),
+                        MealItemCreate(food_name="ice cream"),
+                    ],
                 ),
                 MealParticipantCreate(
                     user_id=rocio.id,
-                    items=[MealItemCreate(food_name="milanesa"), MealItemCreate(food_name="banana")]
+                    items=[
+                        MealItemCreate(food_name="milanesa"),
+                        MealItemCreate(food_name="banana"),
+                    ],
                 ),
-            ]
+            ],
         )
         event = svc.log_meal(household.id, data)
         loaded = svc.get_meal(event.id)
@@ -88,11 +94,8 @@ class TestMealLogging:
             meal_type="lunch",
             context="outside",
             participants=[
-                MealParticipantCreate(
-                    user_id=diego.id,
-                    items=[MealItemCreate(food_name="burger")]
-                )
-            ]
+                MealParticipantCreate(user_id=diego.id, items=[MealItemCreate(food_name="burger")])
+            ],
         )
         event = svc.log_meal(household.id, data)
         loaded = svc.get_meal(event.id)
@@ -111,7 +114,7 @@ class TestMealLogging:
             context="home",
             participants=[
                 MealParticipantCreate(user_id=diego.id, items=[MealItemCreate(food_name="oats")])
-            ]
+            ],
         )
         event = svc.log_meal(household.id, data)
         assert svc.delete_meal(event.id) is True

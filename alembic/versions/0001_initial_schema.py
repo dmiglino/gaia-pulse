@@ -5,16 +5,18 @@ Revises:
 Create Date: 2024-01-01 00:00:00.000000
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "0001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -25,7 +27,9 @@ def upgrade() -> None:
         sa.Column("name", sa.String(120), nullable=False),
         sa.Column("timezone", sa.String(60), nullable=False),
         sa.Column("settings_json", postgresql.JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
 
@@ -43,7 +47,9 @@ def upgrade() -> None:
         sa.Column("sex", sa.String(30), nullable=True),
         sa.Column("height_cm", sa.Numeric(5, 1), nullable=True),
         sa.Column("target_weight_kg", sa.Numeric(6, 2), nullable=True),
-        sa.Column("baseline_activity_level", sa.String(30), nullable=False, server_default="moderate"),
+        sa.Column(
+            "baseline_activity_level", sa.String(30), nullable=False, server_default="moderate"
+        ),
         sa.Column("goals_json", postgresql.JSONB(), nullable=True),
         sa.Column("dietary_preferences_json", postgresql.JSONB(), nullable=True),
         sa.Column("dietary_restrictions_json", postgresql.JSONB(), nullable=True),
@@ -54,8 +60,12 @@ def upgrade() -> None:
         sa.Column("disliked_activities_json", postgresql.JSONB(), nullable=True),
         sa.Column("recommendation_context_json", postgresql.JSONB(), nullable=True),
         sa.Column("avatar_color", sa.String(20), nullable=False, server_default="#6366f1"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("email"),
@@ -74,7 +84,9 @@ def upgrade() -> None:
         sa.Column("waist_cm", sa.Numeric(5, 1), nullable=True),
         sa.Column("sleep_hours", sa.Numeric(4, 1), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -100,7 +112,9 @@ def upgrade() -> None:
         sa.Column("perishable", sa.Boolean(), nullable=False, server_default="true"),
         sa.Column("typical_shelf_days", sa.Integer(), nullable=True),
         sa.Column("metadata_json", postgresql.JSONB(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("canonical_name"),
     )
@@ -116,7 +130,9 @@ def upgrade() -> None:
         sa.Column("unit", sa.String(30), nullable=False),
         sa.Column("low_stock_threshold", sa.Numeric(10, 3), nullable=True),
         sa.Column("storage_location", sa.String(100), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["food_item_id"], ["food_items.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -137,7 +153,9 @@ def upgrade() -> None:
         sa.Column("related_entity_type", sa.String(60), nullable=True),
         sa.Column("related_entity_id", sa.Integer(), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["food_item_id"], ["food_items.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="SET NULL"),
@@ -155,7 +173,9 @@ def upgrade() -> None:
         sa.Column("meal_type", sa.String(30), nullable=False, server_default="other"),
         sa.Column("context", sa.String(40), nullable=False, server_default="home"),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -196,7 +216,9 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["food_item_id"], ["food_items.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["meal_event_id"], ["meal_events.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["meal_participant_id"], ["meal_participants.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["meal_participant_id"], ["meal_participants.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_meal_items_meal_event_id", "meal_items_consumed", ["meal_event_id"])
@@ -218,8 +240,12 @@ def upgrade() -> None:
         sa.Column("prep_time_minutes", sa.Integer(), nullable=True),
         sa.Column("cook_time_minutes", sa.Integer(), nullable=True),
         sa.Column("cuisine", sa.String(80), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -253,7 +279,9 @@ def upgrade() -> None:
         sa.Column("calories_estimated", sa.Integer(), nullable=True),
         sa.Column("source", sa.String(30), nullable=False, server_default="manual"),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -268,10 +296,14 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workout_session_id"], ["workout_sessions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workout_session_id"], ["workout_sessions.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_workout_participants_session_id", "workout_participants", ["workout_session_id"])
+    op.create_index(
+        "ix_workout_participants_session_id", "workout_participants", ["workout_session_id"]
+    )
     op.create_index("ix_workout_participants_user_id", "workout_participants", ["user_id"])
 
     # workout_exercises
@@ -291,12 +323,18 @@ def upgrade() -> None:
         sa.Column("muscle_group", sa.String(80), nullable=True),
         sa.Column("notes", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["exercise_type_id"], ["exercise_types.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["workout_participant_id"], ["workout_participants.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["workout_session_id"], ["workout_sessions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["workout_participant_id"], ["workout_participants.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["workout_session_id"], ["workout_sessions.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_workout_exercises_session_id", "workout_exercises", ["workout_session_id"])
-    op.create_index("ix_workout_exercises_participant_id", "workout_exercises", ["workout_participant_id"])
+    op.create_index(
+        "ix_workout_exercises_participant_id", "workout_exercises", ["workout_participant_id"]
+    )
 
     # suggestions
     op.create_table(
@@ -315,7 +353,9 @@ def upgrade() -> None:
         sa.Column("source_type", sa.String(30), nullable=False),
         sa.Column("status", sa.String(30), nullable=False, server_default="pending"),
         sa.Column("feedback_notes", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("responded_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["household_id"], ["households.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["scope_user_id"], ["users.id"], ondelete="CASCADE"),
@@ -336,7 +376,9 @@ def upgrade() -> None:
         sa.Column("preference_signal", sa.String(40), nullable=False),
         sa.Column("strength", sa.Numeric(4, 3), nullable=False, server_default="1.0"),
         sa.Column("notes", sa.Text(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -354,7 +396,9 @@ def upgrade() -> None:
         sa.Column("parse_confidence", sa.Numeric(4, 3), nullable=True),
         sa.Column("parser_layer", sa.String(20), nullable=True),
         sa.Column("status", sa.String(40), nullable=False, server_default="pending_confirmation"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("responded_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -375,7 +419,9 @@ def upgrade() -> None:
         sa.Column("related_entity_id", sa.Integer(), nullable=True),
         sa.Column("priority", sa.Integer(), nullable=False, server_default="5"),
         sa.Column("source_type", sa.String(30), nullable=False, server_default="system"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("read_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("dismissed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("snoozed_until", sa.DateTime(timezone=True), nullable=True),
@@ -402,7 +448,9 @@ def upgrade() -> None:
         sa.Column("source_type", sa.String(30), nullable=False),
         sa.Column("source_entity_type", sa.String(60), nullable=True),
         sa.Column("source_entity_id", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )

@@ -16,16 +16,17 @@ mismo.
 veces, que es justo la forma que ya tenía el `dict` que reemplaza.
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "0006"
-down_revision: Union[str, None] = "0005"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0005"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _blood_analyses = sa.table(
     "blood_analyses",
@@ -68,9 +69,7 @@ def upgrade() -> None:
     op.create_index("ix_blood_markers_marker_key", "blood_markers", ["marker_key"])
 
     bind = op.get_bind()
-    rows = bind.execute(
-        sa.select(_blood_analyses.c.id, _blood_analyses.c.values_json)
-    ).fetchall()
+    rows = bind.execute(sa.select(_blood_analyses.c.id, _blood_analyses.c.values_json)).fetchall()
     for analysis_id, values in rows:
         if not values:
             continue

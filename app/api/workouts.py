@@ -23,7 +23,9 @@ def get_workouts(
 
 
 @router.post("/", response_model=WorkoutSessionRead, status_code=201)
-def log_workout(data: WorkoutSessionCreate, current_user: CurrentUser, db: DB) -> WorkoutSessionRead:
+def log_workout(
+    data: WorkoutSessionCreate, current_user: CurrentUser, db: DB
+) -> WorkoutSessionRead:
     svc = WorkoutService(db)
     session = svc.log_workout(current_user.household_id, data)
     return WorkoutSessionRead.model_validate(svc.get_session(session.id))

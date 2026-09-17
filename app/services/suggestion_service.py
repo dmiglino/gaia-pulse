@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -49,11 +49,9 @@ class SuggestionService:
 
         suggestion.status = feedback.status
         suggestion.feedback_notes = feedback.feedback_notes
-        suggestion.responded_at = datetime.now(timezone.utc)
+        suggestion.responded_at = datetime.now(UTC)
         if feedback.status in self._SUPPRESSING_STATUSES:
-            suggestion.snoozed_until = datetime.now(timezone.utc) + timedelta(
-                days=self._SNOOZE_DAYS
-            )
+            suggestion.snoozed_until = datetime.now(UTC) + timedelta(days=self._SNOOZE_DAYS)
 
         self._record_feedback_signal(suggestion, feedback, user_id)
 

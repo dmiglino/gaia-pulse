@@ -62,7 +62,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -400,7 +400,7 @@ def decay_factor(
     """
     if signal.created_at is None:
         return 1.0
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     age_days = (reference - as_utc(signal.created_at)).total_seconds() / 86400.0
     if age_days <= 0:
         return 1.0
@@ -787,7 +787,7 @@ def subject_affinities(
     para dejar afuera del cómputo lo que no es una opinión —`ignored_suggestion`, que graba
     tanto descartar como posponer—.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     nets: dict[tuple[str, str], float] = {}
     evidences: dict[tuple[str, str], float] = {}
     for signal in signals:
@@ -913,7 +913,7 @@ def learned_subjects(
     emergencia de la plantilla, es exactamente la clase de cosa que el panel vino a
     arreglar. No aparecen, y el `record_signal` de la 4.4 ya no las escribe.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     affinities = subject_affinities(signals, now=reference)
     observations: dict[tuple[str, str], int] = {}
     said: dict[tuple[str, str], int] = {}
@@ -1068,7 +1068,7 @@ def attribute_affinities(
     y adivinarlo es exactamente el match difuso que la 4.4 vino a sacar—. Y la vara de
     evidencia es la del atributo: más alta que la puntual.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     nets: dict[tuple[str, str], float] = {}
     evidences: dict[tuple[str, str], float] = {}
     for signal in signals:
@@ -1128,7 +1128,7 @@ def slot_affinities(
     quedan afuera del todo: no dicen nada sobre el reloj, y meterlas en un grupo "sin hora"
     sería inventar una franja que después argumentaría contra las reales.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     nets: dict[tuple[tuple[str, str], str], float] = {}
     evidences: dict[tuple[tuple[str, str], str], float] = {}
     for signal in signals:
@@ -1220,7 +1220,7 @@ def satiety_pressure(
     que en el resto del módulo: un acto que está pasando ahora es exactamente el caso de
     saciedad máxima.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     recent: dict[tuple[str, str], float] = {}
     for signal in signals:
         if signal.signal_type not in CONSUMPTION_SIGNAL_TYPES:
@@ -1260,7 +1260,7 @@ def rejected_subjects(
     `_FILTER_EVIDENCE_FLOOR`. Lo que sale de acá es entonces "los sujetos que alguien
     rechazó a propósito y hace poco", igual que antes de que la ausencia existiera.
     """
-    reference = now or datetime.now(tz=timezone.utc)
+    reference = now or datetime.now(tz=UTC)
     negative: dict[tuple[str, str], float] = {}
     for signal in signals:
         if signal.signal_type not in NEGATIVE_SIGNAL_TYPES or float(signal.value) >= 0:

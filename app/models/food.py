@@ -1,8 +1,8 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Integer, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -12,12 +12,18 @@ class FoodItem(Base):
     __tablename__ = "food_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    canonical_name: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
+    canonical_name: Mapped[str] = mapped_column(
+        String(200), unique=True, nullable=False, index=True
+    )
     category: Mapped[str | None] = mapped_column(
         String(60), nullable=True
     )  # vegetable/fruit/protein/grain/dairy/fat/beverage/processed/other
-    aliases_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # ["tomato", "tomate"]
-    base_unit: Mapped[str] = mapped_column(String(30), default="g", nullable=False)  # g/ml/unit/serving
+    aliases_json: Mapped[list[str] | None] = mapped_column(
+        JSON, nullable=True
+    )  # ["tomato", "tomate"]
+    base_unit: Mapped[str] = mapped_column(
+        String(30), default="g", nullable=False
+    )  # g/ml/unit/serving
     serving_size_g: Mapped[float | None] = mapped_column(nullable=True)
 
     # Macronutrientes **siempre por 100 g**, incluso cuando `base_unit` no es de peso.

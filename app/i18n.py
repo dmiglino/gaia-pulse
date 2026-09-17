@@ -29,6 +29,7 @@ section comments and the notes recording why a short string got the translation 
 catalog has, so the file is maintained by hand and the .pot is a scratch file — hence
 /tmp and not a tracked path. Both the .po and the compiled .mo are committed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,10 +55,7 @@ def _ensure_mo_compiled(locale: str) -> None:
     if not po_path.exists():
         return
 
-    needs_compile = (
-        not mo_path.exists()
-        or mo_path.stat().st_mtime < po_path.stat().st_mtime
-    )
+    needs_compile = not mo_path.exists() or mo_path.stat().st_mtime < po_path.stat().st_mtime
     if not needs_compile:
         return
 
@@ -119,7 +117,7 @@ def _(text: str, **kwargs: Any) -> str:
 # ── Jinja2 integration ───────────────────────────────────────────────────────
 
 
-def setup_jinja2_i18n(env: "Environment", locale: str = DEFAULT_LOCALE) -> None:
+def setup_jinja2_i18n(env: Environment, locale: str = DEFAULT_LOCALE) -> None:
     """Install gettext translations into a Jinja2 Environment.
 
     Enables in every template:
